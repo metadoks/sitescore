@@ -81,7 +81,7 @@ The initial implementation used importable module globals (`_ASSEMBLY_TOKEN`, `_
 
 ## Hardened authority model
 
-`NormalizedFeatureAssembly` and `ReadinessEvaluation` are now factory-owned (`init=False`) and their direct constructors reject callers.
+`NormalizedFeatureAssembly` and `ReadinessEvaluation` are factory-owned (`init=False`) and their direct constructors reject callers.
 
 Canonical registration is maintained by closure-owned state created when the three production factories are installed:
 
@@ -131,23 +131,12 @@ The initial terminal factory accepted an independently supplied `DerivedLocation
 Canonical assembly retains actual `FeatureNormalizationResult.site_measurement` objects. Before terminal construction, `_validate_derived_metrics_coherence()` maps every direct normalized origin to the corresponding frozen `DerivedLocationMetrics` field:
 
 ```text
-walkable_population
-→ walkable_population
-
-target_population_density
-→ target_population_density
-
-competition_pressure
-→ competition_pressure
-
-walkable_reach_area_km2
-→ walkable_reach_area_km2
-
-transit_service_departure_equivalents_per_hour
-→ transit_service_departure_equivalents_per_hour
-
-household_income
-→ household_income
+walkable_population → walkable_population
+target_population_density → target_population_density
+competition_pressure → competition_pressure
+walkable_reach_area_km2 → walkable_reach_area_km2
+transit_service_departure_equivalents_per_hour → transit_service_departure_equivalents_per_hour
+household_income → household_income
 ```
 
 For each overlapping field, the terminal metric must exactly equal the actual site measurement semantic record used by normalization. The comparison covers:
@@ -170,21 +159,11 @@ Feature-contract version alone is not sufficient. Non-overlapping frozen real-un
 
 ## H002 regressions
 
-Tests prove rejection of:
-
-- household-income value mismatch;
-- household-income method mismatch;
-- transit source-lineage mismatch;
-- walkable-reach method mismatch;
-- all-UNKNOWN placeholder real-unit surface when it contradicts overlapping actual site measurements.
-
-A semantically coherent `DerivedLocationMetrics` surface built from the actual overlapping site measurement values is accepted.
+Tests prove rejection of household-income value/method mismatch, transit source-lineage mismatch, walkable-reach method mismatch, and an all-UNKNOWN placeholder surface when it contradicts actual overlapping site measurements. A coherent surface built from the actual overlapping measurements is accepted.
 
 ## Readiness and terminal status
 
-Caller cannot provide `is_score_ready`, readiness summaries/fingerprint, or terminal status.
-
-Canonical readiness derives from the frozen validator and pipeline-owned semantic fingerprint. `evaluated_at` does not alter that fingerprint.
+Caller cannot provide `is_score_ready`, readiness summaries/fingerprint, or terminal status. Canonical readiness derives from the frozen validator and pipeline-owned semantic fingerprint; `evaluated_at` does not alter that fingerprint.
 
 Terminal mapping remains:
 
@@ -200,14 +179,14 @@ Ordinary unresolved/unavailable evidence is not a pipeline execution error. `SCO
 
 Current canonical production assembly is expected to remain `NOT_SCORE_READY`, principally because locked COMB-005 has no approved production policy. This is intentional and not treated as an execution failure.
 
-## Hardening validation evidence
+## Final hardening validation evidence
 
-First successful hardening-wide run after PIPE-H001/H002 code and adversarial tests:
+Documentation-inclusive validation completed successfully:
 
 ```text
 workflow: cp348-hardening-validation
-run: 31908931019
-validated SHA: 7845bda9db33b4261dd0381796b7200ae07d9ff0
+run: 31909159381
+validated SHA: ee76a7880926522bb6f7c824b1f7546562052b54
 conclusion: SUCCESS
 sitescore-pipeline: 25/25 PASS
 sitescore-benchmarks: 191/191 PASS
@@ -218,7 +197,13 @@ sitescore-data: PASS
 sitescore-core: PASS
 ```
 
-Only counts explicitly visible in the job log are stated as exact counts. A documentation-inclusive successful validation is required before final review handoff; afterward the temporary workflow must be removed and validated SHA → final HEAD proven workflow-removal-only.
+The exact 25/191/67 counts are explicitly visible in the job log. The other four package steps completed successfully; their exact cardinalities are not claimed from this log.
+
+After validation, the temporary workflow was removed. The validated SHA → post-cleanup HEAD comparison contains exactly one file change: deletion of `.github/workflows/cp348-hardening-validation.yml`; source, tests, and this documentation are otherwise unchanged relative to the validated commit.
+
+## Final scope expectation
+
+Base → final review HEAD must contain only the additive `sitescore-pipeline` package. The final scope audit after temporary-workflow deletion shows eight package files and no frozen upstream source changes.
 
 ## Out of scope preserved
 
