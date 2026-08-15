@@ -1,0 +1,47 @@
+name: cp348-hardening-validation
+
+on:
+  push:
+    branches:
+      - faz3.4/cp3.4-8-readiness-pipeline
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test tooling and packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install -e ./sitescore-core
+          python -m pip install -e ./sitescore-data
+          python -m pip install -e ./sitescore-spatial
+          python -m pip install -e ./sitescore-providers
+          python -m pip install -e ./sitescore-metrics
+          python -m pip install -e ./sitescore-benchmarks
+          python -m pip install -e ./sitescore-pipeline
+      - name: Test sitescore-pipeline
+        working-directory: sitescore-pipeline
+        run: python -m pytest -q
+      - name: Test sitescore-benchmarks
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -q
+      - name: Test sitescore-metrics
+        working-directory: sitescore-metrics
+        run: python -m pytest -q
+      - name: Test sitescore-spatial
+        working-directory: sitescore-spatial
+        run: python -m pytest -q
+      - name: Test sitescore-providers
+        working-directory: sitescore-providers
+        run: python -m pytest -q
+      - name: Test sitescore-data
+        working-directory: sitescore-data
+        run: python -m pytest -q
+      - name: Test sitescore-core
+        working-directory: sitescore-core
+        run: python -m pytest -q
