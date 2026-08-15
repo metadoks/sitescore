@@ -20,61 +20,15 @@ CONTRACT_CHANGE_REQUIRED: 0
 PIPE-H001: RESOLVED
 PIPE-H002: RESOLVED
 
----
+## Hardening summary
 
-## Reviewer hardening instruction executed
+PIPE-H001 resolved by replacing importable token/hash authority with factory-owned assembly/readiness objects and closure-owned canonical registries. Direct constructors reject callers; hash reproduction/manual allocation cannot register an object; only exact factory-returned objects enter readiness/terminal production paths. Old module-level authority token/helper names are absent. Controlled SCORE_READY fixtures call the frozen validator directly and are not pipeline authority.
 
-Latest reviewer action was `HARDEN` on the existing checkpoint branch and existing PR #5. No new checkpoint was created.
+PIPE-H002 resolved by retaining actual six `FeatureNormalizationResult` artifacts in canonical assembly and requiring overlapping `DerivedLocationMetrics` fields to exactly match each actual `site_measurement.metric_value` semantic record before terminal construction. Bound dimensions: value, unit, availability, data quality, score eligibility, calibration, estimate/proxy flags, source refs, method version, reason codes. Regressions cover income value/method mismatch, transit source mismatch, walkable-reach method mismatch, and contradictory all-UNKNOWN placeholders; coherent actual lineage is accepted.
 
-### PIPE-H001 — RESOLVED
+Frozen semantics preserved: no missing→0/generic-50, age fallback only exact exception, COMB-005 still unapproved/unready, status derived, ordinary unready != pipeline error, SCORE_READY != SCORED, no core/category/location/decision/report logic, no frozen upstream source changes, no core dependency.
 
-Initial importable authority tokens/hash gate were removed as production authority.
-
-Hardening now uses factory-owned `NormalizedFeatureAssembly` and `ReadinessEvaluation` objects with direct constructors disabled. Canonical assembly/readiness registration lives only inside closure-owned state captured by installed production factory functions. The installer is removed from module namespace after installation.
-
-Production enforcement:
-- `derive_scoring_readiness()` accepts only the exact assembly object returned by canonical `assemble_normalized_location_features()`;
-- `build_real_data_pipeline_result()` accepts only the exact readiness object returned by canonical `derive_scoring_readiness()`;
-- reproducing semantic `assembly_id` does not grant authority;
-- manually allocating/copying assembly or readiness wrappers does not register them;
-- old `_ASSEMBLY_TOKEN`, `_READINESS_TOKEN`, `_assembly_identity`, and `_install_canonical_factories` module authority surfaces are absent.
-
-Adversarial tests reproduce the exact assembly hash on a manually allocated object and prove that canonical readiness still rejects it. Detached readiness wrappers are likewise rejected by terminal construction.
-
-Controlled synthetic SCORE_READY coverage invokes the frozen `ScoringReadinessValidator` directly as a test-local fixture and is not a production pipeline authority path.
-
-### PIPE-H002 — RESOLVED
-
-Canonical `NormalizedFeatureAssembly` retains the actual six `FeatureNormalizationResult` artifacts.
-
-Before terminal construction, overlapping `DerivedLocationMetrics` fields must exactly match the actual `site_measurement.metric_value` used by normalization for:
-- walkable_population
-- target_population_density
-- competition_pressure
-- walkable_reach_area_km2
-- transit_service_departure_equivalents_per_hour
-- household_income
-
-Exact semantic comparison binds value, unit, availability, data_quality, score_eligibility, calibration_state, is_estimate, is_proxy, canonical source_refs, method_version, and reason_codes.
-
-Regressions reject household-income value mismatch, household-income method mismatch, transit source-lineage mismatch, walkable-reach method mismatch, and an all-UNKNOWN contradictory placeholder surface. A coherent surface from actual nested site measurements is accepted.
-
-## Frozen semantics preserved
-
-- missing/unavailable/incompatible evidence is never converted to 0 or generic 50;
-- exact locked age fallback is the sole numeric uncalibrated exception;
-- COMB-005 remains unapproved and canonical road_parking_access_score remains unavailable;
-- competition measurement-definition and transit source-bundle lineage remain actual-artifact-derived;
-- pipeline status is derived, not caller asserted;
-- ordinary unready evidence remains NOT_SCORE_READY, not PIPELINE_ERROR;
-- SCORE_READY != SCORED;
-- no CategoryScores, Location Score, penalties, Decision Layer, core.analyze(), report/PDF, or FAZ 3.4-FINAL implementation was added;
-- no sitescore-core dependency/import;
-- no frozen upstream source changed.
-
-## Final validation evidence
-
-Latest final documentation-inclusive validation:
+## Final validation
 
 ```text
 workflow: cp348-hardening-validation
@@ -90,42 +44,22 @@ sitescore-data: PASS
 sitescore-core: PASS
 ```
 
-The 25/191/67 counts are explicitly visible in the job log. The remaining four package steps completed successfully; exact counts are not claimed from this log.
+Exact 25/191/67 summaries are visible in log; sibling steps are successful without asserting hidden cardinalities.
 
-After validation the temporary workflow was removed. A subsequent README contents-API no-op produced a new commit SHA but did not alter the tree content.
-
-Validated SHA → exact final review HEAD tree comparison:
+Validated SHA -> final review HEAD tree diff is exactly temporary workflow removal:
 
 ```text
 c868205a8cc38266153524c9fe275fc46aa918e5
 → 6e27617674c7b7bfac539a38f98edf690b17477c
-
-changed files in tree: exactly 1
+only changed file:
 .github/workflows/cp348-hardening-validation.yml — REMOVED
 ```
 
-Thus source/tests/docs content at final HEAD is the exact validated content; only the temporary workflow is absent.
+A contents-API no-op README write occurred after cleanup and changed commit SHA only; GitHub compare confirms no source/test/docs tree delta from validated content.
 
-## Final scope audit
+Base -> final review HEAD contains exactly 8 files, all under additive `sitescore-pipeline`; no frozen upstream file changed.
 
-Base `c8514401...` → final review HEAD contains exactly 8 files and all are under the additive `sitescore-pipeline` package:
-1. sitescore-pipeline/README.md
-2. sitescore-pipeline/docs/CHECKPOINT_3_4_8_READINESS_PIPELINE.md
-3. sitescore-pipeline/pyproject.toml
-4. sitescore-pipeline/src/sitescore_pipeline/__init__.py
-5. sitescore-pipeline/src/sitescore_pipeline/integration.py
-6. sitescore-pipeline/tests/conftest.py
-7. sitescore-pipeline/tests/test_architecture.py
-8. sitescore-pipeline/tests/test_readiness_pipeline.py
+No merge. No LOCK. No tag. FAZ 3.4-FINAL not started.
 
-Frozen upstream packages and dependency metadata outside the new package are unchanged.
-
-## Stop state
-
-No merge performed.
-No LOCK performed.
-No tag created.
-FAZ 3.4-FINAL not started.
-
-Reviewer should re-review PR #5 at exact current HEAD:
+Reviewer should review PR #5 at exact HEAD:
 `6e27617674c7b7bfac539a38f98edf690b17477c`.
