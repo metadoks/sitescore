@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-import math
 
 from .hashing import semantic_hash
 from .validation import text
@@ -23,6 +22,12 @@ _COMPONENT_METRIC_KEYS = {
     RoadParkingComponentKind.PARKING_PUBLIC_OFFSTREET_CAPACITY: "parking_public_offstreet_capacity",
     RoadParkingComponentKind.PARKING_LEGAL_CURB_LENGTH: "parking_legal_curb_length_m",
 }
+
+_REQUIRED_COMPONENTS_V1 = (
+    RoadParkingComponentKind.ROAD_REACHABLE_AREA,
+    RoadParkingComponentKind.PARKING_PUBLIC_OFFSTREET_CAPACITY,
+    RoadParkingComponentKind.PARKING_LEGAL_CURB_LENGTH,
+)
 
 
 class RoadParkingComponentState(str, Enum):
@@ -50,12 +55,12 @@ class RoadParkingCompositeState(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class RoadParkingComponentArtifact:
-    """Internal normalized prerequisite artifact, not a downstream feature slot.
+    """Production-facing prerequisite status/lineage declaration.
 
-    The real-unit road/parking metrics remain distinct upstream. This artifact only
-    represents a future normalized prerequisite with explicit semantic lineage.
-    Current canonical production does not construct AVAILABLE instances because
-    the required road/parking reductions are not empirically approved.
+    No approved canonical road/parking component-normalization path exists yet.
+    Therefore production callers may only represent non-AVAILABLE prerequisite
+    states and may never attach a detached numeric score. Synthetic AVAILABLE
+    components used to test future composition math live only in tests.
     """
 
     component_kind: RoadParkingComponentKind
@@ -74,13 +79,12 @@ class RoadParkingComponentArtifact:
         if self.metric_key != _COMPONENT_METRIC_KEYS[self.component_kind]:
             raise ValueError("component kind and frozen metric key must match")
         if self.state is RoadParkingComponentState.AVAILABLE:
-            if isinstance(self.score, bool) or not isinstance(self.score, (int, float)):
-                raise TypeError("available component score must be numeric")
-            score = float(self.score)
-            if not math.isfinite(score) or not 0.0 <= score <= 100.0:
-                raise ValueError("available component score must be finite and within [0,100]")
-        elif self.score is not None:
-            raise ValueError("unavailable/unresolved component cannot carry numeric score")
+            raise ValueError(
+                "no canonical approved road/parking component-normalization path exists; "
+                "production callers cannot self-assert AVAILABLE components"
+            )
+        if self.score is not None:
+            raise ValueError("production road/parking prerequisite declarations cannot carry numeric scores")
 
     @property
     def identity_id(self) -> str:
@@ -89,19 +93,20 @@ class RoadParkingComponentArtifact:
             "metric_key": self.metric_key,
             "normalization_lineage_id": self.normalization_lineage_id,
             "state": self.state.value,
-            "score": self.score,
+            "score": None,
         })
-
-
-_REQUIRED_COMPONENTS_V1 = (
-    RoadParkingComponentKind.ROAD_REACHABLE_AREA,
-    RoadParkingComponentKind.PARKING_PUBLIC_OFFSTREET_CAPACITY,
-    RoadParkingComponentKind.PARKING_LEGAL_CURB_LENGTH,
-)
 
 
 @dataclass(frozen=True, slots=True)
 class RoadParkingCompositePolicy:
+    """Production policy declaration, not an approval authority.
+
+    The frozen architecture contains no empirically approved COMB-005 policy.
+    Consequently this production constructor rejects APPROVED state and any
+    executable weight vector. A future approval must arrive through a separately
+    frozen canonical authority/registry contract rather than caller assertion.
+    """
+
     policy_id: str
     policy_version: str
     approval_state: RoadParkingPolicyApprovalState
@@ -125,24 +130,15 @@ class RoadParkingCompositePolicy:
             raise ValueError("COMB-005 output unit is frozen")
         if self.missing_side_behavior != "REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION":
             raise ValueError("COMB-005 forbids substitution, neutral fill and renormalization")
-
-        if self.approval_state is RoadParkingPolicyApprovalState.NOT_APPROVED:
-            if self.weights:
-                raise ValueError("unapproved canonical COMB-005 policy must not carry weights")
-            if self.composition_method != "UNRESOLVED":
-                raise ValueError("unapproved canonical COMB-005 composition method must remain unresolved")
-        else:
-            if self.composition_method != "WEIGHTED_LINEAR_SUM_NO_SUBSTITUTION":
-                raise ValueError("unsupported controlled COMB-005 composition method")
-            if len(self.weights) != len(self.required_components):
-                raise ValueError("approved controlled policy must weight every required component")
-            if any(isinstance(weight, bool) or not isinstance(weight, (int, float)) for weight in self.weights):
-                raise TypeError("weights must be numeric")
-            weights = tuple(float(weight) for weight in self.weights)
-            if any(not math.isfinite(weight) or weight < 0.0 for weight in weights):
-                raise ValueError("weights must be finite and nonnegative")
-            if sum(weights) != 1.0:
-                raise ValueError("controlled policy weights must sum exactly to 1")
+        if self.approval_state is RoadParkingPolicyApprovalState.APPROVED:
+            raise ValueError(
+                "no approved empirical COMB-005 production authority exists; "
+                "caller-created APPROVED policies are forbidden"
+            )
+        if self.weights:
+            raise ValueError("unapproved production COMB-005 policy must not carry weights")
+        if self.composition_method != "UNRESOLVED":
+            raise ValueError("unapproved production COMB-005 composition method must remain unresolved")
 
     @property
     def identity_id(self) -> str:
@@ -152,7 +148,7 @@ class RoadParkingCompositePolicy:
             "approval_state": self.approval_state.value,
             "required_components": tuple(component.value for component in self.required_components),
             "required_metric_keys": tuple(_COMPONENT_METRIC_KEYS[component] for component in self.required_components),
-            "weights": self.weights,
+            "weights": (),
             "composition_method": self.composition_method,
             "missing_side_behavior": self.missing_side_behavior,
             "output_feature_key": self.output_feature_key,
@@ -170,69 +166,42 @@ COMB005_V1_POLICY = RoadParkingCompositePolicy(
     missing_side_behavior="REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION",
 )
 
-# Production registry deliberately contains no approved executable policy.
+# There is deliberately no executable/approved V1 policy object.
 APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1: tuple[RoadParkingCompositePolicy, ...] = ()
-
-
-def _component_state_result(
-    components: tuple[RoadParkingComponentArtifact, ...],
-) -> tuple[RoadParkingCompositeState | None, tuple[str, ...]]:
-    by_kind = {component.component_kind: component for component in components}
-    if len(by_kind) != len(components):
-        return RoadParkingCompositeState.INPUT_INCOMPATIBLE, ("duplicate_component_kind",)
-
-    missing = [kind for kind in _REQUIRED_COMPONENTS_V1 if kind not in by_kind]
-    if missing:
-        return RoadParkingCompositeState.INPUT_NOT_AVAILABLE, tuple(
-            f"missing_component:{kind.value}" for kind in missing
-        )
-
-    reasons: list[str] = []
-    state: RoadParkingCompositeState | None = None
-    for kind in _REQUIRED_COMPONENTS_V1:
-        component = by_kind[kind]
-        if component.state in (RoadParkingComponentState.UNAVAILABLE, RoadParkingComponentState.UNRESOLVED):
-            state = state or RoadParkingCompositeState.INPUT_NOT_AVAILABLE
-            reasons.append(f"component_not_available:{kind.value}:{component.state.value}")
-        elif component.state is RoadParkingComponentState.INELIGIBLE:
-            state = state or RoadParkingCompositeState.INPUT_NOT_ELIGIBLE
-            reasons.append(f"component_not_eligible:{kind.value}")
-        elif component.state is RoadParkingComponentState.UNCALIBRATED:
-            state = state or RoadParkingCompositeState.INPUT_NOT_CALIBRATED
-            reasons.append(f"component_not_calibrated:{kind.value}")
-        elif component.state is RoadParkingComponentState.INCOMPATIBLE:
-            state = state or RoadParkingCompositeState.INPUT_INCOMPATIBLE
-            reasons.append(f"component_incompatible:{kind.value}")
-    return state, tuple(reasons)
 
 
 @dataclass(frozen=True, slots=True)
 class RoadParkingCompositeResult:
+    """Derived production result for the current unapproved canonical policy.
+
+    Callers provide only actual production policy/component declarations. State,
+    reasons and score are derived properties; they cannot be asserted through the
+    constructor. Since no approved canonical policy exists, production AVAILABLE
+    is constructively impossible in checkpoint 3.4-7.
+    """
+
     policy: RoadParkingCompositePolicy
     components: tuple[RoadParkingComponentArtifact, ...]
-    state: RoadParkingCompositeState
-    reason_codes: tuple[str, ...]
-    score: float | None
 
     def __post_init__(self) -> None:
         if not isinstance(self.policy, RoadParkingCompositePolicy):
             raise TypeError("policy must be RoadParkingCompositePolicy")
         if any(not isinstance(component, RoadParkingComponentArtifact) for component in self.components):
             raise TypeError("components must be RoadParkingComponentArtifact instances")
-        if not isinstance(self.state, RoadParkingCompositeState):
-            raise TypeError("state must be RoadParkingCompositeState")
-        if self.state is RoadParkingCompositeState.AVAILABLE:
-            if self.policy.approval_state is not RoadParkingPolicyApprovalState.APPROVED:
-                raise ValueError("available composite requires an approved actual policy")
-            if isinstance(self.score, bool) or not isinstance(self.score, (int, float)):
-                raise TypeError("available composite score must be numeric")
-            score = float(self.score)
-            if not math.isfinite(score) or not 0.0 <= score <= 100.0:
-                raise ValueError("available composite score must be finite and within [0,100]")
-            if self.reason_codes:
-                raise ValueError("available composite must not carry failure reasons")
-        elif self.score is not None:
-            raise ValueError("unavailable/gated composite score must be None")
+        if self.policy.approval_state is not RoadParkingPolicyApprovalState.NOT_APPROVED:
+            raise ValueError("production result requires current canonical unapproved policy semantics")
+
+    @property
+    def state(self) -> RoadParkingCompositeState:
+        return RoadParkingCompositeState.POLICY_NOT_APPROVED
+
+    @property
+    def reason_codes(self) -> tuple[str, ...]:
+        return ("comb005_policy_not_approved",)
+
+    @property
+    def score(self) -> None:
+        return None
 
     @property
     def output_feature_key(self) -> str:
@@ -256,40 +225,8 @@ class RoadParkingCompositeResult:
             "unit": self.unit,
             "state": self.state.value,
             "reason_codes": self.reason_codes,
-            "score": self.score,
+            "score": None,
         })
-
-
-def _compose_with_policy(
-    policy: RoadParkingCompositePolicy,
-    components: tuple[RoadParkingComponentArtifact, ...],
-) -> RoadParkingCompositeResult:
-    """Internal controlled composition path; canonical production never accepts caller policy."""
-    if policy.approval_state is not RoadParkingPolicyApprovalState.APPROVED:
-        return RoadParkingCompositeResult(
-            policy,
-            components,
-            RoadParkingCompositeState.POLICY_NOT_APPROVED,
-            ("comb005_policy_not_approved",),
-            None,
-        )
-
-    input_state, reasons = _component_state_result(components)
-    if input_state is not None:
-        return RoadParkingCompositeResult(policy, components, input_state, reasons, None)
-
-    by_kind = {component.component_kind: component for component in components}
-    values = tuple(float(by_kind[kind].score) for kind in policy.required_components)  # type: ignore[arg-type]
-    score = sum(weight * value for weight, value in zip(policy.weights, values, strict=True))
-    if not math.isfinite(score) or not 0.0 <= score <= 100.0:
-        raise ValueError("COMB-005 composition produced invalid score; clamping is forbidden")
-    return RoadParkingCompositeResult(
-        policy,
-        components,
-        RoadParkingCompositeState.AVAILABLE,
-        (),
-        score,
-    )
 
 
 def evaluate_road_parking_composite(
@@ -297,8 +234,25 @@ def evaluate_road_parking_composite(
 ) -> RoadParkingCompositeResult:
     """Canonical V1 production gate.
 
-    No caller policy, weights, approval flag or detached score can be supplied.
-    Until an empirically approved COMB-005 policy is frozen, production output is
-    deterministically unavailable regardless of candidate component availability.
+    No caller policy, weights, approval flag, state, score or AVAILABLE component
+    can be supplied as production authority. Until an empirically approved policy
+    and component-normalization authorities are separately frozen, the only
+    canonical result is POLICY_NOT_APPROVED with score=None.
     """
-    return _compose_with_policy(COMB005_V1_POLICY, components)
+    return RoadParkingCompositeResult(COMB005_V1_POLICY, components)
+
+
+__all__ = [
+    "ROAD_PARKING_OUTPUT_FEATURE_KEY",
+    "ROAD_PARKING_OUTPUT_UNIT",
+    "RoadParkingComponentKind",
+    "RoadParkingComponentState",
+    "RoadParkingPolicyApprovalState",
+    "RoadParkingCompositeState",
+    "RoadParkingComponentArtifact",
+    "RoadParkingCompositePolicy",
+    "RoadParkingCompositeResult",
+    "COMB005_V1_POLICY",
+    "APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1",
+    "evaluate_road_parking_composite",
+]
