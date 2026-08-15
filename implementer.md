@@ -8,7 +8,10 @@ PR: #5
 CONTRACT_CHANGE_REQUIRED: 0
 PIPE-H001: RESOLVED
 PIPE-H002: RESOLVED
-VALIDATION: run 31909388401 @ c868205a8cc38266153524c9fe275fc46aa918e5 SUCCESS; pipeline 25/25, benchmarks 191/191, metrics 67/67, spatial/providers/data/core PASS.
-FINAL_TREE: validated content with only temporary workflow removed; later README contents write is byte-identical/tree-neutral.
-FINAL_SCOPE: 8 files, all sitescore-pipeline; upstream frozen source unchanged.
-STOP: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
+VALIDATION_RUN: 31909388401
+VALIDATED_SHA: c868205a8cc38266153524c9fe275fc46aa918e5
+VALIDATION: SUCCESS
+TESTS: pipeline 25/25 PASS; benchmarks 191/191 PASS; metrics 67/67 PASS; spatial/providers/data/core PASS.
+VALIDATED_TO_FINAL_TREE_DIFF: only temporary workflow removal. README no-op altered commit identity only, not tree content.
+FINAL_SCOPE: 8 additive sitescore-pipeline files; frozen upstream unchanged.
+STOP_STATE: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
