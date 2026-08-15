@@ -17,7 +17,12 @@ CONTRACT_CHANGE_REQUIRED: 0
 PIPE-H001: RESOLVED
 PIPE-H002: RESOLVED
 
-HARDENING: factory-owned closure-registered assembly/readiness authority; no importable authority token/hash path; exact factory object required. Terminal real-unit coherence binds all six overlapping DerivedLocationMetrics fields to actual FeatureNormalizationResult.site_measurement.metric_value semantics. Adversarial authority and metric-lineage mismatch tests included.
+HARDENING_SUMMARY:
+- factory-owned closure-registered assembly/readiness authority; no importable token/hash authority;
+- exact factory-returned objects required by readiness and terminal production factories;
+- assembly retains actual six FeatureNormalizationResult artifacts;
+- terminal validates overlapping DerivedLocationMetrics against actual site MetricValue semantics across value/unit/states/quality/eligibility/calibration/flags/source_refs/method/reasons;
+- adversarial forged-authority and contradictory metric-lineage regressions included.
 
 VALIDATION_WORKFLOW: cp348-hardening-validation
 VALIDATION_RUN: 31909388401
@@ -31,10 +36,6 @@ PROVIDERS_STEP: PASS
 DATA_STEP: PASS
 CORE_STEP: PASS
 
-VALIDATED_TO_FINAL_TREE_DIFF: only `.github/workflows/cp348-hardening-validation.yml` removed. Later README contents-API no-op changed commit SHA only; source/test/docs tree remains the exact validated content.
-FINAL_SCOPE: exactly 8 files, all under additive `sitescore-pipeline`; frozen upstream source unchanged.
-
-MERGE: NO
-LOCK: NO
-TAG: NO
-FAZ_3_4_FINAL_STARTED: NO
+VALIDATED_TO_FINAL_TREE_DIFF: only temporary `.github/workflows/cp348-hardening-validation.yml` removed. A contents-API README no-op changed commit identity only; GitHub compare proves no source/test/docs tree delta.
+FINAL_SCOPE: exactly 8 additive `sitescore-pipeline` files; frozen upstream source unchanged.
+STOP: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
