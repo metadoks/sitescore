@@ -11,7 +11,7 @@ PIPE-H002: RESOLVED
 VALIDATION_RUN: 31909388401
 VALIDATED_SHA: c868205a8cc38266153524c9fe275fc46aa918e5
 VALIDATION: SUCCESS
-TESTS: pipeline 25/25 PASS; benchmarks 191/191 PASS; metrics 67/67 PASS; spatial/providers/data/core PASS.
-VALIDATED_TO_FINAL_TREE_DIFF: only temporary workflow removal. README no-op altered commit identity only, not tree content.
-FINAL_SCOPE: 8 additive sitescore-pipeline files; frozen upstream unchanged.
-STOP_STATE: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
+TESTS: pipeline 25/25; benchmarks 191/191; metrics 67/67; spatial/providers/data/core PASS.
+FINAL_TREE: validated source/tests/docs; temporary workflow removed; later README contents-API write was content-identical and tree-neutral.
+FINAL_SCOPE: exactly 8 additive sitescore-pipeline files; frozen upstream unchanged.
+STOP: no merge; no LOCK; no tag; no FAZ 3.4-FINAL.
