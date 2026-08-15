@@ -2,21 +2,20 @@
 
 ## Scoring Readiness + RealDataPipelineResult Integration
 
-Status: implementation complete, **not LOCKED**.
+Status: implementation + Reviewer hardening complete, **not LOCKED**.
 
 Base SHA: `c8514401f1b9e2a671c00477219f6f930a594bc8`
 
-## Purpose
+## Purpose and boundary
 
-Checkpoint 3.4-8 is the terminal implementation checkpoint before FAZ 3.4-FINAL audit. It integrates the already locked real-data, benchmark-normalization, age-fallback, and COMB-005 artifacts into the frozen data-layer readiness and terminal pipeline contracts.
-
-The boundary is deliberately:
+Checkpoint 3.4-8 integrates locked metric/normalization/fallback/COMB-005 artifacts into the frozen data-layer readiness and terminal pipeline contracts:
 
 ```text
-actual artifacts
+actual metric artifacts
+→ actual FeatureNormalizationResult artifacts
 → honest NormalizedLocationFeatures
 → derived ScoringReadinessResult
-→ derived RealDataPipelineResult
+→ coherent RealDataPipelineResult
 ```
 
 It stops before category aggregation or core scoring.
@@ -25,244 +24,214 @@ It stops before category aggregation or core scoring.
 
 New additive package: `sitescore-pipeline==0.1.0`.
 
-Direct dependencies:
+Direct runtime dependencies are exactly:
 
 ```text
 sitescore-data==0.1.0
 sitescore-benchmarks==0.1.0
 ```
 
-No frozen upstream source was modified. The pipeline does not import `sitescore-core`; no upstream package imports pipeline.
+No `sitescore-core` import/dependency, frozen upstream source mutation, or reverse dependency is introduced.
 
 ## Frozen DTO reuse
 
-The implementation consumes the existing frozen data contracts directly:
+The implementation directly reuses frozen `MetricValue`, `NormalizedLocationFeatures`, readiness contracts/validator, `DerivedLocationMetrics`, `RealDataPipelineResult`, and `PipelineStatus`. No lookalike data-contract fork exists.
 
-- `MetricValue`
-- `NormalizedLocationFeatures`
-- `FeatureReadinessPolicy`
-- `ReadinessCompatibilityInput`
-- `ApprovedFallbackPolicyRef`
-- `ScoringReadinessResult`
-- `ScoringReadinessValidator`
-- `RealDataPipelineResult`
-- `PipelineStatus`
+## Eight-slot normalized surface
 
-No lookalike DTOs were forked.
+The six direct slots come only from actual `FeatureNormalizationResult` artifacts:
 
-## Eight required slots
+- `walkable_population_score`
+- `target_population_density_score`
+- `competition_opportunity_score`
+- `walkable_reach_area_score`
+- `transit_access_score`
+- `household_income_score`
 
-Canonical assembly preserves exactly:
+Together with exact locked age fallback and actual COMB-005 output they populate all eight frozen normalized slots. Missing/unresolved/incompatible results remain nonnumeric. No missing→0, generic 50, substitution, or hidden renormalization is introduced.
 
-1. `walkable_population_score`
-2. `target_population_density_score`
-3. `age_target_concentration_score`
-4. `competition_opportunity_score`
-5. `walkable_reach_area_score`
-6. `transit_access_score`
-7. `road_parking_access_score`
-8. `household_income_score`
+## Age fallback
 
-The six direct slots must come from actual `FeatureNormalizationResult` artifacts. Missing direct mappings are rejected by assembly; unavailable direct artifacts yield honest nonnumeric `MetricValue` state, never 0/50 substitution.
-
-## Direct normalization adaptation
-
-For an actual AVAILABLE `FeatureNormalizationResult`, the adapter uses the actual derived score with:
+Canonical assembly requires an actual `AgeTargetConcentrationFallback` whose policy identity equals `AGE_TARGET_CONCENTRATION_FALLBACK_V1`. It remains the sole frozen numeric uncalibrated exception:
 
 ```text
-unit = score_0_100
+score = 50
 availability = AVAILABLE
-score_eligibility = ELIGIBLE
-calibration_state = CALIBRATED
-```
-
-Quality, proxy/estimate flags and provenance are derived from actual nested measurement plus bound benchmark reference provenance. The method version is derived from the locked normalization policy.
-
-For nonavailable states, score remains `None`; state/quality/eligibility/calibration are represented conservatively without inventing numeric evidence.
-
-## Age fallback authority
-
-Canonical assembly requires an actual `AgeTargetConcentrationFallback` whose policy identity exactly equals `AGE_TARGET_CONCENTRATION_FALLBACK_V1`.
-
-The emitted age slot is the sole frozen numeric uncalibrated exception:
-
-```text
-value = 50
-unit = score_0_100
-availability = AVAILABLE
-score_eligibility = ELIGIBLE
-calibration_state = UNCALIBRATED
-is_proxy = true
+eligibility = ELIGIBLE
+calibration = UNCALIBRATED
+proxy = true
 reason = age_affinity_not_calibrated
-method_version = age_neutral_fallback/1.0
 ```
 
-The trusted `ApprovedFallbackPolicyRef` passed to the frozen validator is derived from this actual locked authority. Caller id/version strings are not accepted by the production assembly API.
+Approval passed to the frozen readiness validator is derived from that actual authority, not caller strings.
 
-## COMB-005 current truth
+## COMB-005
 
-Canonical assembly consumes an actual `RoadParkingCompositeResult`.
-
-Because checkpoint 3.4-7 froze the current canonical policy as unapproved, the current road/parking result is:
-
-```text
-POLICY_NOT_APPROVED
-score = None
-```
-
-The assembled `road_parking_access_score` is therefore nonnumeric and unready. `road_parking_composite_policy_version` remains `None`; `UNAPPROVED_V1` is not misrepresented as an approved resolved scoring policy.
-
-The frozen readiness validator consequently emits `ROAD_PARKING_COMPOSITE_UNAVAILABLE` and blocks score readiness.
+Canonical assembly consumes an actual `RoadParkingCompositeResult`. Current locked COMB-005 is still `POLICY_NOT_APPROVED`, score `None`; therefore `road_parking_access_score` remains unavailable and the frozen validator emits `ROAD_PARKING_COMPOSITE_UNAVAILABLE`. No empirical weights or replacement semantics are invented.
 
 ## Competition / transit compatibility
 
-`BenchmarkReferenceBinding` ties a frozen data-layer `BenchmarkReference` to the actual normalization artifact by requiring:
+Benchmark references bind actual distribution/frame identity. Competition measurement-definition and transit source-bundle compatibility are derived from actual site/benchmark compatibility artifacts. A score cannot override incompatible lineage.
+
+# PIPE-H001 — RESOLVED
+
+## Original gap
+
+The initial implementation used importable module globals (`_ASSEMBLY_TOKEN`, `_READINESS_TOKEN`, `_assembly_identity`) as authority. Ordinary Python callers could import the same values used by tests and forge a pipeline-recognized assembly/readiness wrapper.
+
+## Hardened authority model
+
+`NormalizedFeatureAssembly` and `ReadinessEvaluation` are now factory-owned (`init=False`) and their direct constructors reject callers.
+
+Canonical registration is maintained by closure-owned state created when the three production factories are installed:
 
 ```text
-reference.benchmark_id == actual distribution_id
-reference.frame_id == actual frame_id
+assemble_normalized_location_features()
+derive_scoring_readiness()
+build_real_data_pipeline_result()
 ```
 
-Competition and transit feature lineage are derived from actual site and benchmark compatibility artifacts:
+The registries/capabilities do not exist as module-level names. The installer itself is deleted from module namespace after the closures are installed.
 
-- competition site measurement-definition identity → normalized feature metadata;
-- competition benchmark measurement-definition identity → readiness compatibility input;
-- transit site source-bundle fingerprint → normalized feature metadata;
-- transit benchmark source-bundle fingerprint → readiness compatibility input.
+`derive_scoring_readiness()` accepts only the exact object returned and registered by canonical assembly. `build_real_data_pipeline_result()` likewise accepts only the exact readiness object produced and registered by canonical readiness derivation.
 
-Thus mismatches remain visible to the frozen validator and cannot be overridden by an available numeric score.
+`assembly_id` remains deterministic evidence, not authority. Even if a caller allocates an object manually and reproduces the exact assembly hash, it is not present in the closure-owned registry and is rejected.
 
-## Assembly authority / identity
-
-Canonical `assemble_normalized_location_features()` accepts only:
+The old module-level authority names no longer exist:
 
 ```text
-direct_results
-age_fallback
-road_parking_result
-benchmark_bindings
-generated_at
+_ASSEMBLY_TOKEN
+_READINESS_TOKEN
+_assembly_identity
+_install_canonical_factories
 ```
 
-It does not accept an arbitrary normalized feature surface, detached scores, readiness status, or caller policy summaries.
+The canonical assembly also retains the actual six `FeatureNormalizationResult` objects in `direct_results`; readiness provenance is therefore bound to actual nested artifacts, not only to a detached normalized surface.
 
-`NormalizedFeatureAssembly.assembly_id` binds the normalized feature semantic surface, actual artifact identities, policy resolution inputs, compatibility authority, approved age fallback authority and benchmark bindings. Collection order is canonicalized. `generated_at` does not change semantic assembly identity.
+## H001 regressions
 
-## Readiness anti-self-assertion
+Tests prove:
 
-Canonical `derive_scoring_readiness()` accepts only a canonical assembly plus `evaluated_at`.
+1. direct assembly constructor is forbidden;
+2. exact hash reproduction plus manually allocated assembly cannot obtain canonical readiness authority;
+3. old importable token/hash authority names are absent;
+4. direct readiness constructor is forbidden;
+5. detached `ScoringReadinessResult` wrapped in a manually allocated readiness object cannot reach terminal construction;
+6. production readiness API has no caller `is_score_ready`, fingerprint, reasons, or feature-state parameters;
+7. controlled `SCORE_READY` coverage uses the frozen `ScoringReadinessValidator` directly as a test-local fixture and is explicitly not a production pipeline object.
 
-It does not accept:
+# PIPE-H002 — RESOLVED
+
+## Original gap
+
+The initial terminal factory accepted an independently supplied `DerivedLocationMetrics` object and checked only frozen DTO/type/version invariants. It did not prove that overlapping real-unit fields were the same measurements that generated the direct normalization artifacts.
+
+## Hardened terminal coherence
+
+Canonical assembly retains actual `FeatureNormalizationResult.site_measurement` objects. Before terminal construction, `_validate_derived_metrics_coherence()` maps every direct normalized origin to the corresponding frozen `DerivedLocationMetrics` field:
 
 ```text
-is_score_ready
-readiness_fingerprint
-missing_required_features
-uncalibrated_features
-incompatible_features
+walkable_population
+→ walkable_population
+
+target_population_density
+→ target_population_density
+
+competition_pressure
+→ competition_pressure
+
+walkable_reach_area_km2
+→ walkable_reach_area_km2
+
+transit_service_departure_equivalents_per_hour
+→ transit_service_departure_equivalents_per_hour
+
+household_income
+→ household_income
+```
+
+For each overlapping field, the terminal metric must exactly equal the actual site measurement semantic record used by normalization. The comparison covers:
+
+```text
+value
+unit
+availability
+data_quality
+score_eligibility
+calibration_state
+is_estimate
+is_proxy
+source_refs (canonical order)
+method_version
 reason_codes
-feature_states
 ```
 
-The pipeline derives a deterministic fingerprint from actual semantic assembly content and validator semantics, then invokes the frozen `ScoringReadinessValidator`.
+Feature-contract version alone is not sufficient. Non-overlapping frozen real-unit fields remain supplied honestly without invented semantics.
 
-`evaluated_at` is deliberately not part of the semantic readiness fingerprint.
+## H002 regressions
 
-## Data quality
+Tests prove rejection of:
 
-No numeric quality threshold was invented. The frozen validator semantics are honored: `FULL` and `DEGRADED` are structurally acceptable; insufficient frozen quality states block readiness. The exact approved age fallback is not rejected merely for being proxy/uncalibrated.
+- household-income value mismatch;
+- household-income method mismatch;
+- transit source-lineage mismatch;
+- walkable-reach method mismatch;
+- all-UNKNOWN placeholder real-unit surface when it contradicts overlapping actual site measurements.
 
-## Terminal pipeline authority
+A semantically coherent `DerivedLocationMetrics` surface built from the actual overlapping site measurement values is accepted.
 
-Canonical `build_real_data_pipeline_result()` receives a canonical `ReadinessEvaluation`; caller status is not accepted.
+## Readiness and terminal status
 
-It derives:
+Caller cannot provide `is_score_ready`, readiness summaries/fingerprint, or terminal status.
+
+Canonical readiness derives from the frozen validator and pipeline-owned semantic fingerprint. `evaluated_at` does not alter that fingerprint.
+
+Terminal mapping remains:
 
 ```text
-readiness true  -> SCORE_READY
-readiness false -> NOT_SCORE_READY + SCORING_NOT_READY
+readiness true  → SCORE_READY
+readiness false → NOT_SCORE_READY + SCORING_NOT_READY
+actual stage failure → PIPELINE_ERROR + PIPELINE_STAGE_ERROR
 ```
 
-An explicit `PipelineStageFailure` is required by the separate error factory to produce:
+Ordinary unresolved/unavailable evidence is not a pipeline execution error. `SCORE_READY != SCORED`: no CategoryScores, category weighting, Location Score, penalties, Decision Layer, or `core.analyze()` exist here.
+
+## Current production truth
+
+Current canonical production assembly is expected to remain `NOT_SCORE_READY`, principally because locked COMB-005 has no approved production policy. This is intentional and not treated as an execution failure.
+
+## Hardening validation evidence
+
+First successful hardening-wide run after PIPE-H001/H002 code and adversarial tests:
 
 ```text
-PIPELINE_ERROR + PIPELINE_STAGE_ERROR
-scoring_readiness = None
-```
-
-Ordinary unavailable/unresolved evidence that successfully reaches readiness remains `NOT_SCORE_READY`, not `PIPELINE_ERROR`.
-
-## SCORE_READY != SCORED
-
-The pipeline owns no category score or Location Score computation. It does not import core and does not construct `ReadyCategoryScorePayload`.
-
-`SCORE_READY` means only that later application-layer aggregation is permitted.
-
-## Provenance
-
-`NormalizedLocationFeatures.source_refs` is the canonical union needed to cover nested metric and bound benchmark references. `source_metadata` is separately sorted by `source_id` for the frozen terminal DTO and is not treated as a universal registry for every opaque artifact reference.
-
-## Current production expectation
-
-Current canonical real-data integration is expected to be `NOT_SCORE_READY` while COMB-005 remains unapproved and other upstream metric/benchmark artifacts may remain unresolved. This is an intended result, not a failure.
-
-A controlled complete normalized feature fixture exists only in tests to prove generic readiness and `SCORE_READY` terminal semantics. It is not a production artifact-authority path.
-
-## Adversarial regression matrix
-
-Implemented coverage includes:
-
-- READY-001 all eight slots required;
-- READY-002 no missing neutralization;
-- READY-003 ordinary uncalibrated numeric feature blocks;
-- READY-004 exact age fallback requires actual trusted approval;
-- READY-005 age exception cannot leak;
-- READY-006 competition mismatch blocks;
-- READY-007 transit bundle mismatch blocks;
-- READY-008 current COMB-005 unavailable blocks with frozen reason;
-- READY-009 missing policy blocks;
-- READY-010 policy version mismatch blocks;
-- READY-011 insufficient quality blocks;
-- READY-012 readiness anti-self-assertion;
-- PIPE-001 readiness false derives NOT_SCORE_READY;
-- PIPE-002 controlled complete fixture derives SCORE_READY;
-- PIPE-003 SCORE_READY is not scored output;
-- PIPE-004 ordinary unready evidence is not PIPELINE_ERROR;
-- PIPE-005 explicit stage failure derives PIPELINE_ERROR without readiness;
-- PIPE-006 status anti-self-assertion;
-- PIPE-007 frozen terminal feature-contract coherence rejection.
-
-Additional regressions verify semantic fingerprints exclude timestamps and canonical production assembly does not accept arbitrary `MetricValue`/`NormalizedLocationFeatures` surfaces.
-
-## Initial validation
-
-GitHub Actions workflow `cp348-validation`, run `31908132238`, validated commit `836179a8065f71a8bd12f7c94b9f52397a21ca9e` with SUCCESS.
-
-Exact visible summaries:
-
-```text
-sitescore-pipeline:   28/28 PASS
+workflow: cp348-hardening-validation
+run: 31908931019
+validated SHA: 7845bda9db33b4261dd0381796b7200ae07d9ff0
+conclusion: SUCCESS
+sitescore-pipeline: 25/25 PASS
 sitescore-benchmarks: 191/191 PASS
-sitescore-metrics:    67/67 PASS
+sitescore-metrics: 67/67 PASS
+sitescore-spatial: PASS
+sitescore-providers: PASS
+sitescore-data: PASS
+sitescore-core: PASS
 ```
 
-The same job completed spatial, providers, data and core test steps successfully. Exact cardinalities are not asserted where the final pytest summary was not visibly retained in the collected log.
+Only counts explicitly visible in the job log are stated as exact counts. A documentation-inclusive successful validation is required before final review handoff; afterward the temporary workflow must be removed and validated SHA → final HEAD proven workflow-removal-only.
 
-A final documentation-inclusive validation is required before review handoff. The temporary workflow must then be removed and validated SHA → final review HEAD compared.
-
-## Out of scope
+## Out of scope preserved
 
 Not implemented:
 
-- CategoryScores;
-- category weighting;
-- base/final Location Score;
-- dealbreaker penalties;
+- category scores/weighting;
+- Location Score;
+- penalties/dealbreakers;
 - Decision Layer;
 - `core.analyze()`;
 - report/PDF;
-- empirical COMB-005 policy or weights;
-- changes to unresolved upstream metric/benchmark semantics;
-- FAZ 3.4-FINAL audit/freeze.
+- empirical COMB-005 policy/weights;
+- upstream frozen contract changes;
+- FAZ 3.4-FINAL.
 
 `CONTRACT_CHANGE_REQUIRED = 0`.
