@@ -24,16 +24,20 @@ jobs:
           python -m pip install -e ./sitescore-metrics
           python -m pip install -e ./sitescore-benchmarks
       - name: Test sitescore-benchmarks
-        run: python -m pytest -q sitescore-benchmarks
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -q
       - name: Test sitescore-metrics
-        run: python -m pytest -q sitescore-metrics
+        working-directory: sitescore-metrics
+        run: python -m pytest -q
       - name: Test sitescore-spatial
-        run: python -m pytest -q sitescore-spatial
+        working-directory: sitescore-spatial
+        run: python -m pytest -q
       - name: Test sitescore-providers
-        run: python -m pytest -q sitescore-providers
+        working-directory: sitescore-providers
+        run: python -m pytest -q
       - name: Test sitescore-data
-        run: python -m pytest -q sitescore-data
+        working-directory: sitescore-data
+        run: python -m pytest -q
       - name: Test sitescore-core
-        run: python -m pytest -q sitescore-core
-
-# validation-trigger-2
+        working-directory: sitescore-core
+        run: python -m pytest -q
