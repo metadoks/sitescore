@@ -12,6 +12,6 @@ VALIDATION_RUN: 31909388401
 VALIDATED_SHA: c868205a8cc38266153524c9fe275fc46aa918e5
 VALIDATION: SUCCESS
 TESTS: pipeline 25/25; benchmarks 191/191; metrics 67/67; spatial/providers/data/core PASS.
-FINAL_TREE: validated source/tests/docs; temporary workflow removed; later README contents-API write was content-identical and tree-neutral.
-FINAL_SCOPE: exactly 8 additive sitescore-pipeline files; frozen upstream unchanged.
-STOP: no merge; no LOCK; no tag; no FAZ 3.4-FINAL.
+VALIDATED_TO_FINAL: tree differs only by temporary validation-workflow removal; README post-cleanup contents write was byte-identical/tree-neutral.
+FINAL_SCOPE: exactly 8 sitescore-pipeline files; no frozen upstream changes.
+STOP: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
