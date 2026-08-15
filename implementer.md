@@ -11,10 +11,12 @@ PIPE-H002: RESOLVED
 VALIDATION_RUN: 31909388401
 VALIDATED_SHA: c868205a8cc38266153524c9fe275fc46aa918e5
 VALIDATION: SUCCESS
-TESTS: pipeline 25/25; benchmarks 191/191; metrics 67/67; spatial/providers/data/core PASS.
-VALIDATED_TO_FINAL_TREE_DIFF: temporary validation workflow removal only; later README contents write was byte-identical/no tree delta.
-FINAL_SCOPE: 8 additive sitescore-pipeline files only.
-HARDENING: H001 factory-owned closure registry exact-object authority; H002 exact six overlapping real-unit fields bound to actual normalization site MetricValue semantics.
-MERGE: NO
-LOCK: NO
-FAZ_3_4_FINAL_STARTED: NO
+PIPELINE_TESTS: 25/25 PASS
+BENCHMARK_TESTS: 191/191 PASS
+METRICS_TESTS: 67/67 PASS
+SIBLING_STEPS: spatial/providers/data/core PASS
+VALIDATED_TO_FINAL_TREE_DIFF: only temporary workflow removal; byte-identical README no-op after cleanup does not change tree.
+FINAL_SCOPE: 8 sitescore-pipeline files; no frozen upstream changes.
+H001: closure-owned factory authority; forged objects/hashes rejected.
+H002: terminal exact six-field real-unit lineage coherence to actual normalization site measurements.
+NO_MERGE; NO_LOCK; NO_FINAL_PHASE.
