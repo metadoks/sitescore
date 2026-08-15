@@ -10,14 +10,14 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 3.4
 CURRENT_CHECKPOINT: 3.4-4
 CHECKPOINT_TITLE: Benchmark Measurement + Distribution Artifacts
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 CODE_BRANCH: faz3.4/cp3.4-4-benchmark-distribution
 EXPECTED_BASE_SHA: 91608d7f70e2cdb28ba6aa9c287baea0af9f2275
-REVIEWED_HEAD_SHA: 09657fb6a35e79725fac372f7dc1d9a40ebb938c
+REVIEWED_HEAD_SHA: 9fa9aff25d64de6176d051438828e55e7ba7a99a
 PR: #1
-CONTRACT_CHANGE_REQUIRED_EXPECTATION: 0
+CONTRACT_CHANGE_REQUIRED: 0
 ```
 
 ---
@@ -26,468 +26,240 @@ CONTRACT_CHANGE_REQUIRED_EXPECTATION: 0
 
 ```text
 FAZ 3.4 — CHECKPOINT 3.4-4
-Decision: HARDENING REQUIRED
-Reviewed repository: metadoks/sitescore
-Reviewed PR: #1
-Reviewed base: 91608d7f70e2cdb28ba6aa9c287baea0af9f2275
-Reviewed head: 09657fb6a35e79725fac372f7dc1d9a40ebb938c
+Decision: READY TO LOCK
+Repository: metadoks/sitescore
+PR: #1
+Base: 91608d7f70e2cdb28ba6aa9c287baea0af9f2275
+Reviewed HEAD: 9fa9aff25d64de6176d051438828e55e7ba7a99a
 ```
 
-Do **not** start checkpoint 3.4-5.
+This is reviewer acceptance for the exact SHA above only.
 
-Do **not** merge PR #1.
+`READY_TO_LOCK` is **not** `LOCKED`.
 
-Do **not** create a new branch or PR.
+Do not merge unless the user explicitly sends `LOCK` to the Implementer chat.
 
-Apply all hardening on the existing branch and PR:
-
-```text
-faz3.4/cp3.4-4-benchmark-distribution
-PR #1
-```
-
-Return a new full HEAD SHA in `implementer.md` when complete.
+Do not start checkpoint 3.4-5 before the successful user-authorized LOCK transition and subsequent Reviewer verification.
 
 ---
 
-# 2. VERIFIED CLEAN SURFACES
+# 2. HARDENING RE-REVIEW
 
-The reviewer independently inspected the actual GitHub PR/diff and load-bearing source at the exact reviewed HEAD.
+The Reviewer independently re-read the latest `implementer.md`, re-fetched PR #1, compared previous reviewed HEAD `09657fb6a35e79725fac372f7dc1d9a40ebb938c` to current HEAD `9fa9aff25d64de6176d051438828e55e7ba7a99a`, and inspected the load-bearing hardened source/tests.
 
-The following checkpoint domains are structurally sound at this revision and should **not** be redesigned during hardening unless a fix directly requires a minimal sibling change:
-
-- `CommercialFrame.eligible_cell_ids` is used as the canonical attempt population.
-- Missing eligible attempts are rejected.
-- Duplicate cell attempts are rejected rather than silently deduplicated.
-- Extra/foreign attempt cells are rejected.
-- Frame/cell subject adaptation binds actual frame ID, frame-cell ID, lattice-cell ID and evidence-derived scope.
-- A measurement subject detached from the actual frame/cell/evidence is rejected.
-- Canonical metric definition and derivation-policy identities are checked against the locked `sitescore-metrics` registry.
-- Measurement precision-policy identity and unit are bound at the measurement-set boundary.
-- Attempts remain distinct from numeric observations; unresolved/missing attempts remain represented in coverage.
-- Observation value and unit are derived from the authoritative `DerivedMetricMeasurement.metric_value`; there is no independent caller numeric payload.
-- Coverage counts are derived from the actual measurement set and reconcile to the full eligible population.
-- Transit `transit_source_bundle_fingerprint` conflicts are surfaced and cannot silently blend numeric observations.
-- Competition preserves `competition_measurement_definition_id` and remains non-numeric while reduction is unresolved.
-- Road preserves routing profile ID/version and remains non-numeric while reduction is unresolved.
-- Parking capacity and curb-length distributions remain separate.
-- Empty eligible populations and all-non-numeric populations are explicit rather than fabricated as zero.
-- Input-order canonicalization occurs after duplicate/completeness validation.
-- No ECDF, percentile, 0–100 normalization, competition inversion, COMB-005, readiness, CategoryScores or core scoring leaked into 3.4-4.
-- Only `sitescore-benchmarks` changed in PR #1; frozen upstream source trees are unchanged.
-- `sitescore-benchmarks` now explicitly pins `sitescore-metrics==0.1.0`; the package DAG remains acyclic.
-
-These findings are not permission to LOCK; the blockers below are production-semantic blockers.
-
----
-
-# 3. TEST / CI EVIDENCE VERIFIED
-
-GitHub Actions contains a successful `cp344-validation` run for commit:
+The hardening delta is limited to:
 
 ```text
-a4c53f935f2b3cf6e889eb4c0cf57cd9fee5d03c
-```
-
-The reviewer verified by commit comparison that the only change from that validation commit to reviewed HEAD `09657fb6...` is removal of the temporary validation workflow file:
-
-```text
-.github/workflows/cp344-validation.yml
-```
-
-Therefore the code/test/doc content at the reviewed HEAD is the same as the latest successful validation commit, apart from removal of the workflow itself.
-
-GitHub also shows a prior successful validation run at `2510ad3d6b55732dd738e0f5cdedd87b44dd4c09`; the later commit `a4c53f...` changed checkpoint documentation only before the workflow removal.
-
-Reported suite baseline in PR/docs:
-
-```text
-sitescore-benchmarks   99/99 PASS
-sitescore-metrics      67/67 PASS
-sitescore-spatial     180/180 PASS
-sitescore-providers   418/418 PASS
-sitescore-data        361/361 PASS
-sitescore-core         86/86 PASS
-aggregate            1211/1211 PASS
-```
-
-The visible Actions job and each package test step completed successfully. These green tests do not cover the two public-path gaps below.
-
----
-
-# 4. BLOCKER BENCH-H001 — UNCALIBRATED NUMERIC MEASUREMENTS CAN ENTER THE DISTRIBUTION
-
-## Problem
-
-The current numeric-inclusion implementation in:
-
-```text
+sitescore-benchmarks/docs/CHECKPOINT_3_4_4_BENCHMARK_MEASUREMENT_DISTRIBUTION.md
 sitescore-benchmarks/src/sitescore_benchmarks/distribution.py
-_numeric_exclusion_reason(...)
+sitescore-benchmarks/src/sitescore_benchmarks/measurement.py
+sitescore-benchmarks/tests/test_benchmark_distribution.py
+sitescore-benchmarks/tests/test_benchmark_measurement_population.py
 ```
 
-checks:
+No frozen upstream source package changed.
+
+---
+
+# 3. BENCH-H001 — RESOLVED
+
+The numeric benchmark inclusion path now requires the actual nested authoritative `MetricValue` to satisfy:
 
 ```text
 value is not None
-availability == available
-score_eligibility == eligible
+availability == AVAILABLE
+score_eligibility == ELIGIBLE
+calibration_state == CALIBRATED
 finite(value)
 ```
 
-but it does **not** check:
-
-```text
-calibration_state
-```
-
-The current policy string also freezes the incomplete rule as:
-
-```text
-AVAILABLE_SCORE_ELIGIBLE_FINITE_VALUE
-```
-
-## Why this is a real blocker
-
-The frozen `MetricValue` contract deliberately keeps:
-
-```text
-availability
-score_eligibility
-calibration_state
-```
-
-as independent axes.
-
-`MetricValue` permits a finite numeric metric to be:
-
-```text
-availability = AVAILABLE
-score_eligibility = ELIGIBLE
-calibration_state = UNCALIBRATED
-```
-
-because there is no contract invariant forcing `ELIGIBLE` to imply `CALIBRATED`.
-
-The locked `DerivedMetricMeasurement` pass-through path also accepts the authoritative provider `MetricValue` as-is when definition/policy/evidence coherence is valid. It does not add a calibration requirement for resolved pass-through metrics.
-
-Therefore a real public construction path exists where an AVAILABLE + ELIGIBLE + UNCALIBRATED numeric provider metric becomes:
-
-```text
-numeric_candidate_attempt
-→ numeric_included_attempt
-→ BenchmarkObservation
-→ BenchmarkDistributionArtifact state AVAILABLE
-```
-
-This directly violates the authoritative 3.4-4 rule that an `UNCALIBRATED` attempt must not become a numeric observation unless the canonical metric contract explicitly allows that exception. No such exception exists for these benchmark metrics.
-
-This is not a theoretical strengthening; it is a currently reachable false numeric-inclusion path.
-
-## Required correction
-
-1. Make numeric inclusion explicitly calibration-aware.
-2. For the current canonical V1 benchmark-distribution rule, only permit the approved calibration state for numeric inclusion. Under the current architecture this is expected to be:
-
-```text
-CalibrationState.CALIBRATED
-```
-
-unless an already-frozen metric-specific exception can be demonstrated from actual contracts. Do not invent one.
-3. Preserve the attempt in coverage when numeric inclusion is rejected for calibration.
-4. Derive a deterministic exclusion reason for calibration mismatch, e.g. a canonical reason equivalent to:
+An AVAILABLE + ELIGIBLE + UNCALIBRATED finite attempt remains in the complete measurement population but is excluded from numeric observations with deterministic reason:
 
 ```text
 calibration_state_uncalibrated
 ```
 
-Use existing enum values/canonical style; do not invent score fallback behavior.
-5. Update `BenchmarkMeasurementDistributionPolicy.numeric_inclusion_rule` so its semantic identity accurately reflects the real rule. Do not keep a policy identity/string that claims a weaker rule while runtime enforces a stronger one.
-6. Update checkpoint documentation and PR summary accordingly.
+No zero/neutral fallback is produced.
 
-## Required regression tests
-
-Add at minimum:
-
-### H001-A
-Construct an actual canonical pass-through measurement whose authoritative `MetricValue` is:
+The public benchmark policy identity now accurately declares:
 
 ```text
-AVAILABLE
-FULL or DEGRADED
-ELIGIBLE
-UNCALIBRATED
-finite numeric value
+AVAILABLE_SCORE_ELIGIBLE_CALIBRATED_FINITE_VALUE
 ```
 
-and prove:
+Regression coverage includes all-uncalibrated, mixed calibrated/uncalibrated, valid calibrated inclusion, and policy/runtime identity coherence.
+
+Result:
 
 ```text
-attempt remains present
-attempt_count remains complete
-numeric_candidate/included does not include it
-no BenchmarkObservation is emitted for it
-coverage exclusion reason records calibration mismatch
+BENCH-H001: RESOLVED
 ```
-
-### H001-B
-Mixed complete population:
-
-```text
-2 CALIBRATED numeric attempts
-1 UNCALIBRATED numeric attempt
-```
-
-must produce:
-
-```text
-3 attempts
-2 numeric observations
-1 excluded attempt
-```
-
-with no missing→zero or silent omission.
-
-### H001-C
-Confirm a valid CALIBRATED numeric pass-through measurement remains included.
 
 ---
 
-# 5. BLOCKER BENCH-H002 — COMPATIBILITY IDENTITY OMITS MEASUREMENT METHOD SEMANTICS
+# 4. BENCH-H002 — RESOLVED
 
-## Problem
-
-`BenchmarkMetricCompatibility.identity_id` currently binds:
+`BenchmarkMetricCompatibility` now derives:
 
 ```text
-metric_definition_id
-metric_derivation_policy_id
-measurement_precision_policy_id
+method_version = measurement.method_version
+```
+
+from the actual nested `DerivedMetricMeasurement` and includes it in compatibility identity together with:
+
+```text
+MetricDefinition identity
+MetricDerivationPolicy identity
+MeasurementPrecisionPolicy identity
 unit
 source_bundle_compatibility
 ```
 
-but it omits:
+Mixed method versions therefore cannot silently form one comparable numeric distribution; they produce a compatibility conflict / `INCOMPATIBLE_MEASUREMENT_LINEAGE` under the current structural policy.
+
+Same-method populations remain compatible. Existing transit source-bundle, competition measurement-definition, and road routing-profile lineage remains preserved.
+
+The policy identity now accurately declares:
 
 ```text
-DerivedMetricMeasurement.method_version
+EXACT_METHOD_AND_SOURCE_BUNDLE_COMPATIBILITY
 ```
 
-The authoritative 3.4-4 compatibility contract explicitly requires compatibility to consider:
+Regression coverage includes mixed methods, same methods, compatibility identity sensitivity, transit-bundle preservation, and policy/runtime identity coherence.
+
+Result:
 
 ```text
-metric definition
-derivation policy
-measurement precision
-unit
-method/source semantics
+BENCH-H002: RESOLVED
 ```
-
-The special compatibility payload correctly preserves transit bundle, competition measurement-definition and road routing-profile semantics, but generic measurement method semantics are not included.
-
-## Why this is a real blocker
-
-The locked provider-derived pass-through path intentionally accepts the authoritative evidence `MetricValue.method_version` and carries it into `DerivedMetricMeasurement.method_version`.
-
-For pass-through metrics such as `household_income`, `walkable_reach_area_km2` or parking metrics, `source_bundle_compatibility` may be empty.
-
-Therefore two valid canonical measurements can have:
-
-```text
-same MetricDefinition
-same MetricDerivationPolicy
-same MeasurementPrecisionPolicy
-same unit
-same source_bundle_compatibility = ()
-DIFFERENT method_version
-```
-
-and the current benchmark layer gives them the same `BenchmarkMetricCompatibility.identity_id`.
-
-A complete measurement set can consequently combine numeric observations produced under different measurement methods while reporting one compatible distribution.
-
-The measurement IDs/distribution IDs may still differ because the full measurements are hashed elsewhere, but that does **not** fix the comparability error: the compatibility gate itself treats semantically different measurement methods as equal and allows them to coexist as directly comparable observations.
-
-This violates the frozen method/source compatibility requirement.
-
-## Required correction
-
-1. Bind actual canonical method semantics into `BenchmarkMetricCompatibility`.
-2. At minimum include the actual:
-
-```text
-measurement.method_version
-```
-
-in the compatibility semantic record / identity.
-3. Continue preserving the existing metric-specific `source_bundle_compatibility` tuple.
-4. Do **not** require equality of per-cell `source_refs` merely to satisfy this blocker; source references are provenance and can legitimately differ by benchmark cell. The required fix is semantic method compatibility plus the already-approved metric-specific source/bundle compatibility dimensions.
-5. Ensure mixed `method_version` values create a compatibility conflict rather than one blended numeric distribution.
-6. Ensure the compatibility property/artifact exposes enough information for later site-vs-benchmark comparison to know the method semantics, not merely hide it inside a hash.
-7. Update checkpoint documentation and PR summary to state that method semantics are compatibility-bearing.
-
-## Required regression tests
-
-Add at minimum:
-
-### H002-A
-Create a complete numeric pass-through population with identical metric definition/policy/precision/unit but two different actual `method_version` values.
-
-Required result:
-
-```text
-has_compatibility_conflict = True
-numeric observations are not silently blended
-state = INCOMPATIBLE_MEASUREMENT_LINEAGE
-```
-
-### H002-B
-Same method version across the complete population remains compatible.
-
-### H002-C
-Changing only `method_version` changes `BenchmarkMetricCompatibility.identity_id`.
-
-### H002-D
-Existing transit source-bundle compatibility behavior must continue to pass after adding method semantics.
 
 ---
 
-# 6. SIBLING AUDIT REQUIREMENTS DURING FIX
+# 5. SIBLING / CHECKPOINT-WIDE RE-REVIEW RESULT
 
-While fixing H001/H002, perform a focused sibling audit of the same surfaces. Specifically verify that the fix does not introduce:
+No reproducible production correctness blocker remains within checkpoint 3.4-4 scope at reviewed HEAD.
 
-- caller-supplied calibration or compatibility self-assertion;
-- a detached method-version parameter that can disagree with the actual `DerivedMetricMeasurement`;
-- equality based only on metric key;
-- source-ref equality that incorrectly makes every benchmark cell incompatible;
-- silent exclusion of attempts from coverage;
-- numeric zero substitution;
-- arbitrary epsilon/rounding/quantization;
-- ECDF/percentile/normalization leakage;
-- new empirical minimum-N or coverage thresholds;
-- frozen package edits;
-- dependency-cycle changes.
+The following previously verified invariants remain preserved after hardening:
 
-Method/calibration semantics must be derived from the actual nested measurement objects.
-
----
-
-# 7. SCOPE / FROZEN BOUNDARIES
-
-Hardening scope is **only** BENCH-H001 and BENCH-H002 plus direct regression/doc updates and a focused sibling audit.
-
-Do not reopen locked 3.4-1, 3.4-2 or 3.4-3 architecture.
-
-Do not modify:
-
-```text
-sitescore-core
-sitescore-data
-sitescore-providers
-sitescore-spatial
-sitescore-metrics
-```
-
-unless a newly demonstrated impossibility genuinely requires `CONTRACT_CHANGE_REQUIRED = 1`. The current review finds no such necessity; both blockers are solvable additively inside `sitescore-benchmarks`.
-
-Expected:
-
-```text
-CONTRACT_CHANGE_REQUIRED = 0
-```
-
-Do not implement 3.4-5 behavior.
+- exact eligible-cell population is the attempt target;
+- exactly one attempt per eligible cell;
+- missing / duplicate / foreign attempts are rejected;
+- actual frame/cell/evidence subject binding remains enforced;
+- canonical metric definition/policy/precision/unit binding remains enforced;
+- attempts remain distinct from numeric observations;
+- missing/unresolved/uncalibrated states are not converted to zero;
+- observation value/unit remain derived from authoritative measurement objects;
+- coverage remains derived from actual complete attempts;
+- transit source-bundle incompatibility cannot silently blend;
+- competition and road unresolved reductions remain nonnumeric;
+- parking off-street and curb-length distributions remain separate;
+- empty and all-nonnumeric populations remain explicit;
+- deterministic ordering/identity behavior remains preserved;
+- no ECDF, percentile, tie policy, normalization, competition inversion, COMB-005, readiness, CategoryScores, Location Score, or core scoring leaked into 3.4-4;
+- dependency DAG remains within the approved package boundary;
+- `CONTRACT_CHANGE_REQUIRED = 0`.
 
 ---
 
-# 8. REQUIRED TEST EXECUTION AFTER HARDENING
+# 6. TEST / CI STATUS
 
-Run at minimum:
-
-```text
-sitescore-benchmarks full suite
-sitescore-metrics full suite
-```
-
-Prefer the complete six-package regression again:
+GitHub Actions run:
 
 ```text
-sitescore-benchmarks
-sitescore-metrics
-sitescore-spatial
-sitescore-providers
-sitescore-data
-sitescore-core
+cp344-hardening-validation
+run id: 31895680938
+validated commit: 5250d9a8821c4dd1c77e4f5f71bc48f6185abcf7
+conclusion: SUCCESS
 ```
 
-If using a temporary GitHub Actions workflow again, it must not remain in the final checkpoint diff unless intentionally approved as separate infrastructure scope.
+The visible Actions job confirms all six package test steps completed successfully.
 
-Report exactly what was run and what was not run.
+Reported exact suite counts for that run:
+
+```text
+sitescore-benchmarks  108/108 PASS
+sitescore-metrics       67/67 PASS
+sitescore-spatial      180/180 PASS
+sitescore-providers    418/418 PASS
+sitescore-data         361/361 PASS
+sitescore-core           86/86 PASS
+--------------------------------
+aggregate             1220/1220 PASS
+```
+
+Reviewer independently verified by commit comparison that the only change from validated commit `5250d9a8821c4dd1c77e4f5f71bc48f6185abcf7` to final reviewed HEAD `9fa9aff25d64de6176d051438828e55e7ba7a99a` is removal of:
+
+```text
+.github/workflows/cp344-hardening-validation.yml
+```
+
+Therefore source/tests/checkpoint documentation at the validated commit are unchanged in the final reviewed HEAD.
 
 ---
 
-# 9. REQUIRED `implementer.md` RETURN
+# 7. USER-AUTHORIZED LOCK INSTRUCTION
 
-When hardening is complete, replace `implementer.md` on:
+Only if the user explicitly sends:
 
 ```text
-ops/reviewer-implementer-handoff
+LOCK
 ```
 
-with:
+the Implementer may perform the checkpoint transition.
+
+Before merging, the Implementer MUST re-fetch PR #1 and verify:
 
 ```text
-IMPLEMENTER_STATE: READY_FOR_REVIEW
+current PR HEAD == 9fa9aff25d64de6176d051438828e55e7ba7a99a
+```
+
+and verify:
+
+```text
+PR base == main
+PR is open
+no unresolved reviewer blocker exists
+CONTRACT_CHANGE_REQUIRED == 0
+```
+
+If current PR HEAD differs from the reviewed SHA, do **not** merge. Update `implementer.md` with:
+
+```text
+IMPLEMENTER_STATE: LOCK_BLOCKED_REVIEW_STALE
+```
+
+and return for Reviewer re-review.
+
+If the exact reviewed SHA is still current and the user explicitly authorized `LOCK`, merge PR #1 using expected-head-SHA protection when available, then record in `implementer.md`:
+
+```text
+IMPLEMENTER_STATE: LOCKED
 CHECKPOINT: FAZ 3.4-4
-BASE_SHA: 91608d7f70e2cdb28ba6aa9c287baea0af9f2275
-CODE_BRANCH: faz3.4/cp3.4-4-benchmark-distribution
-OLD_REVIEWED_HEAD_SHA: 09657fb6a35e79725fac372f7dc1d9a40ebb938c
-CODE_HEAD_SHA: <new full SHA>
+REVIEWED_HEAD_SHA: 9fa9aff25d64de6176d051438828e55e7ba7a99a
 PR: #1
-CONTRACT_CHANGE_REQUIRED: 0 or 1
+MERGED_MAIN_SHA: <actual merged/main SHA>
+LOCK_TRANSITION_STATUS: SUCCESS
+TAG: <actual tag / PENDING / NOT REQUIRED>
 ```
 
-Then report, blocker by blocker:
-
-```text
-BENCH-H001: RESOLVED / NOT RESOLVED
-BENCH-H002: RESOLVED / NOT RESOLVED
-```
-
-For each resolved blocker, state:
-
-- exact changed files;
-- exact code behavior;
-- exact new regression tests;
-- test results;
-- documentation update;
-- any sibling-audit findings.
-
-Also include:
-
-- current PR HEAD SHA;
-- changed-file summary for the hardening delta;
-- dependency audit;
-- scope audit;
-- full test/CI evidence;
-- confirmation that no next-checkpoint work began.
-
-Do not claim `READY_TO_LOCK` or `LOCKED`.
+Do not start 3.4-5 during the LOCK transition.
 
 ---
 
-# 10. IMPLEMENTER EXECUTION RULE
+# 8. NEXT STATE
 
-On the user's next `devam` command:
+Current state:
 
-1. Read this latest `reviewer.md`.
-2. Re-fetch PR #1 and current branch HEAD.
-3. Confirm the reviewed old HEAD is `09657fb6a35e79725fac372f7dc1d9a40ebb938c` or identify any unexpected intervening code change before editing.
-4. Fix BENCH-H001 and BENCH-H002 on the same code branch.
-5. Add the required regressions.
-6. Run tests/self-audit.
-7. Update PR #1; do not merge it.
-8. Update `implementer.md` on the coordination branch.
-9. Stop in `READY_FOR_REVIEW` state.
+```text
+FAZ 3.4-4: READY TO LOCK
+```
 
-# END — FAZ 3.4-4 CONSOLIDATED HARDENING REVIEW
+Next action is not implementation or hardening.
+
+Next action is:
+
+```text
+WAIT FOR USER LOCK
+```
+
+After successful Implementer LOCK transition, the user will send `devam` to Reviewer. Reviewer will then verify merged/main state and publish the next checkpoint instruction through this file.
