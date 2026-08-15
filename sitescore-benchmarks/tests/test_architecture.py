@@ -23,23 +23,23 @@ def test_provider_neutral_no_structural_provider_schema():
         assert token not in text
 
 
-def test_no_later_checkpoint_scope_after_feature_normalization():
+def test_no_later_checkpoint_scope_after_comb005_foundation():
     text = source_text().lower()
     for token in (
         "normalizedlocationfeatures",
-        "road_parking_access_score",
         "scoringreadiness",
         "realdatapipelineresult",
         "categoryscores",
+        "locationscore",
         "core.analyze",
     ):
         assert token not in text
     for token in (
-        "road_weight",
-        "parking_weight",
         "renormalize_missing",
         "neutral_parking_fallback",
         "neutral_road_fallback",
+        "default_road_weight",
+        "default_parking_weight",
     ):
         assert token not in text
 
@@ -74,6 +74,6 @@ def test_no_hidden_production_constants():
     for token in (
         "250.0", "500.0", "1000.0", "centroid", "representative_point",
         "majority_overlap", "overlap_threshold", "minimum_n", "coverage_threshold",
-        "1e-6", "1e-9", "epsilon", "relative_tolerance", "absolute_tolerance",
+        "1e-6", "1e-9", "1e-12", "epsilon", "relative_tolerance", "absolute_tolerance",
     ):
         assert token not in text
