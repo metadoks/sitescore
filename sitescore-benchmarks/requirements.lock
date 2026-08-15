@@ -1,0 +1,2 @@
+sitescore-spatial==0.1.0
+# No direct third-party GIS dependency. Shapely/pyproj are transitive only through the locked spatial package.

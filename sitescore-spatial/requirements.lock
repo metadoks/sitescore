@@ -1,0 +1,5 @@
+# Checkpoint 3.4-1 reference environment lock (Python 3.13.5)
+shapely==2.1.2
+pyproj==3.7.2
+numpy==2.3.5
+certifi==2026.05.20

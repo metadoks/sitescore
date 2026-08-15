@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitescore-spatial"
+version = "0.1.0"
+description = "Deterministic spatial foundation and immutable spatial sidecar contracts for SiteScore."
+requires-python = ">=3.11"
+dependencies = [
+  "shapely==2.1.2",
+  "pyproj==3.7.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

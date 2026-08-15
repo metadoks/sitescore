@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitescore-benchmarks"
+version = "0.1.0"
+description = "SiteScore provider-neutral commercial benchmark frame foundation"
+requires-python = ">=3.11"
+dependencies = ["sitescore-spatial==0.1.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
