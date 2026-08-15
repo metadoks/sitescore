@@ -141,7 +141,20 @@ Tests cover exact eligible-cell completeness; missing/duplicate/foreign attempts
 
 ## Tests executed
 
-Actual executed suite counts and results are recorded in the implementation PR and final implementation handoff. This document does not invent unexecuted PASS counts.
+Full package-root regression run on GitHub Actions at source/test commit `2510ad3d6b55732dd738e0f5cdedd87b44dd4c09`:
+
+```text
+sitescore-benchmarks   99/99 PASS
+sitescore-metrics      67/67 PASS
+sitescore-spatial     180/180 PASS
+sitescore-providers   418/418 PASS
+sitescore-data        361/361 PASS
+sitescore-core         86/86 PASS
+-------------------------------
+aggregate            1211/1211 PASS
+```
+
+The five non-benchmark packages are unchanged from the authoritative baseline; the full suites above were nevertheless executed to verify frozen regressions. A temporary branch-only validation workflow was used for execution and is removed before review handoff so CI infrastructure does not enter this checkpoint's final diff.
 
 ## CONTRACT_CHANGE_REQUIRED
 
