@@ -31,6 +31,8 @@ def _numeric_exclusion_reason(attempt: BenchmarkCellMeasurement) -> str | None:
         return f"availability_{measurement.metric_value.availability.value}"
     if measurement.metric_value.score_eligibility.value != "eligible":
         return f"score_eligibility_{measurement.metric_value.score_eligibility.value}"
+    if measurement.metric_value.calibration_state.value != "calibrated":
+        return f"calibration_state_{measurement.metric_value.calibration_state.value}"
     if not math.isfinite(float(value)):
         raise ValueError("canonical benchmark numeric candidate must be finite")
     return None
