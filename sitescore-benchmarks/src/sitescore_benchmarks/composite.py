@@ -52,7 +52,7 @@ class RoadParkingCompositeState(str, Enum):
 class RoadParkingComponentArtifact:
     """Internal normalized prerequisite artifact, not a downstream feature slot.
 
-    The real-unit road/parking metrics remain distinct upstream.  This artifact only
+    The real-unit road/parking metrics remain distinct upstream. This artifact only
     represents a future normalized prerequisite with explicit semantic lineage.
     Current canonical production does not construct AVAILABLE instances because
     the required road/parking reductions are not empirically approved.
@@ -141,8 +141,8 @@ class RoadParkingCompositePolicy:
             weights = tuple(float(weight) for weight in self.weights)
             if any(not math.isfinite(weight) or weight < 0.0 for weight in weights):
                 raise ValueError("weights must be finite and nonnegative")
-            if not math.isclose(sum(weights), 1.0, rel_tol=0.0, abs_tol=1e-12):
-                raise ValueError("controlled policy weights must sum exactly to 1 within structural tolerance")
+            if sum(weights) != 1.0:
+                raise ValueError("controlled policy weights must sum exactly to 1")
 
     @property
     def identity_id(self) -> str:
