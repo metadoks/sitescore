@@ -222,3 +222,87 @@ def test_policy_has_no_empirical_threshold_fields():
         "overlap_threshold", "road_weight", "parking_weight",
     ):
         assert forbidden not in params
+
+
+def _income_attempt_with_method(frame, cell, n, method):
+    snapshot = demo(n)
+    original = snapshot.household_income
+    revised = MetricValue(
+        original.value,
+        original.unit,
+        original.availability,
+        original.data_quality,
+        original.score_eligibility,
+        original.calibration_state,
+        original.is_estimate,
+        original.is_proxy,
+        original.source_refs,
+        method,
+        original.reason_codes,
+    )
+    snapshot = replace(snapshot, household_income=revised)
+    return income_attempt(frame, cell, n, snapshot=snapshot)
+
+
+def test_mixed_method_versions_create_compatibility_conflict(frame3):
+    attempts = list(complete_attempts(frame3, income_attempt))
+    attempts[2] = _income_attempt_with_method(
+        frame3, frame3.cells[2], 3, "acs-income-v2"
+    )
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, tuple(attempts), metric_key="household_income"
+    ))
+    assert distribution.coverage.attempt_count == 3
+    assert distribution.coverage.has_compatibility_conflict
+    assert distribution.coverage.numeric_candidate_count == 3
+    assert distribution.coverage.numeric_included_count == 0
+    assert distribution.coverage.incompatible_numeric_count == 3
+    assert distribution.observations == ()
+    assert distribution.compatibility is None
+    assert distribution.state is BenchmarkDistributionState.INCOMPATIBLE_MEASUREMENT_LINEAGE
+
+
+def test_same_method_version_population_remains_compatible(frame3):
+    attempts = tuple(
+        _income_attempt_with_method(frame3, cell, i + 1, "acs-income-v2")
+        for i, cell in enumerate(frame3.cells)
+    )
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, attempts, metric_key="household_income"
+    ))
+    assert not distribution.coverage.has_compatibility_conflict
+    assert distribution.coverage.numeric_included_count == 3
+    assert len(distribution.observations) == 3
+    assert distribution.compatibility.method_version == "acs-income-v2"
+    assert distribution.state is BenchmarkDistributionState.AVAILABLE
+
+
+def test_method_version_changes_compatibility_identity(frame3):
+    a = BenchmarkMetricCompatibility(
+        _income_attempt_with_method(frame3, frame3.cells[0], 1, "acs-income-v1").measurement
+    )
+    b = BenchmarkMetricCompatibility(
+        _income_attempt_with_method(frame3, frame3.cells[0], 1, "acs-income-v2").measurement
+    )
+    assert a.method_version == "acs-income-v1"
+    assert b.method_version == "acs-income-v2"
+    assert a.source_bundle_compatibility == b.source_bundle_compatibility == ()
+    assert a.identity_id != b.identity_id
+
+
+def test_transit_source_bundle_compatibility_survives_method_hardening(frame3):
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, complete_attempts(frame3, transit_attempt),
+        metric_key="transit_service_departure_equivalents_per_hour",
+    ))
+    assert distribution.compatibility.method_version == "transit-v1"
+    assert dict(distribution.compatibility.source_bundle_compatibility) == {
+        "transit_source_bundle_fingerprint": "bundle:abc"
+    }
+    assert distribution.state is BenchmarkDistributionState.AVAILABLE
+
+
+def test_compatibility_policy_identity_declares_method_semantics():
+    assert BENCHMARK_MEASUREMENT_DISTRIBUTION_V1.compatibility_rule == (
+        "EXACT_METHOD_AND_SOURCE_BUNDLE_COMPATIBILITY"
+    )
