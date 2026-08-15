@@ -13,203 +13,89 @@ CHECKPOINT: FAZ 3.4-8
 CHECKPOINT_TITLE: Scoring Readiness + RealDataPipelineResult Integration
 BASE_SHA: c8514401f1b9e2a671c00477219f6f930a594bc8
 CODE_BRANCH: faz3.4/cp3.4-8-readiness-pipeline
-CODE_HEAD_SHA: cd7229fe7d241c6101782ff7b8baed49ac63edef
+CODE_HEAD_SHA: fd880602cd229e2182c31e10de04bc67e6cba324
 PR: #5
 CONTRACT_CHANGE_REQUIRED: 0
+
+PIPE-H001: RESOLVED
+PIPE-H002: RESOLVED
 
 ---
 
-## 1. Reviewer instruction executed
+## Reviewer hardening instruction executed
 
-Latest Reviewer instruction was fetched before implementation and required:
+Latest reviewer action was `HARDEN` on the existing checkpoint branch and existing PR #5. No new checkpoint was created.
 
-```text
-CURRENT_CHECKPOINT: 3.4-8
-REVIEWER_STATE: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION: IMPLEMENT
-EXPECTED_BASE_SHA: c8514401f1b9e2a671c00477219f6f930a594bc8
-CODE_BRANCH: faz3.4/cp3.4-8-readiness-pipeline
-CONTRACT_CHANGE_REQUIRED_EXPECTATION: 0
-```
+### PIPE-H001 — RESOLVED
 
-Actual `main` matched the expected base exactly. The requested branch did not exist and was created from that exact SHA.
+Initial importable authority tokens/hash gate were removed as production authority.
 
-## 2. Package / dependency boundary
+Hardening now uses factory-owned `NormalizedFeatureAssembly` and `ReadinessEvaluation` objects with direct constructors disabled. Canonical assembly/readiness registration lives only inside closure-owned state captured by installed production factory functions. The installer is removed from module namespace after installation.
 
-Created new additive package:
+Production enforcement:
 
-```text
-sitescore-pipeline==0.1.0
-```
+- `derive_scoring_readiness()` accepts only the exact assembly object returned by canonical `assemble_normalized_location_features()`;
+- `build_real_data_pipeline_result()` accepts only the exact readiness object returned by canonical `derive_scoring_readiness()`;
+- reproducing the semantic `assembly_id` does not grant authority;
+- manually allocating/copying an assembly or readiness wrapper does not register it;
+- old `_ASSEMBLY_TOKEN`, `_READINESS_TOKEN`, `_assembly_identity`, and `_install_canonical_factories` module authority surfaces are absent.
 
-Direct runtime dependencies are exact pinned:
+Adversarial tests prove a caller can reproduce the assembly hash and populate a manually allocated object yet still cannot derive canonical readiness. Detached readiness wrappers likewise cannot enter terminal construction.
 
-```text
-sitescore-data==0.1.0
-sitescore-benchmarks==0.1.0
-```
+Controlled synthetic SCORE_READY coverage uses the frozen `ScoringReadinessValidator` directly as a test-local fixture and is explicitly not a production pipeline authority path.
 
-No `sitescore-core` import/dependency exists. No frozen upstream source was modified and no reverse dependency was introduced.
+### PIPE-H002 — RESOLVED
 
-## 3. Frozen DTO reuse
+Canonical `NormalizedFeatureAssembly` now retains the actual six `FeatureNormalizationResult` artifacts.
 
-Pipeline reuses frozen data-layer contracts rather than redefining them:
+Before terminal construction, `build_real_data_pipeline_result()` requires overlapping `DerivedLocationMetrics` fields to exactly match the actual `site_measurement.metric_value` used by those normalization results for:
 
-```text
-MetricValue
-NormalizedLocationFeatures
-FeatureReadinessPolicy
-ReadinessCompatibilityInput
-ApprovedFallbackPolicyRef
-ScoringReadinessResult
-ScoringReadinessValidator
-RealDataPipelineResult
-PipelineStatus
-```
+- walkable_population
+- target_population_density
+- competition_pressure
+- walkable_reach_area_km2
+- transit_service_departure_equivalents_per_hour
+- household_income
 
-## 4. Canonical normalized-feature assembly
+Exact semantic comparison binds:
 
-Implemented `assemble_normalized_location_features()`.
+- value
+- unit
+- availability
+- data_quality
+- score_eligibility
+- calibration_state
+- is_estimate
+- is_proxy
+- canonical source_refs
+- method_version
+- reason_codes
 
-Production inputs are only actual artifact types:
+Regressions reject household-income value mismatch, household-income method mismatch, transit source-lineage mismatch, walkable-reach method mismatch, and an all-UNKNOWN contradictory placeholder surface. A coherent surface derived from actual nested site measurements is accepted.
 
-```text
-six FeatureNormalizationResult artifacts
-actual locked AgeTargetConcentrationFallback
-actual RoadParkingCompositeResult
-validated BenchmarkReferenceBinding values
-generated_at
-```
+## Frozen semantics preserved
 
-The API does not accept arbitrary `NormalizedLocationFeatures`, detached eight `MetricValue` scores, readiness status, or caller score summaries.
+- missing/unavailable/incompatible evidence is never converted to 0 or generic 50;
+- exact locked age fallback is the sole numeric uncalibrated exception;
+- COMB-005 remains unapproved and canonical road_parking_access_score remains unavailable;
+- competition measurement-definition and transit source-bundle lineage remain actual-artifact-derived;
+- pipeline status is derived, not caller asserted;
+- ordinary unready evidence remains NOT_SCORE_READY, not PIPELINE_ERROR;
+- SCORE_READY != SCORED;
+- no CategoryScores, Location Score, penalties, Decision Layer, core.analyze(), report/PDF, or FAZ 3.4-FINAL implementation was added;
+- no sitescore-core dependency/import;
+- no frozen upstream source changed.
 
-Exactly six direct mappings must be present and unique. Together with age and road/parking they populate all eight frozen slots.
+## Final validation evidence
 
-AVAILABLE direct normalization results use their actual derived score. Nonavailable direct results remain nonnumeric; no zero/50 substitution occurs.
-
-## 5. Age fallback authority
-
-Age assembly requires an actual `AgeTargetConcentrationFallback` whose policy identity equals the locked `AGE_TARGET_CONCENTRATION_FALLBACK_V1` authority.
-
-Emitted semantics remain exactly:
+Latest final documentation-inclusive validation:
 
 ```text
-age_target_concentration_score = 50
-availability = AVAILABLE
-eligibility = ELIGIBLE
-calibration = UNCALIBRATED
-proxy = true
-reason = age_affinity_not_calibrated
-method = age_neutral_fallback/1.0
-```
-
-The frozen `ApprovedFallbackPolicyRef` is derived from this actual authority; caller id/version strings cannot authorize the production path.
-
-## 6. COMB-005 truth retained
-
-Canonical 3.4-7 `RoadParkingCompositeResult` remains unapproved/non-numeric.
-
-Pipeline therefore emits a nonnumeric `road_parking_access_score` and does not represent `UNAPPROVED_V1` as an approved resolved road/parking scoring policy version.
-
-The frozen readiness validator consequently produces `ROAD_PARKING_COMPOSITE_UNAVAILABLE` and blocks canonical production readiness as intended.
-
-No road/parking weight, reduction, neutral fill, or substitute was invented.
-
-## 7. Competition / transit compatibility
-
-`BenchmarkReferenceBinding` validates that persisted data-layer benchmark references bind actual normalization artifacts:
-
-```text
-BenchmarkReference.benchmark_id == actual distribution_id
-BenchmarkReference.frame_id == actual frame_id
-```
-
-Competition measurement-definition and transit source-bundle identities are derived independently from actual site and benchmark compatibility objects and passed into frozen readiness compatibility semantics. Numeric scores cannot override lineage mismatch.
-
-## 8. Readiness anti-self-assertion
-
-Implemented `derive_scoring_readiness()`.
-
-The canonical API accepts only canonical assembly + `evaluated_at`. It does not accept:
-
-```text
-is_score_ready
-readiness_fingerprint
-feature_states
-summary lists
-reason_codes
-```
-
-The readiness fingerprint is derived from semantic content and excludes `evaluated_at`.
-
-Frozen `ScoringReadinessValidator` remains unchanged and is invoked using pipeline-derived policies, compatibility inputs, trusted age fallback authority and fingerprint.
-
-## 9. Terminal pipeline status derivation
-
-Implemented `build_real_data_pipeline_result()`.
-
-Caller cannot pass pipeline status. Status derives from actual readiness:
-
-```text
-readiness true  -> SCORE_READY
-readiness false -> NOT_SCORE_READY + SCORING_NOT_READY
-```
-
-Implemented separate `build_pipeline_error_result()` requiring an explicit `PipelineStageFailure`:
-
-```text
-actual stage failure -> PIPELINE_ERROR + PIPELINE_STAGE_ERROR
-scoring_readiness = None
-```
-
-Ordinary unavailable/unready evidence is NOT_SCORE_READY, never PIPELINE_ERROR.
-
-`SCORE_READY` is permission for later scoring only. No CategoryScores, Location Score, penalties, decisions or `core.analyze()` were implemented.
-
-## 10. Determinism / provenance
-
-Assembly identity binds actual artifact identities, normalized semantic values/states, policy/compatibility/fallback authority and benchmark bindings. Collection ordering is canonicalized. Generation/evaluation timestamps do not affect semantic assembly/readiness identity.
-
-`NormalizedLocationFeatures.source_refs` covers nested metric and bound benchmark source refs. `RealDataPipelineResult.source_metadata` remains the distinct frozen metadata registry and is sorted by source id.
-
-## 11. Adversarial regression coverage
-
-Implemented Reviewer matrix:
-
-```text
-READY-001 all 8 required
-READY-002 no missing neutralization
-READY-003 ordinary uncalibrated blocks
-READY-004 exact age authority/approval
-READY-005 age exception cannot leak
-READY-006 competition mismatch
-READY-007 transit mismatch
-READY-008 COMB-005 unavailable reason
-READY-009 missing policy
-READY-010 policy version mismatch
-READY-011 insufficient quality
-READY-012 readiness anti-self-assertion
-PIPE-001 readiness false -> NOT_SCORE_READY
-PIPE-002 controlled readiness true -> SCORE_READY
-PIPE-003 SCORE_READY != SCORED
-PIPE-004 ordinary unready != PIPELINE_ERROR
-PIPE-005 stage failure -> PIPELINE_ERROR without readiness
-PIPE-006 status anti-self-assertion
-PIPE-007 feature-contract/version coherence rejection
-```
-
-Additional tests verify semantic fingerprints exclude timestamps and production assembly rejects arbitrary detached feature surfaces.
-
-## 12. Validation evidence
-
-Initial full checkpoint-wide validation:
-
-```text
-workflow: cp348-validation
-run id: 31908132238
-validated SHA: 836179a8065f71a8bd12f7c94b9f52397a21ca9e
+workflow: cp348-hardening-validation
+run id: 31909388401
+validated SHA: c868205a8cc38266153524c9fe275fc46aa918e5
 conclusion: SUCCESS
-sitescore-pipeline: 28/28 PASS
+sitescore-pipeline: 25/25 PASS
 sitescore-benchmarks: 191/191 PASS
 sitescore-metrics: 67/67 PASS
 sitescore-spatial: PASS
@@ -218,81 +104,43 @@ sitescore-data: PASS
 sitescore-core: PASS
 ```
 
-Final documentation-inclusive validation:
+The 25/191/67 counts are explicitly visible in the job log. The remaining four package steps completed successfully; exact counts are not claimed from this log.
+
+After validation the temporary workflow was removed.
+
+Validated SHA → final review HEAD comparison:
 
 ```text
-workflow: cp348-validation
-run id: 31908253093
-validated SHA: 57bef6d47631ad97abccb1f430d0c348c7a13ad1
-conclusion: SUCCESS
-sitescore-pipeline: 28/28 PASS
-sitescore-benchmarks: 191/191 PASS
-sitescore-metrics: 67/67 PASS
-sitescore-spatial: PASS
-sitescore-providers: PASS
-sitescore-data: PASS
-sitescore-core: PASS
+c868205a8cc38266153524c9fe275fc46aa918e5
+→ fd880602cd229e2182c31e10de04bc67e6cba324
+
+exactly one changed file:
+.github/workflows/cp348-hardening-validation.yml — REMOVED
 ```
 
-Exact counts are asserted only where explicit pytest summaries were captured.
+No source/test/docs changes occurred after the validated SHA.
 
-## 13. Validated SHA -> final review HEAD proof
+## Final scope audit
 
-Final review HEAD:
+Base `c8514401...` → final review HEAD `fd880602...` contains exactly 8 files and all are under the additive `sitescore-pipeline` package:
 
-```text
-cd7229fe7d241c6101782ff7b8baed49ac63edef
-```
+1. sitescore-pipeline/README.md
+2. sitescore-pipeline/docs/CHECKPOINT_3_4_8_READINESS_PIPELINE.md
+3. sitescore-pipeline/pyproject.toml
+4. sitescore-pipeline/src/sitescore_pipeline/__init__.py
+5. sitescore-pipeline/src/sitescore_pipeline/integration.py
+6. sitescore-pipeline/tests/conftest.py
+7. sitescore-pipeline/tests/test_architecture.py
+8. sitescore-pipeline/tests/test_readiness_pipeline.py
 
-GitHub compare from documentation-inclusive validated SHA `57bef6d4...` to final HEAD shows exactly one delta:
+Frozen upstream packages and dependency metadata outside the new package are unchanged.
 
-```text
-.github/workflows/cp348-validation.yml -> REMOVED
-```
+## Stop state
 
-No source, tests or docs changed after successful validation.
+No merge performed.
+No LOCK performed.
+No tag created.
+FAZ 3.4-FINAL not started.
 
-## 14. Final scope diff
-
-Base `c8514401...` -> final review HEAD contains exactly seven files, all under the new `sitescore-pipeline` package:
-
-```text
-sitescore-pipeline/README.md
-sitescore-pipeline/docs/CHECKPOINT_3_4_8_READINESS_PIPELINE.md
-sitescore-pipeline/pyproject.toml
-sitescore-pipeline/src/sitescore_pipeline/__init__.py
-sitescore-pipeline/src/sitescore_pipeline/integration.py
-sitescore-pipeline/tests/test_architecture.py
-sitescore-pipeline/tests/test_readiness_pipeline.py
-```
-
-No final `.github` workflow remains. No frozen upstream file changed.
-
-## 15. Out of scope preserved
-
-Not implemented:
-
-```text
-CategoryScores
-category weighting
-Location Score
-penalties/dealbreakers
-Decision Layer
-core.analyze()
-report/PDF
-empirical COMB-005 policy/weights
-changes to unresolved upstream metric/benchmark semantics
-FAZ 3.4-FINAL audit/freeze
-```
-
-## 16. Final state
-
-```text
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-CHECKPOINT: FAZ 3.4-8
-PR: #5
-CODE_HEAD_SHA: cd7229fe7d241c6101782ff7b8baed49ac63edef
-CONTRACT_CHANGE_REQUIRED: 0
-```
-
-No merge, LOCK, tag or FAZ 3.4-FINAL work was performed. Reviewer should independently inspect exact PR #5 HEAD before issuing any next action.
+Reviewer should re-review PR #5 at exact current HEAD:
+`fd880602cd229e2182c31e10de04bc67e6cba324`.
