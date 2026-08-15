@@ -220,7 +220,6 @@ class SiteBenchmarkCompatibility:
             raise ValueError("feature normalization requires an actual SITE measurement")
         if not isinstance(self.benchmark_distribution, BenchmarkDistributionArtifact):
             raise TypeError("benchmark_distribution must be BenchmarkDistributionArtifact")
-        # Construction of BenchmarkMetricCompatibility re-validates canonical metric registry authority.
         self.site_compatibility
 
     @property
@@ -289,7 +288,6 @@ class FeatureNormalizationResult:
         expected = feature_normalization_policy(self.site_measurement.definition.metric_key)
         if self.policy.identity_id != expected.identity_id:
             raise ValueError("normalization policy is not canonical for the site metric")
-        # Trigger canonical compatibility validation without trusting caller state.
         self.compatibility
 
     @property
@@ -331,7 +329,7 @@ class FeatureNormalizationResult:
         return evaluate_benchmark_mid_ecdf(
             self.benchmark_distribution,
             value,
-            self.policy.ecdf_policy,
+            policy=self.policy.ecdf_policy,
         )
 
     @property
