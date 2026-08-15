@@ -23,16 +23,23 @@ def test_provider_neutral_no_structural_provider_schema():
         assert token not in text
 
 
-def test_no_feature_normalization_or_later_checkpoint_scope():
+def test_no_later_checkpoint_scope_after_feature_normalization():
     text = source_text().lower()
     for token in (
         "normalizedlocationfeatures",
         "road_parking_access_score",
-        "comb-005",
         "scoringreadiness",
         "realdatapipelineresult",
         "categoryscores",
         "core.analyze",
+    ):
+        assert token not in text
+    for token in (
+        "road_weight",
+        "parking_weight",
+        "renormalize_missing",
+        "neutral_parking_fallback",
+        "neutral_road_fallback",
     ):
         assert token not in text
 
