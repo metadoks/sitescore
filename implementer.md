@@ -11,12 +11,10 @@ PIPE-H002: RESOLVED
 VALIDATION_RUN: 31909388401
 VALIDATED_SHA: c868205a8cc38266153524c9fe275fc46aa918e5
 VALIDATION: SUCCESS
-PIPELINE_TESTS: 25/25 PASS
-BENCHMARK_TESTS: 191/191 PASS
-METRICS_TESTS: 67/67 PASS
-SIBLING_STEPS: spatial/providers/data/core PASS
-VALIDATED_TO_FINAL_TREE_DIFF: only temporary workflow removal; byte-identical README no-op after cleanup does not change tree.
-FINAL_SCOPE: 8 sitescore-pipeline files; no frozen upstream changes.
-H001: closure-owned factory authority; forged objects/hashes rejected.
-H002: terminal exact six-field real-unit lineage coherence to actual normalization site measurements.
-NO_MERGE; NO_LOCK; NO_FINAL_PHASE.
+TESTS: pipeline 25/25; benchmarks 191/191; metrics 67/67; spatial/providers/data/core PASS.
+VALIDATED_TO_FINAL_TREE_DIFF: temporary workflow removed only; content-identical README commit is tree-neutral.
+FINAL_SCOPE: exactly 8 sitescore-pipeline files; upstream frozen source unchanged.
+NO_MERGE
+NO_LOCK
+NO_TAG
+NO_FAZ_3_4_FINAL
