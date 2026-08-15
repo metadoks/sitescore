@@ -13,23 +13,79 @@ CHECKPOINT: FAZ 3.4-7
 CHECKPOINT_TITLE: COMB-005 Road + Parking Composite Gating Foundation
 BASE_SHA: 8bfe2eb92ea3d52f30d14a4333927f76f8630b0a
 CODE_BRANCH: faz3.4/cp3.4-7-comb005-road-parking
-CODE_HEAD_SHA: d312a6de6afae51a65b67b6bd15b3770acdfb048
+PRE_HARDEN_REVIEWED_HEAD_SHA: d312a6de6afae51a65b67b6bd15b3770acdfb048
+CODE_HEAD_SHA: bff973bbf2ddacc2967eb6d8f35b4307fa00003c
 PR: #4
 CONTRACT_CHANGE_REQUIRED: 0
 
+COMB-H001: RESOLVED
+COMB-H002: RESOLVED
+
 ---
 
-## 1. Executive implementation summary
+## 1. Reviewer instruction executed
 
-Implemented only FAZ 3.4-7: the additive COMB-005 road + parking composite gating foundation for the single frozen downstream feature:
+Latest `reviewer.md` was re-fetched before work and stated:
 
 ```text
-road_parking_access_score
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
+CURRENT_CHECKPOINT: 3.4-7
+CODE_BRANCH: faz3.4/cp3.4-7-comb005-road-parking
+REVIEWED_HEAD_SHA: d312a6de6afae51a65b67b6bd15b3770acdfb048
+PR: #4
+CONTRACT_CHANGE_REQUIRED: 0
 ```
 
-The checkpoint deliberately does not create a production score because no empirical COMB-005 weight set is approved.
+The actual repository state was re-fetched and verified before hardening:
 
-Canonical production state is explicit:
+```text
+main HEAD: 8bfe2eb92ea3d52f30d14a4333927f76f8630b0a
+PR #4: OPEN
+PR #4 base: main
+PR #4 head: d312a6de6afae51a65b67b6bd15b3770acdfb048
+```
+
+All hardening stayed on the same checkpoint branch and same PR. No 3.4-8 work was started.
+
+---
+
+## 2. COMB-H001 — RESOLVED
+
+### Reviewer blocker
+
+The pre-hardening public `RoadParkingCompositePolicy` constructor allowed callers to create:
+
+```text
+approval_state = APPROVED
+arbitrary caller weights summing to 1
+WEIGHTED_LINEAR_SUM_NO_SUBSTITUTION
+```
+
+while the canonical approved registry was actually empty.
+
+### Hardening applied
+
+Production `RoadParkingCompositePolicy` remains a typed policy declaration but is no longer caller approval authority.
+
+The public constructor now rejects:
+
+```text
+approval_state == APPROVED
+any non-empty weights
+any executable composition method while unapproved
+```
+
+Current production policy construction is limited to explicit unapproved semantics:
+
+```text
+approval_state = NOT_APPROVED
+weights = ()
+composition_method = UNRESOLVED
+missing_side_behavior = REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION
+```
+
+Canonical state remains:
 
 ```text
 COMB005_V1_POLICY.approval_state = NOT_APPROVED
@@ -39,28 +95,202 @@ COMB005_V1_POLICY.composition_method = UNRESOLVED
 APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1 = ()
 ```
 
-Therefore canonical `evaluate_road_parking_composite()` returns `POLICY_NOT_APPROVED` with `score=None`.
+No empirical weight vector was introduced.
 
-No checkpoint 3.4-8 readiness/pipeline work was started.
+### Public-API regression
 
-## 2. Git state
+A new adversarial regression proves exported production symbols cannot construct a caller-authored approved policy with arbitrary weights while the approved registry is empty.
 
 ```text
-repository: metadoks/sitescore
-base branch: main
-base SHA: 8bfe2eb92ea3d52f30d14a4333927f76f8630b0a
-code branch: faz3.4/cp3.4-7-comb005-road-parking
-code HEAD: d312a6de6afae51a65b67b6bd15b3770acdfb048
-PR: #4
-PR base: main
-PR state: OPEN
+COMB-H001: RESOLVED
 ```
 
-Branch was created from the exact Reviewer-specified baseline. No duplicate branch existed.
+---
 
-## 3. Final changed files
+## 3. COMB-H002 — RESOLVED
 
-Base-to-review-HEAD diff contains exactly six files, all under `sitescore-benchmarks`:
+### Reviewer blocker
+
+Pre-hardening production-facing constructors allowed caller self-assertion of:
+
+- `AVAILABLE` component artifacts from detached score + arbitrary lineage;
+- `AVAILABLE` final result from caller-supplied policy/components/state/reasons/score;
+- arbitrary detached final score bypassing composition derivation.
+
+### Component authority hardening
+
+`RoadParkingComponentArtifact` is now explicitly a production prerequisite status/lineage declaration.
+
+Because there is no approved canonical road/parking component-normalization path, the public production constructor now:
+
+```text
+rejects state == AVAILABLE
+rejects every detached numeric score
+```
+
+It may represent only explicit non-AVAILABLE states such as:
+
+```text
+UNAVAILABLE
+UNRESOLVED
+INCOMPATIBLE
+INELIGIBLE
+UNCALIBRATED
+```
+
+with `score=None`.
+
+Therefore production callers cannot fabricate canonical AVAILABLE road/parking component prerequisites.
+
+### Final result authority hardening
+
+`RoadParkingCompositeResult` constructor was changed from caller-asserted fields:
+
+```text
+policy
+components
+state
+reason_codes
+score
+```
+
+to only:
+
+```text
+policy
+components
+```
+
+The following are now derived properties:
+
+```text
+state
+reason_codes
+score
+```
+
+Current production policy is unapproved, so production result semantics are constructively:
+
+```text
+state = POLICY_NOT_APPROVED
+reason_codes = (comb005_policy_not_approved,)
+score = None
+```
+
+A caller cannot pass `state=AVAILABLE` or detached `score` into the public result constructor.
+
+### Synthetic production bypass removed
+
+The production-source `_compose_with_policy` helper and its caller-authored approved-policy execution path were removed entirely.
+
+Controlled approved/AVAILABLE composition math used to retain structural tests now lives only inside the test module as private test-local fixtures/classes. Those symbols:
+
+- are not package production exports;
+- do not exist in production source;
+- cannot enter canonical production execution;
+- cannot authorize production scoring.
+
+### Public-API regressions
+
+New regressions prove exported production API cannot:
+
+- construct an approved COMB-005 policy with arbitrary weights;
+- construct an AVAILABLE production component from detached score/lineage;
+- construct an AVAILABLE final result by passing state/score;
+- expose state/reason/score as result-constructor parameters;
+- yield AVAILABLE final result for empty/missing/duplicate/nonavailable production component sets.
+
+```text
+COMB-H002: RESOLVED
+```
+
+---
+
+## 4. Canonical COMB-005 truth preserved
+
+Canonical API remains:
+
+```text
+evaluate_road_parking_composite(components=())
+```
+
+It accepts no caller:
+
+```text
+policy
+weights
+approved flag
+approval state
+result state
+detached score
+```
+
+Current canonical execution still returns:
+
+```text
+state = POLICY_NOT_APPROVED
+score = None
+```
+
+The hardening does not approve COMB-005 and does not make road/parking numeric.
+
+---
+
+## 5. Missingness / substitution invariants retained
+
+Still forbidden:
+
+```text
+implicit 50/50
+road-only final composite
+parking-only final composite
+missing-side 50
+missing-side zero
+copy available side
+renormalize remaining weights
+hidden fallback weights
+clamping invalid math
+```
+
+Road, public off-street capacity and legal curb length remain distinct semantics.
+
+---
+
+## 6. Locked 3.4-6 boundary retained
+
+No direct feature-normalization policy was added for:
+
+```text
+road_reachable_area_km2
+parking_public_offstreet_capacity
+parking_legal_curb_length_m
+```
+
+`feature_normalization_policy()` continues to reject them as direct V1 normalized features.
+
+No locked 3.4-6 normalization semantics were changed.
+
+---
+
+## 7. Production reductions remain unresolved
+
+Hardening did not invent:
+
+```text
+road contour scalar reduction
+parking scalar reduction
+normalized road component
+normalized parking component
+COMB-005 empirical weights
+```
+
+Current upstream truth remains honest.
+
+---
+
+## 8. Changed files / scope
+
+Final base-to-hardened-HEAD diff still contains exactly six files, all under `sitescore-benchmarks`:
 
 ```text
 sitescore-benchmarks/README.md
@@ -71,306 +301,22 @@ sitescore-benchmarks/tests/test_architecture.py
 sitescore-benchmarks/tests/test_road_parking_composite.py
 ```
 
-No final `.github` workflow remains.
 No dependency metadata changed.
 No frozen upstream package source changed.
+No final `.github` workflow remains.
 
-## 4. Component semantics
+---
 
-COMB-005 preserves three distinct required component identities:
+## 9. Dependency / architecture audit
 
-```text
-ROAD_REACHABLE_AREA
-  -> road_reachable_area_km2
-
-PARKING_PUBLIC_OFFSTREET_CAPACITY
-  -> parking_public_offstreet_capacity
-
-PARKING_LEGAL_CURB_LENGTH
-  -> parking_legal_curb_length_m
-```
-
-`RoadParkingComponentArtifact` is an internal normalized-prerequisite/lineage artifact, not a new downstream feature slot.
-
-It binds:
-
-```text
-component kind
-exact frozen metric key
-normalization lineage id
-explicit component state
-optional score only if AVAILABLE
-```
-
-AVAILABLE components require a finite score within `[0,100]`. Every nonavailable/unresolved/incompatible/ineligible/uncalibrated component requires `score=None`.
-
-Kind/metric mismatches are rejected.
-
-No downstream slots such as `road_access_score`, `parking_access_score`, or `curb_access_score` were introduced.
-
-## 5. Policy semantics
-
-`RoadParkingCompositePolicy` binds:
-
-```text
-policy id
-policy version
-approval state
-required component semantics
-weights
-composition method
-missing-side behavior
-output feature key
-output unit
-```
-
-Required missing-side behavior is exactly:
-
-```text
-REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION
-```
-
-Output is frozen to:
-
-```text
-feature: road_parking_access_score
-unit: score_0_100
-```
-
-Canonical V1 policy is explicitly unapproved and carries no weights.
-
-No arbitrary 50/50, road/parking ratio, sector weights, or hidden defaults were introduced.
-
-## 6. Canonical production authority / anti-self-authorization
-
-Public canonical API:
-
-```text
-evaluate_road_parking_composite(components=())
-```
-
-Its signature accepts no caller:
-
-```text
-policy
-weights
-approved flag
-approval state
-detached final score
-```
-
-The canonical function uses only `COMB005_V1_POLICY` as policy authority.
-
-Because no production policy is approved, component availability cannot self-authorize composition.
-
-Canonical result:
-
-```text
-state = POLICY_NOT_APPROVED
-score = None
-reason = comb005_policy_not_approved
-```
-
-## 7. Controlled private fixture path
-
-Private `_compose_with_policy` exists only to adversarially test the structural contract with deliberately noncanonical approved fixtures.
-
-It is not the production authority and test fixture policies are absent from the canonical registry.
-
-Controlled fixture semantics require:
-
-```text
-WEIGHTED_LINEAR_SUM_NO_SUBSTITUTION
-all three required components present
-one explicit weight per component
-finite nonnegative weights
-exact sum(weights) == 1.0
-```
-
-No tolerance/epsilon is used for weight sum.
-No clamping is used.
-No missing-side weight renormalization is performed.
-
-Synthetic test weights never enter production policy state.
-
-## 8. Explicit state model
-
-Component states:
-
-```text
-AVAILABLE
-UNAVAILABLE
-UNRESOLVED
-INCOMPATIBLE
-INELIGIBLE
-UNCALIBRATED
-```
-
-Composite states:
-
-```text
-POLICY_NOT_APPROVED
-INPUT_NOT_AVAILABLE
-INPUT_NOT_ELIGIBLE
-INPUT_NOT_CALIBRATED
-INPUT_INCOMPATIBLE
-AVAILABLE
-```
-
-Unavailable/gated results always carry `score=None`.
-
-## 9. No substitution / missingness
-
-Explicitly prevented:
-
-```text
-road-only -> final composite
-parking-only -> final composite
-missing side -> 50
-missing side -> 0
-copy available side
-renormalize remaining weights
-implicit 50/50
-hidden fallback weights
-```
-
-Missing remains missing. Unresolved remains unresolved. Uncalibrated remains uncalibrated.
-
-## 10. Road unresolved state preserved
-
-No change was made to canonical `road_reachable_area_km2` semantics.
-
-This checkpoint does not create a road scalar by choosing or combining contours through:
-
-```text
-arbitrary contour selection
-average
-max/min
-area sum
-fixed multi-scale weighting
-```
-
-Current road contribution can therefore remain unavailable until its own empirical reduction/normalization policy is approved.
-
-## 11. Parking distinctions preserved
-
-`parking_public_offstreet_capacity` and `parking_legal_curb_length_m` remain separate metric/component semantics.
-
-No conversion or inference was added for:
-
-```text
-polygon area -> capacity
-unknown capacity -> zero
-NoMappedParking -> NoParking
-private/customer-only -> public parking
-curb length -> space count
-```
-
-No scalar parking reduction was invented.
-
-## 12. Interaction with locked 3.4-6
-
-`FEATURE_NORMALIZATION_POLICIES_V1` was not expanded with raw road or parking metrics.
-
-Regression confirms direct feature normalization still rejects:
-
-```text
-road_reachable_area_km2
-parking_public_offstreet_capacity
-parking_legal_curb_length_m
-```
-
-Thus COMB-005 does not bypass locked 3.4-6 semantics by scoring detached raw values.
-
-## 13. Identity / lineage
-
-Policy identity binds:
-
-```text
-policy id/version
-approval state
-required component kinds
-required metric keys
-weights
-composition method
-missing-side behavior
-output feature/unit
-```
-
-Component identity binds:
-
-```text
-component kind
-metric key
-normalization lineage id
-state
-score
-```
-
-Result identity binds:
-
-```text
-actual policy identity
-policy approval state
-component identities in canonical kind order
-output feature/unit
-state
-reason codes
-score
-```
-
-Controlled policy weight change changes result identity.
-Component lineage change changes result identity.
-Caller component ordering does not change semantic result identity.
-
-## 14. Adversarial test matrix
-
-Implemented required Reviewer matrix:
-
-```text
-COMB-001 no approved production policy -> no score
-COMB-002 no implicit 50/50 / approved canonical weights
-COMB-003 road-only substitution forbidden
-COMB-004 parking-only substitution forbidden
-COMB-005 no missing-side neutral
-COMB-006 no missing-side renormalization
-COMB-007 unresolved road remains unavailable
-COMB-008 parking capacity and curb length remain distinct
-COMB-009 no invented downstream component feature slots
-COMB-010 no caller self-authorization
-COMB-011 identity policy-weight sensitivity
-COMB-012 identity component-lineage sensitivity
-COMB-013 controlled available result within [0,100]
-COMB-014 no later-scope leakage
-COMB-015 canonical production still unavailable after helpers exist
-```
-
-Additional regressions verify:
-
-```text
-locked 3.4-6 direct road/parking normalization rejection
-nonavailable component cannot carry numeric score
-component order is nonsemantic for result identity
-```
-
-## 15. Architecture / dependency audit
-
-Implementation is additive in `sitescore-benchmarks`.
-
-Dependency metadata changes:
-
-```text
-NONE
-```
-
-Existing direct runtime dependencies remain:
+Direct runtime dependencies remain unchanged:
 
 ```text
 sitescore-spatial==0.1.0
 sitescore-metrics==0.1.0
 ```
 
-No direct:
+No direct dependency/import was added on:
 
 ```text
 sitescore-core
@@ -379,45 +325,29 @@ sitescore-providers
 sitescore-pipeline
 ```
 
-import/dependency was introduced.
-
 No new dependency cycle was introduced.
 
-`CONTRACT_CHANGE_REQUIRED = 0`.
+```text
+CONTRACT_CHANGE_REQUIRED = 0
+```
 
-## 16. Validation evidence
+---
 
-### Initial source/test validation
+## 10. Validation evidence
+
+### Source/test authority-hardening validation
 
 ```text
-workflow: cp347-validation
-run id: 31906632814
-validated SHA: 8001c1dc2dc2279ac6207ce6b679cbc0fc837db8
+workflow: cp347-hardening-validation
+run id: 31907113612
+validated SHA: 5cf8f26481a2489dc0e335744cb965fd9b26949a
 conclusion: SUCCESS
 ```
 
 Exact visible summaries:
 
 ```text
-sitescore-benchmarks: 187/187 PASS
-sitescore-metrics: 67/67 PASS
-```
-
-The same job successfully completed spatial, providers, data and core suites.
-
-### Final documentation-inclusive validation
-
-```text
-workflow: cp347-validation
-run id: 31906719900
-validated SHA: 5b85abaf56e5981dd6601f6edaf2e85081d1d679
-conclusion: SUCCESS
-```
-
-Exact visible summaries:
-
-```text
-sitescore-benchmarks: 187/187 PASS
+sitescore-benchmarks: 191/191 PASS
 sitescore-metrics: 67/67 PASS
 ```
 
@@ -430,99 +360,138 @@ sitescore-data: PASS
 sitescore-core: PASS
 ```
 
-Exact cardinalities are not asserted here for those four suites because their final pytest summary counts were not explicitly captured in the validation evidence.
-
-## 17. Validated SHA -> final review HEAD proof
-
-Final review HEAD:
+### Final documentation-inclusive hardening validation
 
 ```text
-d312a6de6afae51a65b67b6bd15b3770acdfb048
+workflow: cp347-hardening-validation
+run id: 31907209171
+validated SHA: 7bb7189e4fdedf53550228bcf63c93818c87ac02
+conclusion: SUCCESS
 ```
 
-GitHub compare from documentation-inclusive validated SHA `5b85abaf...` to final HEAD verifies exactly one commit/file delta:
+Exact visible summaries:
 
 ```text
-.github/workflows/cp347-validation.yml -> REMOVED
+sitescore-benchmarks: 191/191 PASS
+sitescore-metrics: 67/67 PASS
 ```
 
-No source, tests or documentation changed after the successful validation.
+The same job successfully completed all four additional frozen-package suites.
 
-## 18. Scope intentionally not implemented
+---
 
-Explicitly absent:
+## 11. Validated SHA -> final hardened HEAD proof
+
+Final hardened review HEAD:
 
 ```text
-approved empirical COMB-005 production weights
-production road scalar reduction
-production parking scalar reduction
-complete NormalizedLocationFeatures assembly
+bff973bbf2ddacc2967eb6d8f35b4307fa00003c
+```
+
+GitHub compare from final documentation-inclusive validated SHA:
+
+```text
+7bb7189e4fdedf53550228bcf63c93818c87ac02
+```
+
+to final hardened HEAD verifies exactly one file/commit delta:
+
+```text
+.github/workflows/cp347-hardening-validation.yml -> REMOVED
+```
+
+No source, test, README or checkpoint document changed after successful validation.
+
+---
+
+## 12. PR state
+
+PR #4 was updated in place; no new PR was created.
+
+Current hardened PR head:
+
+```text
+bff973bbf2ddacc2967eb6d8f35b4307fa00003c
+```
+
+PR remains open and unmerged.
+
+---
+
+## 13. Out-of-scope preserved
+
+Not implemented:
+
+```text
+approved empirical COMB-005 weights
+production road reduction
+production parking reduction
+approved production normalized road/parking component artifacts
+whole NormalizedLocationFeatures assembly
 ScoringReadiness
 RealDataPipelineResult orchestration
 CategoryScores
 Location Score
 core.analyze()
-checkpoint 3.4-8 implementation
+checkpoint 3.4-8
 ```
 
-## 19. Final self-audit
+---
+
+## 14. Final self-audit
 
 ```text
-canonical policy explicitly NOT_APPROVED                  VERIFIED
-canonical approved-policy registry empty                  VERIFIED
-production weight vector absent                           VERIFIED
-canonical score unavailable                               VERIFIED
-score=None for policy-not-approved                        VERIFIED
-road/parking/curb semantics distinct                      VERIFIED
-road-only substitution absent                             VERIFIED
-parking-only substitution absent                          VERIFIED
-neutral 50 absent                                         VERIFIED
-missing-side zero absent                                  VERIFIED
-renormalization absent                                    VERIFIED
-caller policy/weights/approved/score authorization absent VERIFIED
-controlled fixtures noncanonical/private                  VERIFIED
-component numeric gate [0,100]                            VERIFIED
-identity policy sensitivity                               VERIFIED
-identity component-lineage sensitivity                    VERIFIED
-component caller order nonsemantic                        VERIFIED
-locked 3.4-6 direct road/parking policies unchanged       VERIFIED
-new downstream component feature slots                    NONE
-later readiness/category/core surface                     NONE
-new runtime dependency                                    NONE
-frozen upstream source mutation                           NONE
-final diff outside sitescore-benchmarks                   NONE
+COMB-H001 public APPROVED policy spoofing                 RESOLVED
+COMB-H002 public AVAILABLE component spoofing             RESOLVED
+COMB-H002 public final state/score self-assertion         RESOLVED
+production synthetic approved helper                      REMOVED
+canonical approved policy registry                        EMPTY
+production weight vector                                  NONE
+canonical result                                           POLICY_NOT_APPROVED / score=None
+road/parking semantics distinct                           VERIFIED
+road-only substitution                                    NONE
+parking-only substitution                                 NONE
+neutral fill                                              NONE
+missing-side renormalization                              NONE
+locked 3.4-6 direct normalization                         UNCHANGED
+new dependency                                            NONE
+frozen upstream mutation                                  NONE
+later-scope leakage                                       NONE
 CONTRACT_CHANGE_REQUIRED                                  0
 ```
 
-## 20. Reviewer attention points
+---
 
-Please independently review exact HEAD:
+## 15. Reviewer attention points
+
+Please independently review exact hardened HEAD:
 
 ```text
-d312a6de6afae51a65b67b6bd15b3770acdfb048
+bff973bbf2ddacc2967eb6d8f35b4307fa00003c
 ```
 
-Focus especially on:
+Focus on:
 
-1. canonical policy being genuinely unapproved and weightless;
-2. canonical API having no self-authorization path;
-3. private controlled composition fixtures not becoming production authority;
-4. all three component semantics remaining distinct;
-5. no substitution / neutral fallback / renormalization;
-6. road unresolved state remaining honest;
-7. 3.4-6 direct normalization registry remaining unchanged for road/parking;
-8. identity binding policy and component lineage;
-9. no dependency or later-scope leakage;
-10. validated SHA -> review HEAD being workflow-removal-only.
+1. public policy constructor rejecting `APPROVED` caller authority;
+2. public component constructor rejecting `AVAILABLE` detached-score authority;
+3. final result constructor exposing only `(policy, components)` and deriving state/reasons/score;
+4. production `_compose_with_policy` path being removed;
+5. synthetic weighted/AVAILABLE fixtures existing only in test code;
+6. canonical approved registry still empty and production score still unavailable;
+7. final validated SHA -> hardened HEAD being workflow-removal-only.
 
-## 21. Stop condition
+---
+
+## 16. Stop condition
 
 ```text
 IMPLEMENTER_STATE: READY_FOR_REVIEW
 CHECKPOINT: FAZ 3.4-7
-CODE_HEAD_SHA: d312a6de6afae51a65b67b6bd15b3770acdfb048
 PR: #4
+CODE_HEAD_SHA: bff973bbf2ddacc2967eb6d8f35b4307fa00003c
+COMB-H001: RESOLVED
+COMB-H002: RESOLVED
 CONTRACT_CHANGE_REQUIRED: 0
 ```
 
-No merge, LOCK, tag, or checkpoint 3.4-8 work was performed.
+No merge, LOCK, tag or checkpoint 3.4-8 work was performed.
