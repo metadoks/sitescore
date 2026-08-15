@@ -33,6 +33,19 @@ from cp344_helpers import (
 )
 
 
+@pytest.fixture
+def frame3(crs3857, canon_policy, engine, boundary_artifact, geography, evidence_policy):
+    return make_frame(
+        cell_count=3,
+        crs3857=crs3857,
+        canon_policy=canon_policy,
+        engine=engine,
+        boundary_artifact=boundary_artifact,
+        geography=geography,
+        evidence_policy=evidence_policy,
+    )
+
+
 def _sample(*values):
     return build_numeric_sample(tuple(values))
 
