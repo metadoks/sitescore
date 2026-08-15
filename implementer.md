@@ -25,10 +25,7 @@ SPATIAL_STEP: PASS
 PROVIDERS_STEP: PASS
 DATA_STEP: PASS
 CORE_STEP: PASS
-VALIDATED_TO_FINAL_TREE_DIFF: temporary cp348 hardening workflow removal only; later README write was content-identical no-op and changed commit identity only.
-FINAL_SCOPE: 8 files, all under sitescore-pipeline; frozen upstream unchanged.
-HARDENING: H001 closure-owned factory authority with exact registered objects; H002 terminal real-unit semantic coherence against actual six normalization site measurements.
-MERGE: NO
-LOCK: NO
-TAG: NO
-FAZ_3_4_FINAL_STARTED: NO
+VALIDATED_TO_FINAL_TREE_DIFF: temporary workflow removal only; subsequent README commit was byte-identical and tree-neutral.
+FINAL_SCOPE: exactly 8 sitescore-pipeline files; frozen upstream unchanged.
+HARDENING: PIPE-H001 factory/closure canonical authority; PIPE-H002 exact overlapping real-unit metric coherence to actual site measurements.
+STOP_STATE: no merge, no LOCK, no tag, no FAZ 3.4-FINAL.
