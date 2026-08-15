@@ -92,7 +92,10 @@ def demo(n=1, *, generated_at=NOW):
             ),
         ),
         mv(80000 + n, "usd_per_household", f"acs-income-{n}", "acs-income-v1"),
-        (f"acs-{n}",), AvailabilityState.AVAILABLE, DataQualityState.FULL, generated_at,
+        (f"acs-income-{n}", f"acs-pop-{n}"),
+        AvailabilityState.AVAILABLE,
+        DataQualityState.FULL,
+        generated_at,
     )
 
 
