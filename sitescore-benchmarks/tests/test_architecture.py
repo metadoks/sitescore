@@ -23,12 +23,16 @@ def test_provider_neutral_no_structural_provider_schema():
         assert token not in text
 
 
-def test_no_ecdf_normalization_or_later_checkpoint_scope():
+def test_no_feature_normalization_or_later_checkpoint_scope():
     text = source_text().lower()
     for token in (
-        "mid_ecdf", "percentile", "normalizedlocationfeatures",
-        "road_parking_access_score", "comb-005", "scoringreadiness",
-        "realdatapipelineresult", "analyze(",
+        "normalizedlocationfeatures",
+        "road_parking_access_score",
+        "comb-005",
+        "scoringreadiness",
+        "realdatapipelineresult",
+        "categoryscores",
+        "core.analyze",
     ):
         assert token not in text
 
@@ -63,5 +67,6 @@ def test_no_hidden_production_constants():
     for token in (
         "250.0", "500.0", "1000.0", "centroid", "representative_point",
         "majority_overlap", "overlap_threshold", "minimum_n", "coverage_threshold",
+        "1e-6", "1e-9", "epsilon", "relative_tolerance", "absolute_tolerance",
     ):
         assert token not in text
