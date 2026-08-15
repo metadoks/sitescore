@@ -69,8 +69,8 @@ class BenchmarkMeasurementDistributionPolicy:
     policy_version: str = "1.0"
     subject_adapter_policy: BenchmarkSubjectAdapterPolicy = BENCHMARK_SUBJECT_ADAPTER_V1
     completeness_rule: str = "EXACTLY_ONE_ATTEMPT_PER_ELIGIBLE_FRAME_CELL"
-    numeric_inclusion_rule: str = "AVAILABLE_SCORE_ELIGIBLE_FINITE_VALUE"
-    compatibility_rule: str = "EXACT_SOURCE_BUNDLE_COMPATIBILITY"
+    numeric_inclusion_rule: str = "AVAILABLE_SCORE_ELIGIBLE_CALIBRATED_FINITE_VALUE"
+    compatibility_rule: str = "EXACT_METHOD_AND_SOURCE_BUNDLE_COMPATIBILITY"
 
     def __post_init__(self) -> None:
         text(self.policy_id, "policy_id")
@@ -85,9 +85,9 @@ class BenchmarkMeasurementDistributionPolicy:
             raise ValueError("unsupported benchmark measurement/distribution policy")
         if self.completeness_rule != "EXACTLY_ONE_ATTEMPT_PER_ELIGIBLE_FRAME_CELL":
             raise ValueError("benchmark completeness rule is frozen for V1")
-        if self.numeric_inclusion_rule != "AVAILABLE_SCORE_ELIGIBLE_FINITE_VALUE":
+        if self.numeric_inclusion_rule != "AVAILABLE_SCORE_ELIGIBLE_CALIBRATED_FINITE_VALUE":
             raise ValueError("benchmark numeric-inclusion rule is frozen for V1")
-        if self.compatibility_rule != "EXACT_SOURCE_BUNDLE_COMPATIBILITY":
+        if self.compatibility_rule != "EXACT_METHOD_AND_SOURCE_BUNDLE_COMPATIBILITY":
             raise ValueError("benchmark compatibility rule is frozen for V1")
 
     @property
@@ -276,6 +276,10 @@ class BenchmarkMetricCompatibility:
         return self.measurement.metric_value.unit
 
     @property
+    def method_version(self) -> str:
+        return self.measurement.method_version
+
+    @property
     def source_bundle_compatibility(self) -> tuple[tuple[str, str], ...]:
         return self.measurement.source_bundle_compatibility
 
@@ -286,5 +290,6 @@ class BenchmarkMetricCompatibility:
             "metric_derivation_policy_id": self.derivation_policy.identity_id,
             "measurement_precision_policy_id": self.precision_policy.identity_id,
             "unit": self.unit,
+            "method_version": self.method_version,
             "source_bundle_compatibility": self.source_bundle_compatibility,
         })
