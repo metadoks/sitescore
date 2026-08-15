@@ -80,10 +80,17 @@ def demo(n=1, *, generated_at=NOW):
     geography = GeographyRef(
         GeographyType.BLOCK_GROUP, f"36061000100{n}", f"BG{n}", "US", f"geo_src_{n}", "2025"
     )
+    population = 400 + n
+    cohort_population = 100
     return DemographicSnapshot(
         geography,
-        mv(400 + n, "people", f"acs-pop-{n}"),
-        (AgeCohortPopulation("age_18_24", 18, 25, 100, 0.25),),
+        mv(population, "people", f"acs-pop-{n}"),
+        (
+            AgeCohortPopulation(
+                "age_18_24", 18, 25, cohort_population,
+                cohort_population / population,
+            ),
+        ),
         mv(80000 + n, "usd_per_household", f"acs-income-{n}", "acs-income-v1"),
         (f"acs-{n}",), AvailabilityState.AVAILABLE, DataQualityState.FULL, generated_at,
     )
@@ -111,10 +118,13 @@ def transit(n=1, *, bundle="bundle:abc"):
         "America/New_York", ValidityState.VALID, date(2026, 1, 1), date(2026, 12, 31),
         tuple(date(2026, 8, d) for d in range(3, 10)), "typical-week-v1", "gtfs-calendar-v1",
     )
-    observations = tuple(TransitObservation(h, 2, 0.5, 2.5 + n / 100.0) for h in range(168))
+    departure_equivalents = 2.5
+    observations = tuple(
+        TransitObservation(h, 2, 0.5, departure_equivalents) for h in range(168)
+    )
     return TransitSnapshot(
         f"transit_{n}", (), window, observations,
-        mv(2.5 + n / 100.0, "departure_equivalents_per_hour", f"gtfs-{n}", "transit-v1"),
+        mv(departure_equivalents, "departure_equivalents_per_hour", f"gtfs-{n}", "transit-v1"),
         None, bundle, (f"gtfs-{n}",), AvailabilityState.AVAILABLE, DataQualityState.FULL, NOW,
     )
 
