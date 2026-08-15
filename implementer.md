@@ -17,9 +17,7 @@ CONTRACT_CHANGE_REQUIRED: 0
 PIPE-H001: RESOLVED
 PIPE-H002: RESOLVED
 
-PIPE-H001: factory-owned assembly/readiness; closure-owned canonical registration; direct constructors blocked; reproduced hashes/manual allocations cannot obtain production authority; old importable token/hash authority surfaces removed; detached readiness rejected.
-
-PIPE-H002: canonical assembly retains actual six FeatureNormalizationResult artifacts; terminal validates overlapping DerivedLocationMetrics against actual site measurement MetricValue semantics across value/unit/state/quality/eligibility/calibration/estimate/proxy/source_refs/method/reasons. Income value/method, transit source, reach method, and contradictory placeholder regressions reject; coherent lineage accepts.
+HARDENING: factory-owned closure-registered assembly/readiness authority; no importable authority token/hash path; exact factory object required. Terminal real-unit coherence binds all six overlapping DerivedLocationMetrics fields to actual FeatureNormalizationResult.site_measurement.metric_value semantics. Adversarial authority and metric-lineage mismatch tests included.
 
 VALIDATION_WORKFLOW: cp348-hardening-validation
 VALIDATION_RUN: 31909388401
@@ -33,11 +31,9 @@ PROVIDERS_STEP: PASS
 DATA_STEP: PASS
 CORE_STEP: PASS
 
-Validated SHA -> current code HEAD tree difference is exactly deletion of temporary `.github/workflows/cp348-hardening-validation.yml`. A later contents-API no-op README write altered commit SHA but not tree content; compare still reports only that workflow deletion.
+VALIDATED_TO_FINAL_TREE_DIFF: only `.github/workflows/cp348-hardening-validation.yml` removed. Later README contents-API no-op changed commit SHA only; source/test/docs tree remains the exact validated content.
+FINAL_SCOPE: exactly 8 files, all under additive `sitescore-pipeline`; frozen upstream source unchanged.
 
-Base -> current code HEAD contains exactly 8 files, all under `sitescore-pipeline`. Frozen upstream source is untouched. Missing evidence remains nonnumeric; age fallback remains sole exact exception; COMB-005 remains unapproved; no core/category/location/decision/report logic added.
-
-STOP_STATE: READY_FOR_REVIEW
 MERGE: NO
 LOCK: NO
 TAG: NO
