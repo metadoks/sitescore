@@ -161,10 +161,7 @@ def test_generated_at_is_nonsemantic_for_frame_distribution(frame3):
     shifted = replace(frame3, generated_at=datetime(2027, 1, 1, tzinfo=timezone.utc))
     assert shifted.frame_id == frame3.frame_id
     attempts_a = complete_attempts(frame3, income_attempt)
-    attempts_b = tuple(
-        BenchmarkCellMeasurement(shifted, shifted.cells[i], attempts_a[i].measurement)
-        for i in range(len(shifted.cells))
-    )
+    attempts_b = complete_attempts(shifted, income_attempt)
     a = BenchmarkDistributionArtifact(build_benchmark_measurement_set(
         frame3, attempts_a, metric_key="household_income"
     ))
