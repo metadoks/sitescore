@@ -203,3 +203,87 @@ def test_transit_same_bundle_distribution_available(frame3):
     assert dict(distribution.compatibility.source_bundle_compatibility) == {
         "transit_source_bundle_fingerprint": "bundle:abc"
     }
+
+
+def _income_attempt_with_semantics(
+    frame, cell, n, *, calibration=CalibrationState.CALIBRATED, method="acs-income-v1"
+):
+    snapshot = demo(n)
+    original = snapshot.household_income
+    hardened_value = MetricValue(
+        original.value,
+        original.unit,
+        original.availability,
+        original.data_quality,
+        original.score_eligibility,
+        calibration,
+        original.is_estimate,
+        original.is_proxy,
+        original.source_refs,
+        method,
+        original.reason_codes,
+    )
+    snapshot = replace(snapshot, household_income=hardened_value)
+    return income_attempt(frame, cell, n, snapshot=snapshot)
+
+
+def test_uncalibrated_available_eligible_numeric_attempt_is_excluded(frame3):
+    attempts = tuple(
+        _income_attempt_with_semantics(
+            frame3, cell, i + 1, calibration=CalibrationState.UNCALIBRATED
+        )
+        for i, cell in enumerate(frame3.cells)
+    )
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, attempts, metric_key="household_income"
+    ))
+    assert distribution.coverage.attempt_count == 3
+    assert distribution.coverage.numeric_candidate_count == 0
+    assert distribution.coverage.numeric_included_count == 0
+    assert distribution.coverage.excluded_count == 3
+    assert distribution.observations == ()
+    assert dict(distribution.coverage.reason_counts) == {
+        "calibration_state_uncalibrated": 3
+    }
+    assert distribution.state is BenchmarkDistributionState.NO_NUMERIC_OBSERVATIONS
+
+
+def test_mixed_calibration_preserves_complete_population_and_excludes_one(frame3):
+    attempts = list(complete_attempts(frame3, income_attempt))
+    attempts[2] = _income_attempt_with_semantics(
+        frame3, frame3.cells[2], 3, calibration=CalibrationState.UNCALIBRATED
+    )
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, tuple(attempts), metric_key="household_income"
+    ))
+    assert distribution.coverage.attempt_count == 3
+    assert distribution.coverage.numeric_candidate_count == 2
+    assert distribution.coverage.numeric_included_count == 2
+    assert distribution.coverage.excluded_count == 1
+    assert len(distribution.observations) == 2
+    assert dict(distribution.coverage.reason_counts) == {
+        "calibration_state_uncalibrated": 1
+    }
+    assert all(o.value != 0 for o in distribution.observations)
+    assert distribution.state is BenchmarkDistributionState.AVAILABLE
+
+
+def test_calibrated_available_eligible_numeric_attempt_remains_included(frame3):
+    attempts = tuple(
+        _income_attempt_with_semantics(frame3, cell, i + 1)
+        for i, cell in enumerate(frame3.cells)
+    )
+    distribution = build_benchmark_distribution(build_benchmark_measurement_set(
+        frame3, attempts, metric_key="household_income"
+    ))
+    assert distribution.coverage.attempt_count == 3
+    assert distribution.coverage.numeric_candidate_count == 3
+    assert distribution.coverage.numeric_included_count == 3
+    assert len(distribution.observations) == 3
+    assert distribution.state is BenchmarkDistributionState.AVAILABLE
+
+
+def test_numeric_inclusion_policy_identity_declares_calibration_requirement():
+    assert BENCHMARK_MEASUREMENT_DISTRIBUTION_V1.numeric_inclusion_rule == (
+        "AVAILABLE_SCORE_ELIGIBLE_CALIBRATED_FINITE_VALUE"
+    )
