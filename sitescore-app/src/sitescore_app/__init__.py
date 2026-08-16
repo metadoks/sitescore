@@ -28,6 +28,10 @@ from .gating import (
     require_canonical_application_pipeline_result,
     require_canonical_application_scoring_input,
 )
+from .transport import (
+    ApplicationHttpResponse,
+    handle_application_analysis_transport,
+)
 
 __all__ = [
     "ApplicationPipelineResult",
@@ -39,6 +43,7 @@ __all__ = [
     "ApplicationCategoryAggregationResult",
     "ApplicationCoreAnalysisInput",
     "ApplicationAnalysisResult",
+    "ApplicationHttpResponse",
     "build_application_pipeline_result",
     "require_canonical_application_pipeline_result",
     "evaluate_application_scoring_gate",
@@ -50,4 +55,5 @@ __all__ = [
     "require_canonical_application_core_analysis_input",
     "analyze_application_core_input",
     "require_canonical_application_analysis_result",
+    "handle_application_analysis_transport",
 ]
