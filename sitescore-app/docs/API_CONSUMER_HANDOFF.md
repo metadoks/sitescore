@@ -2,35 +2,60 @@
 
 ## 1. Purpose
 
-This is the durable FAZ 4 consumer-facing handoff for future report, payment, n8n, delivery, and other orchestration layers.
+This is the durable FAZ 4 consumer-facing handoff for future report, payment, n8n, delivery, and other orchestration layers. It documents only behavior FAZ 4 actually implements or explicitly leaves unresolved. It does not grant scoring authority to downstream consumers and does not authorize future-layer implementation.
 
-It documents only the API/transport behavior that FAZ 4 actually implements or explicitly leaves unresolved. It does not create a new communication workflow, does not grant scoring authority to downstream consumers, and does not authorize future-layer implementation.
-
-## 2. Final FAZ 4 status / SHA closure
+## 2. Final FAZ 4 status and durable SHA closure
 
 Pre-lock state:
 
 ```text
 FAZ_4_FINAL_STATUS: FREEZE_CANDIDATE_PENDING_REVIEW_AND_USER_LOCK
 AUDIT_BASE_SHA: a0c2461a7c23618273ab44496011d849584d19fa
-FINAL_REVIEWED_CANDIDATE_SHA: PENDING_UNTIL_REVIEW
-FINAL_MERGED_FROZEN_MAIN_SHA: PENDING_UNTIL_USER_LOCK_AND_REVIEWER_VERIFICATION
+FINAL_REVIEWED_CANDIDATE_SHA: PENDING_UNTIL_REVIEWER_READY_TO_LOCK
+FINAL_MERGED_FROZEN_MAIN_SHA: PENDING_UNTIL_USER_LOCK
+
+FINAL_SHA_CLOSURE_REF: ops/faz4-final-freeze-closure
+FINAL_SHA_CLOSURE_PATH: docs/FAZ4_FINAL_FREEZE_CLOSURE.md
 ```
 
-Durable resolution rules:
+A candidate commit cannot reliably self-embed its own final SHA and a pre-merge file cannot know the future merge SHA. Frozen `main` therefore must not be moved after merge merely to write those values. Literal closure is recorded on the dedicated non-runtime ref above.
+
+After successful final LOCK, the closure artifact MUST contain actual literal values:
 
 ```text
-FINAL_REVIEWED_CANDIDATE_SHA_RESOLUTION:
-  exact head SHA of branch faz4/final-integrated-audit-freeze at Reviewer READY_TO_LOCK
-
-FINAL_MERGED_FROZEN_MAIN_SHA_RESOLUTION:
-  merge_commit_sha of the accepted 4-FINAL PR and exact main SHA independently
-  verified after user-authorized LOCK
+FAZ_4_STATUS: FROZEN
+FINAL_PR: #14
+FINAL_REVIEWED_CANDIDATE_SHA: <exact Reviewer-approved PR #14 head>
+FINAL_MERGED_FROZEN_MAIN_SHA: <actual PR #14 merge commit == exact main immediately after merge>
+API_CONSUMER_HANDOFF_PATH: sitescore-app/docs/API_CONSUMER_HANDOFF.md
+FINAL_AUDIT_RECORD_PATH: docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md
 ```
 
-The literal future commit/merge SHA is never guessed. A commit cannot reliably self-embed its own resulting SHA, and the merge SHA does not exist before merge.
+The closure artifact is repository governance evidence only. It is not merged into frozen `main`, does not become application/runtime authority, and may not invent product/API semantics.
 
-FAZ 4 is not `FROZEN` until Reviewer independently closes this SHA resolution against actual GitHub state.
+### Deterministic LOCK-turn closure procedure
+
+1. Re-fetch Reviewer state, PR #14, and `main`.
+2. Require exact `READY_TO_LOCK` / `LOCK_IF_USER_AUTHORIZED`, exact reviewed head/base/current main, open mergeable PR, zero contract/version/reopen gates, and no blockers.
+3. Require explicit user `LOCK`.
+4. Merge PR #14 with exact-head guard.
+5. Re-fetch PR #14, `main`, and merge commit.
+6. Require:
+
+```text
+PR #14 merged == TRUE
+merge_commit_sha == current main
+merge parent 1 == pre-lock main/base
+merge parent 2 == exact Reviewer-approved head
+```
+
+7. Only after those facts exist, create/update `ops/faz4-final-freeze-closure` and write `docs/FAZ4_FINAL_FREEZE_CLOSURE.md` with the literal values above.
+8. Do not merge that closure-record commit into frozen `main`.
+9. Update normal Implementer coordination record and STOP.
+10. On the next normal `Devam`, Reviewer independently verifies PR/main/parents and the closure artifact.
+11. Only then Reviewer may declare `FAZ_4_STATUS: FROZEN`.
+
+If closure tooling fails, Implementer records `LOCK_CLOSURE_INCOMPLETE`; Reviewer must not declare FAZ 4 frozen.
 
 ## 3. API package / version
 
@@ -52,7 +77,7 @@ sitescore-core==0.1.0
 UNRESOLVED_IN_FAZ4: no separate external/network API contract version or versioned route lifecycle is frozen in FAZ 4.
 ```
 
-`sitescore-app==0.1.0` is the application package version. It must not be reinterpreted as a separately frozen public network API version.
+The package version is not a public network API version.
 
 ## 5. Endpoint inventory
 
@@ -66,48 +91,29 @@ Implemented transport entry:
 handle_application_analysis_transport(application_core_input)
 ```
 
-It is a framework-neutral, in-process Python call.
-
-FAZ 4 does not claim:
-
-```text
-/analyze
-/analyses
-/v1/...
-GET /analyses/{id}
-POST /analyses
-or any other network route
-```
+This is a framework-neutral, synchronous, in-process Python call. No `/analyze`, `/analyses`, `/v1/...`, GET/POST inventory, host, port, server, or deployment contract is provided.
 
 ## 6. HTTP methods
 
 ```text
-NOT_APPLICABLE_TO_CURRENT_FOUNDATION: no network route exists, so GET/POST/PUT/PATCH/DELETE method policy is not frozen.
+NOT_APPLICABLE_TO_CURRENT_FOUNDATION: no network route exists, so GET/POST/PUT/PATCH/DELETE policy is not frozen.
 ```
 
 ## 7. Request schema summary
-
-Implemented in-process request authority:
 
 ```text
 RESOLVED: canonical factory-owned ApplicationCoreAnalysisInput
 ```
 
-The transport function accepts only the canonical in-process authority built by FAZ 4.2.
-
-External network/raw JSON request schema:
+External raw JSON request schema:
 
 ```text
 NOT_PROVIDED_IN_FAZ4
 ```
 
-Raw JSON, dicts, copied DTOs, fingerprints, hashes, ids, tokens, or caller flags cannot create or impersonate `ApplicationCoreAnalysisInput` authority.
-
-A future external request-ingestion layer must separately build canonical upstream authority through an authorized application pipeline. It may not deserialize a claimed authority object.
+Raw JSON, dicts, copied DTOs, fingerprints, hashes, ids, tokens, or caller flags cannot create/impersonate application authority. A future external ingestion layer must separately build canonical upstream authority through authorized application flow.
 
 ## 8. Response schema summary
-
-Implemented response DTO:
 
 ```text
 RESOLVED:
@@ -117,7 +123,7 @@ ApplicationHttpResponse(
 )
 ```
 
-Successful body is a deep-owned JSON-safe snapshot of exact `CanonicalAnalysisResult.to_dict()` semantics and contains:
+Successful body is a deep-owned JSON-safe snapshot of exact `CanonicalAnalysisResult.to_dict()` semantics, including canonical result metadata/components such as:
 
 ```text
 analysis_fingerprint
@@ -128,7 +134,7 @@ decision
 confidence
 ```
 
-No score recomputation, rounding, renaming, relabeling, fingerprint regeneration, or model-version regeneration occurs in transport.
+Transport does not recompute scores, fingerprints, model versions, or decision semantics.
 
 ## 9. Domain status / error model
 
@@ -142,14 +148,10 @@ ANALYSIS_EXECUTION_FAILED
 
 Transport does not invent a second readiness state machine.
 
-Frozen truth remains:
-
 ```text
 NOT_SCORE_READY != successful score
 PIPELINE_ERROR != empty successful payload
 ```
-
-No caller-provided status string grants application/scoring authority.
 
 ## 10. HTTP-style status mapping
 
@@ -161,11 +163,10 @@ RESOLVED:
 ```
 
 ```text
-NOT_PROVIDED_IN_FAZ4:
-422 blocked mapping
+NOT_PROVIDED_IN_FAZ4: 422 blocked mapping
 ```
 
-These are framework-neutral HTTP-style response semantics. They do not imply a deployed HTTP server.
+These are framework-neutral response semantics only; they do not imply a deployed HTTP server.
 
 ## 11. Error schema
 
@@ -191,7 +192,7 @@ Current values:
   message = Application analysis failed.
 ```
 
-Transport does not reflect exception repr/traceback, object ids, filesystem paths, provider secrets, API keys, or raw upstream responses.
+No traceback, exception repr, object id, path, secret, API key, or raw upstream response is exposed.
 
 ## 12. Request identifier semantics
 
@@ -202,25 +203,13 @@ NOT_PROVIDED_IN_FAZ4: no request ID is generated, accepted, propagated, or expos
 ## 13. Analysis identifier semantics
 
 ```text
-RESOLVED:
-analysis_fingerprint is preserved unchanged from the exact CanonicalAnalysisResult.
+RESOLVED: analysis_fingerprint is preserved unchanged from the exact CanonicalAnalysisResult.
 ```
 
-`analysis_fingerprint` is canonical result metadata only. It is not:
+It is canonical result metadata only, not a request ID, job ID, polling token, idempotency key, authentication credential, or execution authority.
 
 ```text
-request ID
-job ID
-polling token
-idempotency key
-authentication credential
-execution authority
-```
-
-Separate analysis lifecycle identifier:
-
-```text
-NOT_PROVIDED_IN_FAZ4
+NOT_PROVIDED_IN_FAZ4: separate analysis lifecycle identifier
 ```
 
 ## 14. Job identifier semantics
@@ -230,8 +219,6 @@ NOT_PROVIDED_IN_FAZ4: no job object, job ID, queue identity, or asynchronous wor
 ```
 
 ## 15. Sync / async behavior
-
-Current implemented handler:
 
 ```text
 RESOLVED: synchronous in-process final-response execution
@@ -246,46 +233,35 @@ canonical ApplicationCoreAnalysisInput
 -> final ApplicationHttpResponse returned in same call
 ```
 
-Future external network execution policy:
-
 ```text
-UNRESOLVED_IN_FAZ4
+UNRESOLVED_IN_FAZ4: future external network execution policy
 ```
 
-FAZ 4 does not implement async submission, queueing, deferred completion, or background workers.
+No async submission, queueing, deferred completion, or background worker is implemented.
 
 ## 16. Timeout expectations
 
 ```text
-NOT_PROVIDED_IN_FAZ4: no client/server timeout, deadline, cancellation, or timeout-error contract is defined.
+NOT_PROVIDED_IN_FAZ4: no client/server timeout, deadline, cancellation, or timeout-error contract.
 ```
-
-Consumers must not infer retry safety or timing guarantees from the synchronous in-process call shape.
 
 ## 17. Result retrieval semantics
 
-Current handler:
-
 ```text
 RESOLVED: result is returned directly by the same synchronous in-process call.
-```
-
-External retrieval model:
-
-```text
-NOT_PROVIDED_IN_FAZ4: no result-resource URL, durable result store, retrieval endpoint, or later fetch API exists.
+NOT_PROVIDED_IN_FAZ4: no result-resource URL, durable result store, retrieval endpoint, or later fetch API.
 ```
 
 ## 18. Polling semantics
 
 ```text
-NOT_PROVIDED_IN_FAZ4: no polling endpoint, poll token, interval, status resource, or terminal-state polling protocol exists.
+NOT_PROVIDED_IN_FAZ4: no polling endpoint, poll token, interval, status resource, or terminal-state polling protocol.
 ```
 
 ## 19. Callback / webhook semantics
 
 ```text
-NOT_PROVIDED_IN_FAZ4: no callback URL, webhook registration, webhook event, signature, delivery retry, or callback schema exists.
+NOT_PROVIDED_IN_FAZ4: no callback URL, webhook registration/event/signature/delivery retry/schema.
 ```
 
 ## 20. Retry expectations
@@ -294,7 +270,7 @@ NOT_PROVIDED_IN_FAZ4: no callback URL, webhook registration, webhook event, sign
 UNRESOLVED_IN_FAZ4: no external retry contract or retry-safety guarantee is frozen.
 ```
 
-Determinism of canonical analysis for equivalent frozen inputs must not be misrepresented as request deduplication or retry safety.
+Canonical determinism must not be reinterpreted as request deduplication or retry safety.
 
 ## 21. Idempotency
 
@@ -307,10 +283,10 @@ No idempotency key, duplicate-request store, logical request identity, or duplic
 ## 22. Authentication boundary / status
 
 ```text
-NOT_PROVIDED_IN_FAZ4: no authentication, authorization, account, tenant, API key, OAuth, JWT, session, or caller-identity boundary exists.
+NOT_PROVIDED_IN_FAZ4: no authentication, authorization, account, tenant, API key, OAuth, JWT, session, or caller-identity boundary.
 ```
 
-Canonical in-process application authority is not authentication and must not be serialized as a trust token.
+Canonical in-process application authority is not authentication and must never be serialized as a trust token.
 
 ## 23. Machine-readable API schema / OpenAPI
 
@@ -320,7 +296,7 @@ NOT_APPLICABLE_TO_CURRENT_FOUNDATION: no network framework/route exists from whi
 
 No OpenAPI document is claimed in FAZ 4.
 
-Current version-controlled contract sources are:
+Current version-controlled contract sources:
 
 ```text
 sitescore-app/src/sitescore_app/transport.py
@@ -330,13 +306,11 @@ sitescore-app/docs/CHECKPOINT_4_4_HTTP_API_TRANSPORT_FOUNDATION.md
 sitescore-app/docs/API_CONSUMER_HANDOFF.md
 ```
 
-A future machine-readable external schema must reflect actual separately authorized runtime routes.
-
 ## 24. Backward-compatibility expectations
 
-After FAZ 4 freeze, changes to frozen runtime-observable consumer semantics or authority boundaries require explicit reopening/escalation before modification.
+After FAZ 4 freeze, changes to frozen runtime-observable consumer semantics or application-authority boundaries require explicit reopening/escalation.
 
-Examples include changing:
+Examples:
 
 ```text
 public exported transport symbols
@@ -345,16 +319,16 @@ success response canonical meaning
 stable 200/400/500 mapping
 stable machine error codes
 raw-authority rejection semantics
-current synchronous in-process handler semantics
+synchronous in-process handler semantics
 ```
 
-Required escalation:
+Required escalation for a frozen-contract change:
 
 ```text
 CONTRACT_CHANGE_REQUIRED: 1
 ```
 
-FAZ 4 makes no compatibility promise for a nonexistent network route/method/version lifecycle.
+No compatibility promise exists for nonexistent network route/method/version behavior.
 
 ## 25. Known limitations
 
@@ -367,7 +341,7 @@ FAZ 4 makes no compatibility promise for a nonexistent network route/method/vers
 - no job ID
 - no async execution
 - no timeout contract
-- no external retrieval endpoint/result-store contract
+- no external retrieval endpoint/result store
 - no polling
 - no callbacks/webhooks
 - no retry guarantee
@@ -378,17 +352,15 @@ FAZ 4 makes no compatibility promise for a nonexistent network route/method/vers
 - no deployed n8n-callable network endpoint
 ```
 
-These are explicit FAZ 4 boundaries, not implied defaults for later phases.
-
 ## 26. Downstream consumer invariants
 
 Once a separately authorized external canonical API actually exists, future n8n orchestration MAY:
 
 ```text
-- invoke/submit through that canonical API contract;
-- receive/poll canonical status only if polling is actually implemented;
-- branch workflow based on canonical API state;
-- pass completed canonical results to report/payment/delivery systems.
+- invoke/submit through that canonical API;
+- receive/poll canonical status only if actually implemented;
+- branch on canonical API state;
+- pass completed canonical results downstream.
 ```
 
 Future n8n MUST NOT:
@@ -404,7 +376,7 @@ Future n8n MUST NOT:
 - treat JSON/fingerprint/id/hash/flags as scoring/application authority.
 ```
 
-The same restriction applies to future report, payment, email, and delivery consumers. They consume canonical state/results; they do not become scoring authorities.
+The same restriction applies to future report, payment, email, and delivery consumers.
 
 ## 27. Explicit out-of-scope items
 
@@ -426,7 +398,7 @@ COMB-005 approval
 FAZ 5/6 functionality
 ```
 
-## 28. Scoring/readiness invariants that consumers must preserve
+## 28. Scoring/readiness invariants consumers must preserve
 
 ```text
 missing != zero
@@ -437,7 +409,7 @@ NOT_SCORE_READY != successful score
 PIPELINE_ERROR != empty successful payload
 ```
 
-No consumer may replace missing values, invent neutral scores, renormalize missing weights, or reinterpret unavailable evidence as a successful analysis.
+No consumer may neutral-fill, renormalize missing weights, or reinterpret unavailable evidence as successful analysis.
 
 ## 29. COMB-005 consumer truth
 
@@ -449,10 +421,8 @@ composition_method = UNRESOLVED
 production road_parking_access_score = unavailable / non-authoritative
 ```
 
-Consumers must not assume road/parking composite approval from the existence of controlled test fixtures.
+Controlled test fixtures do not imply empirical approval.
 
 ## 30. Final handoff rule
 
-This artifact is the durable FAZ 4 consumer contract handoff. Future phases may extend it only through authorized contract/version evolution.
-
-Until an external callable boundary is actually implemented, no consumer may claim that SiteScore exposes a deployed HTTP API merely because the framework-neutral transport DTO/function exists.
+This artifact is the durable FAZ 4 consumer contract handoff. Future phases may extend it only through authorized contract/version evolution. The literal final reviewed/frozen SHAs are durably closed through `ops/faz4-final-freeze-closure:docs/FAZ4_FINAL_FREEZE_CLOSURE.md` after the exact user-authorized LOCK procedure above; the closure record never replaces this consumer contract and is never runtime authority.
