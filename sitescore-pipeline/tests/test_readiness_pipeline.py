@@ -704,3 +704,144 @@ def test_canonical_assembly_rejects_detached_metric_surface():
             road_parking_result=object(),
             generated_at=T0,
         )
+
+
+
+def _copy_factory_owned_assembly(source):
+    copied = object.__new__(integration.NormalizedFeatureAssembly)
+    for name in (
+        "features",
+        "direct_results",
+        "feature_policies",
+        "compatibility",
+        "approved_fallback_policies",
+        "artifact_identities",
+        "assembly_id",
+    ):
+        object.__setattr__(copied, name, getattr(source, name))
+    return copied
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "features",
+        "direct_results",
+        "feature_policies",
+        "compatibility",
+        "approved_fallback_policies",
+        "artifact_identities",
+        "assembly_id",
+    ),
+)
+def test_pipe_auth_h001_registered_assembly_field_replacement_is_rejected(
+    canonical_assembly,
+    field_name,
+):
+    replacements = {
+        "features": replace(canonical_assembly.features),
+        "direct_results": tuple(list(canonical_assembly.direct_results)),
+        "feature_policies": tuple(list(canonical_assembly.feature_policies)),
+        "compatibility": replace(canonical_assembly.compatibility),
+        "approved_fallback_policies": tuple(
+            list(canonical_assembly.approved_fallback_policies)
+        ),
+        "artifact_identities": tuple(list(canonical_assembly.artifact_identities)),
+        "assembly_id": canonical_assembly.assembly_id + "0",
+    }
+    object.__setattr__(canonical_assembly, field_name, replacements[field_name])
+    with pytest.raises(ValueError, match="assembly integrity violation"):
+        integration.derive_scoring_readiness(canonical_assembly, evaluated_at=T0)
+
+
+def test_pipe_auth_h001_readiness_assembly_replacement_is_rejected(
+    canonical_readiness,
+):
+    forged = _copy_factory_owned_assembly(canonical_readiness.assembly)
+    object.__setattr__(canonical_readiness, "assembly", forged)
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(forged),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_readiness_result_replacement_is_rejected(
+    canonical_readiness,
+):
+    object.__setattr__(
+        canonical_readiness,
+        "result",
+        replace(canonical_readiness.result),
+    )
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(canonical_readiness.assembly),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_nested_readiness_score_ready_mutation_is_rejected(
+    canonical_readiness,
+):
+    assert canonical_readiness.result.is_score_ready is False
+    object.__setattr__(canonical_readiness.result, "is_score_ready", True)
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(canonical_readiness.assembly),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_nested_forged_road_parking_score_is_rejected(
+    canonical_assembly,
+):
+    original = canonical_assembly.features.road_parking_access_score
+    assert original.value is None
+    forged_metric = replace(
+        original,
+        value=66.0,
+        availability=AvailabilityState.AVAILABLE,
+        data_quality=DataQualityState.FULL,
+        score_eligibility=ScoreEligibility.ELIGIBLE,
+        calibration_state=CalibrationState.CALIBRATED,
+        source_refs=(SOURCE,),
+        method_version="forged-comb005/1.0",
+        reason_codes=(),
+    )
+    object.__setattr__(
+        canonical_assembly.features,
+        "road_parking_access_score",
+        forged_metric,
+    )
+    with pytest.raises(ValueError, match="assembly integrity violation"):
+        integration.derive_scoring_readiness(canonical_assembly, evaluated_at=T0)
+
+
+def test_pipe_auth_h001_unmodified_canonical_path_preserves_not_score_ready(
+    canonical_readiness,
+):
+    terminal = integration.build_real_data_pipeline_result(
+        readiness=canonical_readiness,
+        sector_key=SectorKey("coffee"),
+        resolved_location=_location(),
+        derived_metrics=_coherent_derived(canonical_readiness.assembly),
+        source_metadata=(),
+        generated_at=T0,
+    )
+    assert terminal.status is PipelineStatus.NOT_SCORE_READY
+    assert terminal.normalized_features is canonical_readiness.assembly.features
+    assert terminal.scoring_readiness is canonical_readiness.result
+    assert terminal.normalized_features.road_parking_access_score.value is None

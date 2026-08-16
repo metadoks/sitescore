@@ -417,11 +417,85 @@ def _compute_assembly_id(
     })
 
 
-def _readiness_fingerprint(assembly: NormalizedFeatureAssembly) -> str:
+def _assembly_authority_attestation(
+    features: NormalizedLocationFeatures,
+    direct_results: tuple[FeatureNormalizationResult, ...],
+    feature_policies: tuple[FeatureReadinessPolicy, ...],
+    compatibility: ReadinessCompatibilityInput,
+    approved_fallback_policies: tuple[ApprovedFallbackPolicyRef, ...],
+    artifact_identities: tuple[tuple[str, str], ...],
+    assembly_id: str,
+) -> str:
+    """Attest the construction-time semantics bound to one canonical assembly."""
     return _semantic_hash({
-        "assembly_id": assembly.assembly_id,
+        "computed_assembly_id": _compute_assembly_id(
+            features,
+            direct_results,
+            feature_policies,
+            compatibility,
+            approved_fallback_policies,
+            artifact_identities,
+        ),
+        "assembly_id": assembly_id,
+        "features_generated_at": features.generated_at.isoformat(),
+    })
+
+
+def _readiness_result_record(result: ScoringReadinessResult) -> dict[str, object]:
+    return {
+        "is_score_ready": result.is_score_ready,
+        "missing_required_features": result.missing_required_features,
+        "uncalibrated_features": result.uncalibrated_features,
+        "insufficient_quality_features": result.insufficient_quality_features,
+        "incompatible_features": result.incompatible_features,
+        "reason_codes": tuple(reason.value for reason in result.reason_codes),
+        "required_policy_versions": tuple(
+            (item.policy_id, item.version)
+            for item in result.required_policy_versions
+        ),
+        "resolved_policy_versions": tuple(
+            (item.policy_id, item.version)
+            for item in result.resolved_policy_versions
+        ),
+        "feature_states": tuple(
+            (
+                state.feature_name,
+                state.required,
+                state.availability.value,
+                state.data_quality.value,
+                state.score_eligibility.value,
+                state.calibration_state.value,
+                state.required_policy_version,
+                state.resolved_policy_version,
+                state.fallback_policy_id,
+                state.fallback_policy_version,
+                tuple(reason.value for reason in state.reason_codes),
+            )
+            for state in result.feature_states
+        ),
+        "validator_version": result.validator_version,
+        "evaluated_at": result.evaluated_at.isoformat(),
+        "readiness_fingerprint": result.readiness_fingerprint,
+    }
+
+
+def _readiness_result_attestation(result: ScoringReadinessResult) -> str:
+    return _semantic_hash(_readiness_result_record(result))
+
+
+def _readiness_fingerprint(
+    *,
+    assembly_id: str,
+    features: NormalizedLocationFeatures,
+    feature_policies: tuple[FeatureReadinessPolicy, ...],
+    compatibility: ReadinessCompatibilityInput,
+    approved_fallback_policies: tuple[ApprovedFallbackPolicyRef, ...],
+    artifact_identities: tuple[tuple[str, str], ...],
+) -> str:
+    return _semantic_hash({
+        "assembly_id": assembly_id,
         "validator_version": READINESS_VALIDATOR_VERSION,
-        "features": _feature_surface_record(assembly.features),
+        "features": _feature_surface_record(features),
         "feature_policies": tuple(
             (
                 p.feature_name,
@@ -430,26 +504,26 @@ def _readiness_fingerprint(assembly: NormalizedFeatureAssembly) -> str:
                 p.fallback_policy_id,
                 p.fallback_policy_version,
             )
-            for p in assembly.feature_policies
+            for p in feature_policies
         ),
         "compatibility": (
-            assembly.compatibility.competition_benchmark_measurement_definition_id,
-            assembly.compatibility.transit_benchmark_source_bundle_fingerprint,
+            compatibility.competition_benchmark_measurement_definition_id,
+            compatibility.transit_benchmark_source_bundle_fingerprint,
         ),
         "approved_fallback_policies": tuple(
             (p.feature_name, p.policy_id, p.policy_version)
-            for p in assembly.approved_fallback_policies
+            for p in approved_fallback_policies
         ),
-        "artifact_identities": assembly.artifact_identities,
+        "artifact_identities": artifact_identities,
     })
 
 
 def _validate_derived_metrics_coherence(
-    assembly: NormalizedFeatureAssembly,
+    direct_results: tuple[FeatureNormalizationResult, ...],
     derived_metrics: DerivedLocationMetrics,
 ) -> None:
     """Require overlapping real-unit DTO fields to match actual site measurements."""
-    for result in assembly.direct_results:
+    for result in direct_results:
         metric_key = result.site_measurement.definition.metric_key
         field_name = _DIRECT_METRIC_FIELDS.get(metric_key)
         if field_name is None:
@@ -474,14 +548,100 @@ def _install_canonical_factories():
     cannot make an object canonical for readiness/terminal factories.
     """
 
-    canonical_assemblies: dict[int, NormalizedFeatureAssembly] = {}
-    canonical_readiness: dict[int, ReadinessEvaluation] = {}
+    canonical_assemblies: dict[int, tuple[object, ...]] = {}
+    canonical_readiness: dict[int, tuple[object, ...]] = {}
 
-    def is_canonical_assembly(value: object) -> bool:
-        return canonical_assemblies.get(id(value)) is value
+    def resolve_canonical_assembly(value: object):
+        if not isinstance(value, NormalizedFeatureAssembly):
+            raise TypeError(
+                "assembly must be the exact object returned by canonical "
+                "assemble_normalized_location_features()"
+            )
+        binding = canonical_assemblies.get(id(value))
+        if binding is None or binding[0] is not value:
+            raise TypeError(
+                "assembly must be the exact object returned by canonical "
+                "assemble_normalized_location_features()"
+            )
+        (
+            _registered,
+            trusted_features,
+            trusted_direct_results,
+            trusted_feature_policies,
+            trusted_compatibility,
+            trusted_fallbacks,
+            trusted_artifact_identities,
+            trusted_assembly_id,
+            trusted_attestation,
+        ) = binding
+        if (
+            value.features is not trusted_features
+            or value.direct_results is not trusted_direct_results
+            or value.feature_policies is not trusted_feature_policies
+            or value.compatibility is not trusted_compatibility
+            or value.approved_fallback_policies is not trusted_fallbacks
+            or value.artifact_identities is not trusted_artifact_identities
+            or value.assembly_id != trusted_assembly_id
+        ):
+            raise ValueError(
+                "canonical normalized-feature assembly integrity violation"
+            )
+        try:
+            current_attestation = _assembly_authority_attestation(
+                value.features,
+                value.direct_results,
+                value.feature_policies,
+                value.compatibility,
+                value.approved_fallback_policies,
+                value.artifact_identities,
+                value.assembly_id,
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "canonical normalized-feature assembly integrity violation"
+            ) from exc
+        if current_attestation != trusted_attestation:
+            raise ValueError(
+                "canonical normalized-feature assembly integrity violation"
+            )
+        return (
+            trusted_features,
+            trusted_direct_results,
+            trusted_feature_policies,
+            trusted_compatibility,
+            trusted_fallbacks,
+            trusted_artifact_identities,
+            trusted_assembly_id,
+        )
 
-    def is_canonical_readiness(value: object) -> bool:
-        return canonical_readiness.get(id(value)) is value
+    def resolve_canonical_readiness(value: object):
+        if not isinstance(value, ReadinessEvaluation):
+            raise TypeError(
+                "readiness must be the exact object returned by canonical "
+                "derive_scoring_readiness()"
+            )
+        binding = canonical_readiness.get(id(value))
+        if binding is None or binding[0] is not value:
+            raise TypeError(
+                "readiness must be the exact object returned by canonical "
+                "derive_scoring_readiness()"
+            )
+        _registered, trusted_assembly, trusted_result, trusted_attestation = binding
+        if (
+            value.assembly is not trusted_assembly
+            or value.result is not trusted_result
+        ):
+            raise ValueError("canonical readiness evaluation integrity violation")
+        try:
+            current_attestation = _readiness_result_attestation(value.result)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "canonical readiness evaluation integrity violation"
+            ) from exc
+        if current_attestation != trusted_attestation:
+            raise ValueError("canonical readiness evaluation integrity violation")
+        resolve_canonical_assembly(trusted_assembly)
+        return trusted_assembly, trusted_result
 
     def assemble_normalized_location_features(
         *,
@@ -706,7 +866,25 @@ def _install_canonical_factories():
             artifact_identities=artifact_identities,
             assembly_id=assembly_id,
         )
-        canonical_assemblies[id(assembly)] = assembly
+        canonical_assemblies[id(assembly)] = (
+            assembly,
+            features,
+            direct_tuple,
+            policy_tuple,
+            compatibility,
+            approved_fallbacks,
+            artifact_identities,
+            assembly_id,
+            _assembly_authority_attestation(
+                features,
+                direct_tuple,
+                policy_tuple,
+                compatibility,
+                approved_fallbacks,
+                artifact_identities,
+                assembly_id,
+            ),
+        )
         return assembly
 
     def derive_scoring_readiness(
@@ -714,20 +892,31 @@ def _install_canonical_factories():
         *,
         evaluated_at: datetime,
     ) -> ReadinessEvaluation:
-        if not is_canonical_assembly(assembly):
-            raise TypeError(
-                "assembly must be the exact object returned by canonical "
-                "assemble_normalized_location_features()"
-            )
+        (
+            trusted_features,
+            _trusted_direct_results,
+            trusted_feature_policies,
+            trusted_compatibility,
+            trusted_fallbacks,
+            trusted_artifact_identities,
+            trusted_assembly_id,
+        ) = resolve_canonical_assembly(assembly)
         require_aware_datetime(evaluated_at, field_name="evaluated_at")
-        fingerprint = _readiness_fingerprint(assembly)
+        fingerprint = _readiness_fingerprint(
+            assembly_id=trusted_assembly_id,
+            features=trusted_features,
+            feature_policies=trusted_feature_policies,
+            compatibility=trusted_compatibility,
+            approved_fallback_policies=trusted_fallbacks,
+            artifact_identities=trusted_artifact_identities,
+        )
         result = ScoringReadinessValidator(
             validator_version=READINESS_VALIDATOR_VERSION
         ).validate(
-            features=assembly.features,
-            feature_policies=assembly.feature_policies,
-            compatibility=assembly.compatibility,
-            approved_fallback_policies=assembly.approved_fallback_policies,
+            features=trusted_features,
+            feature_policies=trusted_feature_policies,
+            compatibility=trusted_compatibility,
+            approved_fallback_policies=trusted_fallbacks,
             evaluated_at=evaluated_at,
             readiness_fingerprint=fingerprint,
         )
@@ -736,7 +925,12 @@ def _install_canonical_factories():
             assembly=assembly,
             result=result,
         )
-        canonical_readiness[id(evaluation)] = evaluation
+        canonical_readiness[id(evaluation)] = (
+            evaluation,
+            assembly,
+            result,
+            _readiness_result_attestation(result),
+        )
         return evaluation
 
     def build_real_data_pipeline_result(
@@ -755,20 +949,25 @@ def _install_canonical_factories():
         road: RoadAccessSnapshot | None = None,
         parking: ParkingSnapshot | None = None,
     ) -> RealDataPipelineResult:
-        if not is_canonical_readiness(readiness):
-            raise TypeError(
-                "readiness must be the exact object returned by canonical "
-                "derive_scoring_readiness()"
-            )
+        trusted_assembly, trusted_result = resolve_canonical_readiness(readiness)
+        (
+            trusted_features,
+            trusted_direct_results,
+            _trusted_feature_policies,
+            _trusted_compatibility,
+            _trusted_fallbacks,
+            _trusted_artifact_identities,
+            _trusted_assembly_id,
+        ) = resolve_canonical_assembly(trusted_assembly)
         if not isinstance(derived_metrics, DerivedLocationMetrics):
             raise TypeError("derived_metrics must be DerivedLocationMetrics")
         require_aware_datetime(generated_at, field_name="generated_at")
         _validate_derived_metrics_coherence(
-            readiness.assembly, derived_metrics
+            trusted_direct_results, derived_metrics
         )
         status = (
             PipelineStatus.SCORE_READY
-            if readiness.result.is_score_ready
+            if trusted_result.is_score_ready
             else PipelineStatus.NOT_SCORE_READY
         )
         if status is PipelineStatus.SCORE_READY and resolved_location is None:
@@ -792,8 +991,8 @@ def _install_canonical_factories():
             road=road,
             parking=parking,
             derived_metrics=derived_metrics,
-            normalized_features=readiness.assembly.features,
-            scoring_readiness=readiness.result,
+            normalized_features=trusted_features,
+            scoring_readiness=trusted_result,
             source_metadata=tuple(
                 sorted(source_metadata, key=lambda item: item.source_id)
             ),

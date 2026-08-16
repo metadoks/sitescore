@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from weakref import WeakValueDictionary
+from weakref import ref
 
 from sitescore_data.enums import PipelineStatus
 from sitescore_data.schemas.common import SourceMetadata
@@ -165,14 +165,32 @@ def _install_application_factories():
     # closure state. No module-global alias/token becomes an authorization surface.
     from sitescore_pipeline import build_real_data_pipeline_result as canonical_terminal_factory
 
-    pipeline_registry: WeakValueDictionary[int, ApplicationPipelineResult] = WeakValueDictionary()
-    scoring_registry: WeakValueDictionary[int, ApplicationScoringInput] = WeakValueDictionary()
+    pipeline_bindings: dict[int, tuple[object, object]] = {}
+    scoring_bindings: dict[int, tuple[object, object]] = {}
 
-    def require_pipeline_result(value: ApplicationPipelineResult) -> ApplicationPipelineResult:
+    def register_binding(bindings: dict[int, tuple[object, object]], value: object, authority: object) -> None:
+        object_id = id(value)
+
+        def cleanup(_dead_ref, *, object_id=object_id, bindings=bindings) -> None:
+            bindings.pop(object_id, None)
+
+        bindings[object_id] = (ref(value, cleanup), authority)
+
+    def resolve_pipeline_result(value: ApplicationPipelineResult) -> RealDataPipelineResult:
         if not isinstance(value, ApplicationPipelineResult):
             raise TypeError("value must be an ApplicationPipelineResult")
-        if pipeline_registry.get(id(value)) is not value:
+        binding = pipeline_bindings.get(id(value))
+        if binding is None or binding[0]() is not value:
             raise ValueError("application pipeline result is not canonical/factory-owned")
+        trusted_terminal = binding[1]
+        if not isinstance(trusted_terminal, RealDataPipelineResult):
+            raise RuntimeError("canonical application pipeline binding corrupted")
+        if value.pipeline_result is not trusted_terminal:
+            raise ValueError("application pipeline result integrity violation")
+        return trusted_terminal
+
+    def require_pipeline_result(value: ApplicationPipelineResult) -> ApplicationPipelineResult:
+        resolve_pipeline_result(value)
         return value
 
     def build_pipeline_result(
@@ -208,28 +226,42 @@ def _install_application_factories():
         )
         value = object.__new__(ApplicationPipelineResult)
         object.__setattr__(value, "pipeline_result", terminal)
-        pipeline_registry[id(value)] = value
+        register_binding(pipeline_bindings, value, terminal)
         return value
 
     def build_scoring_input(
         application_pipeline_result: ApplicationPipelineResult,
     ) -> ApplicationScoringInput:
-        canonical_app_result = require_pipeline_result(application_pipeline_result)
-        eligibility = evaluate_application_scoring_gate(canonical_app_result.pipeline_result)
+        trusted_terminal = resolve_pipeline_result(application_pipeline_result)
+        eligibility = evaluate_application_scoring_gate(trusted_terminal)
         if not eligibility.is_eligible:
             raise ApplicationScoringBlocked(eligibility)
 
         value = object.__new__(ApplicationScoringInput)
-        object.__setattr__(value, "application_pipeline_result", canonical_app_result)
-        scoring_registry[id(value)] = value
+        object.__setattr__(
+            value,
+            "application_pipeline_result",
+            application_pipeline_result,
+        )
+        register_binding(
+            scoring_bindings,
+            value,
+            application_pipeline_result,
+        )
         return value
 
     def require_scoring_input(value: ApplicationScoringInput) -> ApplicationScoringInput:
         if not isinstance(value, ApplicationScoringInput):
             raise TypeError("value must be an ApplicationScoringInput")
-        if scoring_registry.get(id(value)) is not value:
+        binding = scoring_bindings.get(id(value))
+        if binding is None or binding[0]() is not value:
             raise ValueError("application scoring input is not canonical/factory-owned")
-        require_pipeline_result(value.application_pipeline_result)
+        trusted_app_result = binding[1]
+        if not isinstance(trusted_app_result, ApplicationPipelineResult):
+            raise RuntimeError("canonical application scoring binding corrupted")
+        if value.application_pipeline_result is not trusted_app_result:
+            raise ValueError("application scoring input integrity violation")
+        resolve_pipeline_result(trusted_app_result)
         return value
 
     return build_pipeline_result, require_pipeline_result, build_scoring_input, require_scoring_input
