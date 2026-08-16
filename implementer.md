@@ -12,69 +12,103 @@ CURRENT_PHASE: FAZ 4
 CURRENT_CHECKPOINT: AUTHORITY-CORRECTIVE-REOPEN
 CHECKPOINT_TITLE: PIPE-AUTH-H001 + APP-H002 Authority Corrective Reopen
 
-IMPLEMENTER_STATE: LOCK_BLOCKED_REVIEW_INCONSISTENT
+IMPLEMENTER_STATE: LOCKED
+LOCK_RESULT: SUCCESS
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: YES
+
 BASE_SHA: 16427d8bb74611a3de46652d55b708edc93b055b
 CODE_BRANCH: corrective/authority-reopen-pipe-app
-CODE_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+REVIEWED_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 PR: #9
-USER_LOCK_AUTHORIZED: YES
-LOCK_AUTHORITY: USER_ONLY
+MERGE_COMMIT_SHA: 67333dc0189e43cdca6347e9115a8426cac5ce19
+MAIN_SHA_AFTER_LOCK: 67333dc0189e43cdca6347e9115a8426cac5ce19
 
 REVIEWER_STATE_SEEN: READY_TO_LOCK
 IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
-REVIEWED_HEAD_SHA_SEEN: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
-EXPECTED_BASE_SHA_SEEN: 16427d8bb74611a3de46652d55b708edc93b055b
-CONTRACT_CHANGE_REQUIRED_SEEN: 1
+CONTRACT_CHANGE_REQUIRED_SEEN: 0
+VERSION_CHANGE_REQUIRED_SEEN: 0
+ADDITIONAL_REOPEN_REQUIRED_SEEN: 0
 
 PIPE-AUTH-H001: RESOLVED
 APP-H002-R001: RESOLVED
 APP-H002: RESOLVED
-BLOCKERS_REPORTED_BY_REVIEWER: NONE
+BLOCKERS: NONE
 FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 ```
 
-## LOCK attempt — blocked by control-field inconsistency
+## LOCK execution record
 
-The user explicitly issued `LOCK`.
+The user explicitly issued `LOCK` after Reviewer corrected the previously inconsistent control bit.
 
-Implementer immediately re-fetched the authoritative coordination record and live GitHub state before any merge.
-
-Verified live state:
+Immediately before merge, Implementer re-fetched the authoritative Reviewer record and live GitHub state and verified all mandatory gates:
 
 ```text
-Reviewer state: READY_TO_LOCK
-Reviewer action: LOCK_IF_USER_AUTHORIZED
+REVIEWER_STATE == READY_TO_LOCK: PASS
+IMPLEMENTER_ACTION == LOCK_IF_USER_AUTHORIZED: PASS
+LOCK_AUTHORITY == USER_ONLY: PASS
+user explicit LOCK: PASS
+CONTRACT_CHANGE_REQUIRED == 0: PASS
+BLOCKERS == NONE: PASS
+REVIEWED_HEAD_SHA == current PR HEAD: PASS
+PR base == main: PASS
+PR state == OPEN: PASS
+PR merged == FALSE: PASS
+PR mergeable == TRUE: PASS
+current main == EXPECTED_BASE_SHA: PASS
+```
+
+Exact values at merge time:
+
+```text
+Reviewer expected base: 16427d8bb74611a3de46652d55b708edc93b055b
+Current main before merge: 16427d8bb74611a3de46652d55b708edc93b055b
 Reviewer reviewed HEAD: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
-PR #9 state: OPEN
-PR #9 merged: FALSE
-PR #9 mergeable: TRUE
-PR #9 base: main
-PR #9 base SHA: 16427d8bb74611a3de46652d55b708edc93b055b
-PR #9 current HEAD: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
-current main: 16427d8bb74611a3de46652d55b708edc93b055b
-Reviewer blockers: NONE
+Current PR #9 HEAD: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+CONTRACT_CHANGE_REQUIRED: 0
+BLOCKERS: NONE
 ```
 
-Exact SHA and branch/base checks therefore pass.
+Merge was executed with an exact-head guard using PR #9 and expected head `df9bcc34bf61a75ef8aedb2347e4ee01ae174935`.
 
-However the same authoritative Reviewer control header still states:
+GitHub returned:
 
 ```text
-CONTRACT_CHANGE_REQUIRED: 1
+merged: TRUE
+merge commit: 67333dc0189e43cdca6347e9115a8426cac5ce19
+message: Pull Request successfully merged
 ```
 
-The LOCK protocol requires `CONTRACT_CHANGE_REQUIRED == 0` before merge. `READY_TO_LOCK` plus `BLOCKERS: NONE` is inconsistent with the still-open contract-change control bit, and Implementer is not authorized to edit Reviewer-owned `reviewer.md`, reinterpret that field to zero, or merge through an inconsistent gate.
-
-Therefore:
+Post-merge verification:
 
 ```text
-LOCK_RESULT: BLOCKED
-MERGE_PERFORMED: NO
-PR_STATE_AFTER_CHECK: OPEN
-MAIN_CHANGED: NO
-REQUIRED_REVIEWER_CORRECTION: set CONTRACT_CHANGE_REQUIRED: 0 if the corrective reopen is fully accepted and no contract change remains outstanding, then re-issue READY_TO_LOCK for the same exact reviewed HEAD.
+PR #9 state: CLOSED
+PR #9 merged: TRUE
+PR #9 merge commit: 67333dc0189e43cdca6347e9115a8426cac5ce19
+main: 67333dc0189e43cdca6347e9115a8426cac5ce19
 ```
 
-No source, test, doc, PR-head, package, dependency, scoring, COMB-005, or FAZ 4.1 change was made during this LOCK attempt.
+The merge commit has parents:
+
+```text
+16427d8bb74611a3de46652d55b708edc93b055b
++
+df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+```
+
+No additional source, test, package, dependency, scoring, COMB-005, API, financial, UI, n8n, or FAZ 4.1 implementation was performed during LOCK.
+
+## Final corrective state
+
+```text
+PIPE-AUTH-H001: LOCKED / RESOLVED
+APP-H002-R001: LOCKED / RESOLVED
+APP-H002: LOCKED / RESOLVED
+AUTHORITY-CORRECTIVE-REOPEN: LOCKED / MERGED
+PR #9: MERGED
+FAZ_4_1: NOT_STARTED
+```
+
+The corrective reopen is complete. Further FAZ 4 work requires a new authoritative Reviewer instruction/checkpoint transition.
 
 STOP.
