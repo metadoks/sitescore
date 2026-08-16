@@ -12,330 +12,137 @@ CURRENT_PHASE: FAZ 4
 CURRENT_CHECKPOINT: AUTHORITY-CORRECTIVE-REOPEN
 CHECKPOINT_TITLE: PIPE-AUTH-H001 + APP-H002 Authority Corrective Reopen
 
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+REVIEWER_STATE: LOCKED
+IMPLEMENTER_ACTION: STOP
 LOCK_AUTHORITY: USER_ONLY
 
-EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 16427d8bb74611a3de46652d55b708edc93b055b
-CODE_BRANCH: corrective/authority-reopen-pipe-app
-REVIEWED_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 PR: #9
+REVIEWED_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+MERGE_COMMIT_SHA: 67333dc0189e43cdca6347e9115a8426cac5ce19
+MAIN_SHA: 67333dc0189e43cdca6347e9115a8426cac5ce19
 
 CONTRACT_CHANGE_REQUIRED: 0
 USER_REOPEN_AUTHORIZED: YES
 VERSION_CHANGE_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-FAZ_3_STATUS: FROZEN_WITH_NARROW_USER_AUTHORIZED_CORRECTIVE_REOPEN
+FAZ_3_STATUS: FROZEN
 FAZ_4_0_STATUS: HISTORICALLY_LOCKED_MERGED
 FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 
-PIPE-AUTH-H001: RESOLVED
-APP-H002-R001: RESOLVED
-APP-H002: RESOLVED
+PIPE-AUTH-H001: LOCKED_RESOLVED
+APP-H002-R001: LOCKED_RESOLVED
+APP-H002: LOCKED_RESOLVED
+AUTHORITY_CORRECTIVE_REOPEN_STATUS: LOCKED_MERGED
 
 BLOCKERS: NONE
 ```
 
 ---
 
-# 0. CONTROL-FIELD CORRECTION
+# 1. POST-LOCK VERIFICATION
 
-The prior exact-SHA Reviewer decision already established:
-
-```text
-REVIEWER_STATE: READY_TO_LOCK
-PIPE-AUTH-H001: RESOLVED
-APP-H002-R001: RESOLVED
-APP-H002: RESOLVED
-BLOCKERS: NONE
-VERSION_CHANGE_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
-```
-
-However, the control header incorrectly retained:
-
-```text
-CONTRACT_CHANGE_REQUIRED: 1
-```
-
-That bit described the earlier need to open the corrective contract cycle, not an outstanding unresolved contract change after successful correction and review. Leaving it at `1` made the LOCK gate internally inconsistent and correctly caused Implementer to block the merge.
-
-The authoritative LOCK gate is now corrected to:
-
-```text
-CONTRACT_CHANGE_REQUIRED: 0
-```
-
-This correction does not change code, scope, reviewed source, reviewed tests, reviewed Actions evidence, PR head, base SHA, or the exact-SHA Reviewer decision. It only makes the control header consistent with the already-reviewed state.
-
----
-
-# 1. EXACT REVIEW STATE
-
-Reviewer independently re-fetched live GitHub state before the READY_TO_LOCK decision and re-verified the lock-gate state before this control-field correction.
+Reviewer independently re-fetched live GitHub state after the user-authorized LOCK execution.
 
 Verified:
 
 ```text
-main: 16427d8bb74611a3de46652d55b708edc93b055b
-PR: #9
-state: OPEN
-merged: FALSE
-mergeable: TRUE
-base: main
-base SHA: 16427d8bb74611a3de46652d55b708edc93b055b
-head branch: corrective/authority-reopen-pipe-app
-reviewed head: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+PR #9 state: CLOSED
+PR #9 merged: TRUE
+PR #9 reviewed/head SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
+PR #9 merge commit: 67333dc0189e43cdca6347e9115a8426cac5ce19
+main: 67333dc0189e43cdca6347e9115a8426cac5ce19
 ```
 
-This approval is exact-SHA-specific. Any PR-head movement makes it stale and requires fresh Reviewer verification.
-
-Persistent base-to-head changed files are exactly:
+The merge commit parent chain was independently verified as:
 
 ```text
-docs/AUTHORITY_CORRECTIVE_REOPEN_PIPE_APP.md
-sitescore-app/src/sitescore_app/gating.py
-sitescore-app/tests/test_authority_corrective_reopen.py
-sitescore-pipeline/src/sitescore_pipeline/integration.py
-sitescore-pipeline/tests/test_readiness_pipeline.py
+parent 1: 16427d8bb74611a3de46652d55b708edc93b055b
+parent 2: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 ```
 
-No unrelated frozen production package is changed.
+Therefore the merged second parent is exactly the Reviewer-approved PR head. No stale-review merge occurred.
 
----
-
-# 2. PIPE-AUTH-H001 — RESOLVED
-
-The previously accepted pipeline correction remains unchanged by the final APP-H002-R001 hardening.
-
-Canonical `NormalizedFeatureAssembly` authority is factory-origin-bound in closure-private construction-time state and integrity-checks the authority-bearing assembly surface, including nested feature semantics.
-
-Canonical `ReadinessEvaluation` is bound to its exact construction-time assembly/result authority and nested readiness semantics.
-
-`derive_scoring_readiness(...)` and `build_real_data_pipeline_result(...)` resolve trusted construction-time bindings and use those trusted values for readiness, normalized features, real-unit coherence and terminal status rather than trusting post-registration mutable public fields.
-
-Direct `object.__setattr__` mutation and forged SCORE_READY / numeric road-parking attempts are covered by pipeline regressions.
+Implementer coordination was independently verified as:
 
 ```text
+IMPLEMENTER_STATE: LOCKED
+LOCK_RESULT: SUCCESS
+MERGE_COMMIT_SHA: 67333dc0189e43cdca6347e9115a8426cac5ce19
+MAIN_SHA_AFTER_LOCK: 67333dc0189e43cdca6347e9115a8426cac5ce19
+CONTRACT_CHANGE_REQUIRED_SEEN: 0
 PIPE-AUTH-H001: RESOLVED
-```
-
----
-
-# 3. APP-H002 / APP-H002-R001 — RESOLVED
-
-Final `sitescore-app/src/sitescore_app/gating.py` establishes both origin and semantic integrity.
-
-For a canonical `ApplicationPipelineResult`, closure-private state binds:
-
-```text
-exact factory-returned RealDataPipelineResult object
-construction-time PipelineStatus
-construction-time SectorKey
-construction-time NormalizedLocationFeatures semantic authority surface
-construction-time ScoringReadinessResult semantic authority surface
-construction-time readiness fingerprint
-recursive construction-time terminal authority record
-```
-
-Canonical resolution requires:
-
-```text
-registered factory-owned wrapper identity
-+
-exact construction-time terminal identity
-+
-current terminal authority record == construction-time closure-private record
-```
-
-Therefore replacing the wrapper terminal is rejected, and mutating the SAME exact terminal in place via `object.__setattr__` is also rejected.
-
-The recursive semantic record covers dataclass fields used by normalized-feature/readiness authority, so nested mutation of road/parking score semantics, readiness state/fingerprint, or sector/status cannot retain canonical authority merely because outer object identity is unchanged.
-
-`build_application_scoring_input(...)` authorizes from the already verified construction-time binding (`bound_gate`) rather than from live mutable terminal state after validation.
-
-For canonical `ApplicationScoringInput`, closure-private state additionally binds the exact accepted app wrapper, terminal, terminal authority record, sector, normalized-feature object and readiness fingerprint. Every canonicality/property access re-resolves and revalidates the nested application binding.
-
-Public scoring-capability properties:
-
-```text
-pipeline_result
-sector_key
-normalized_features
-readiness_fingerprint
-```
-
-are resolver-backed and fail closed after post-grant authority mutation.
-
-No caller-visible token, boolean, hash, registry or sentinel can grant authority.
-
-```text
 APP-H002-R001: RESOLVED
 APP-H002: RESOLVED
+BLOCKERS: NONE
+FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 ```
 
 ---
 
-# 4. ADVERSARIAL TEST REVIEW
+# 2. OPERATIONAL LOCK RECORD
 
-Reviewer inspected the final app corrective test and verified direct `object.__setattr__` coverage for the previously missing same-object cases:
+The user-authorized authority corrective reopen is now operationally LOCKED and merged.
+
+Historical truth remains:
 
 ```text
-same NOT_SCORE_READY terminal.status -> SCORE_READY: rejected
-same readiness.is_score_ready False -> True: rejected
-same normalized_features road_parking_access_score -> forged numeric/calibrated/eligible metric: rejected
-same terminal.sector_key -> another sector: rejected
-same readiness.readiness_fingerprint -> forged value: rejected
-post-grant same-terminal mutation -> canonical scoring input rejected
-post-grant mutation -> scoring-input authority properties fail closed
+FAZ 4.0 was historically LOCKED and merged.
+An inherited execution-authority defect was discovered after that lock.
+The user authorized a narrow corrective reopen for PIPE-AUTH-H001 and APP-H002.
+APP-H002-R001 was discovered and resolved inside that same authorized corrective scope.
+PR #9 merged the exact Reviewer-approved head.
+The corrective reopen is now closed and LOCKED.
 ```
 
-Existing different-terminal redirect, different-wrapper redirect, manual/copy authority, raw forged terminal and detached authority-parameter regressions remain present.
+Final corrective state:
 
-The final implementation therefore closes the specific sequential post-registration mutation class that triggered the corrective reopen under the project's explicit `object.__setattr__` adversarial model.
+```text
+PIPE-AUTH-H001: LOCKED / RESOLVED
+APP-H002-R001: LOCKED / RESOLVED
+APP-H002: LOCKED / RESOLVED
+AUTHORITY-CORRECTIVE-REOPEN: LOCKED / MERGED
+CONTRACT_CHANGE_REQUIRED: 0
+VERSION_CHANGE_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+BLOCKERS: NONE
+```
 
 ---
 
-# 5. GITHUB ACTIONS / VALIDATED SHA — VERIFIED
+# 3. PRESERVED FIREWALLS
 
-Reviewer independently inspected:
-
-```text
-workflow: app-authority-hardening-validation
-run ID: 31946050436
-job ID: 95162058612
-validated SHA: 248325ea608fd70ca71ccb6b33fad66e6410352d
-run status: completed
-run conclusion: success
-job conclusion: success
-```
-
-The job directly completed successfully for:
-
-```text
-Corrective scope audit
-sitescore-app
-sitescore-pipeline
-sitescore-benchmarks
-sitescore-metrics
-sitescore-spatial
-sitescore-providers
-sitescore-data
-sitescore-core
-```
-
-Reviewer independently compared validated SHA to final PR HEAD:
-
-```text
-validated SHA: 248325ea608fd70ca71ccb6b33fad66e6410352d
-final HEAD:    df9bcc34bf61a75ef8aedb2347e4ee01ae174935
-status: ahead by 1 commit
-only changed path: .github/workflows/authority-corrective-validation.yml
-change: REMOVED
-```
-
-No source, test or documentation changed after validation.
-
----
-
-# 6. COMB-005 / SEMANTIC FIREWALL
-
-The final base-to-head diff contains no `sitescore-benchmarks` production change.
-
-Previously independently verified frozen production truth remains:
+The corrective lock does not alter the previously reviewed semantic firewalls:
 
 ```text
 COMB-005: NOT_APPROVED
 approved registry: ()
 weights: ()
-composition_method: UNRESOLVED
-missing-side behavior: REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION
-production numeric road_parking_access_score: unavailable / non-authoritative
+composition method: UNRESOLVED
+production road_parking_access_score: unavailable / non-authoritative
 ```
 
-No neutral fill, 50/50 composition, renormalization, implicit approval or empirical calibration was introduced.
+No corrective change introduced category aggregation, core scoring adaptation, Location Score, Decision Layer, HTTP/API, auth, payment, report/PDF, UI, queue/deployment, n8n, or empirical calibration.
+
+Package versions and runtime dependency governance remain unchanged from the reviewed corrective head.
 
 ---
 
-# 7. VERSION / DEPENDENCY / FUTURE-SCOPE FIREWALL
+# 4. FAZ 4.1 FIREWALL / NEXT TRANSITION
 
-Base-to-head diff contains no package/dependency metadata changes.
-
-Required governance remains satisfied:
-
-```text
-sitescore-pipeline version: 0.1.0 unchanged
-sitescore-app version: 0.1.0 unchanged
-public factory signatures: stable
-new runtime dependencies: none
-runtime dependency DAG: unchanged
-sitescore-app -> sitescore-core: NOT ADDED
-VERSION_CHANGE_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
-```
-
-No corrective diff implements:
-
-```text
-category aggregation
-DEMAND_SUBFEATURE_WEIGHTS usage
-ACCESSIBILITY_SUBFEATURE_WEIGHTS usage
-CategoryScores production construction
-core.analyze()
-Location Score
-Decision Layer
-HTTP/API
-auth/payment
-report/PDF
-UI
-queue/deployment
-n8n
-```
-
-Therefore:
+This post-lock verification does NOT authorize or start FAZ 4.1.
 
 ```text
 FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 ```
 
----
+No Implementer action is authorized from this record beyond STOP.
 
-# 8. REVIEWER ACCEPTANCE STATEMENT
-
-Reviewer can truthfully conclude for exact PR #9 head `df9bcc34bf61a75ef8aedb2347e4ee01ae174935`:
-
-> Factory-owned pipeline and application authority can no longer be redirected after registration through the reviewed `object.__setattr__` mutation paths; construction-time trusted origin and authority semantics are bound in closure-private state; authorization consumes trusted construction-time bindings; copied, forged, redirected and semantically mutated authority objects fail closed; COMB-005 and scoring/calibration semantics remain unchanged; full package Actions regression is green; validated-source integrity is preserved; FAZ 4.1 remains not started.
-
-Final decision:
+Any transition to FAZ 4.1 requires a separate authoritative Reviewer instruction/checkpoint transition after the user requests continuation.
 
 ```text
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
-LOCK_AUTHORITY: USER_ONLY
-CONTRACT_CHANGE_REQUIRED: 0
-
-PIPE-AUTH-H001: RESOLVED
-APP-H002-R001: RESOLVED
-APP-H002: RESOLVED
-BLOCKERS: NONE
+REVIEWER_STATE: LOCKED
+IMPLEMENTER_ACTION: STOP
 ```
 
-The user's prior explicit `LOCK` attempt was blocked only because this Reviewer-owned control bit was inconsistent. The Reviewer correction removes that inconsistency; Implementer must still re-fetch the current authoritative state before merge.
-
-On the next LOCK attempt, Implementer must verify that PR #9 current head still equals:
-
-```text
-df9bcc34bf61a75ef8aedb2347e4ee01ae174935
-```
-
-and that `main` still equals the expected base. If either moved:
-
-```text
-LOCK_BLOCKED_REVIEW_STALE
-```
-
-No merge.
-
-STOP. Do not start FAZ 4.1 from this record.
+STOP.
