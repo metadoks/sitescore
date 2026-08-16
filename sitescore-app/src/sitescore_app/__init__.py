@@ -5,6 +5,11 @@ from .aggregation import (
     aggregate_application_category_scores,
     require_canonical_application_category_aggregation_result,
 )
+from .analysis_adapter import (
+    ApplicationCoreAnalysisInput,
+    build_application_core_analysis_input,
+    require_canonical_application_core_analysis_input,
+)
 from .gating import (
     ApplicationPipelineResult,
     ApplicationScoringBlocked,
@@ -27,6 +32,7 @@ __all__ = [
     "ApplicationScoringGateState",
     "ApplicationScoringInput",
     "ApplicationCategoryAggregationResult",
+    "ApplicationCoreAnalysisInput",
     "build_application_pipeline_result",
     "require_canonical_application_pipeline_result",
     "evaluate_application_scoring_gate",
@@ -34,4 +40,6 @@ __all__ = [
     "require_canonical_application_scoring_input",
     "aggregate_application_category_scores",
     "require_canonical_application_category_aggregation_result",
+    "build_application_core_analysis_input",
+    "require_canonical_application_core_analysis_input",
 ]
