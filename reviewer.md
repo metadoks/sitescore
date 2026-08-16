@@ -8,280 +8,565 @@ AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 3.4
-CURRENT_CHECKPOINT: 3.4-8
-CHECKPOINT_TITLE: Scoring Readiness + RealDataPipelineResult Integration
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+CURRENT_CHECKPOINT: 3.4-FINAL
+CHECKPOINT_TITLE: Integrated Architecture Audit + Freeze Readiness
+REVIEWER_STATE: IMPLEMENTATION_REQUESTED
+IMPLEMENTER_ACTION: AUDIT_AND_PREPARE_FREEZE
 LOCK_AUTHORITY: USER_ONLY
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: c8514401f1b9e2a671c00477219f6f930a594bc8
-CODE_BRANCH: faz3.4/cp3.4-8-readiness-pipeline
-REVIEWED_HEAD_SHA: 6e27617674c7b7bfac539a38f98edf690b17477c
-PR: #5
-CONTRACT_CHANGE_REQUIRED: 0
-PIPE-H001: RESOLVED
-PIPE-H002: RESOLVED
+EXPECTED_BASE_SHA: 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
+CODE_BRANCH: faz3.4/final-audit-freeze
+REVIEWED_HEAD_SHA: NONE
+PR: NONE
+CONTRACT_CHANGE_REQUIRED_EXPECTATION: 0
 ```
 
 ---
 
-# 1. REVIEW DECISION
+# 1. PREVIOUS CHECKPOINT LOCK VERIFICATION
+
+FAZ 3.4-8 is accepted, user-authorized and merged.
+
+Reviewer independently verified:
 
 ```text
-FAZ 3.4-8
-Decision: READY TO LOCK
-PR: #5
-Reviewed HEAD: 6e27617674c7b7bfac539a38f98edf690b17477c
+PR #5 state: closed
+PR #5 merged: true
+reviewed branch HEAD: 6e27617674c7b7bfac539a38f98edf690b17477c
+merge/main SHA: 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
 ```
 
-Acceptance is SHA-specific. `READY_TO_LOCK` is not `LOCKED`.
+The merge commit has the reviewed HEAD as its second parent, and current `main` points exactly to:
 
-Do not merge until the user explicitly sends `LOCK` to the Implementer chat.
+```text
+8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
+```
 
-Do not start FAZ 3.4-FINAL during the LOCK transition.
+Do not alter any completed checkpoint merely because this final audit exists. This is not a feature implementation checkpoint.
+
+Create exactly one audit/freeze branch from the verified baseline:
+
+```text
+faz3.4/final-audit-freeze
+```
+
+If that branch already exists when work begins, re-fetch and continue legitimate existing work rather than duplicating/resetting it.
 
 ---
 
-# 2. HARDENING RE-REVIEW SCOPE
+# 2. PURPOSE
 
-Reviewer independently re-fetched and inspected:
+Perform the integrated final audit for the entire FAZ 3.4 chain:
 
-- latest `implementer.md`;
-- PR #5 current metadata and exact hardened HEAD;
-- hardened `sitescore-pipeline/src/sitescore_pipeline/integration.py`;
-- hardened readiness/pipeline adversarial tests;
-- validated SHA → final HEAD comparison;
-- final GitHub Actions hardening validation state.
+```text
+3.4-0 package/DAG foundation
+3.4-1 spatial foundation
+3.4-2 commercial equal-area frame
+3.4-3 shared derived metrics measurement foundation
+3.4-4 benchmark measurement/distribution foundation
+3.4-5 mid-ECDF numeric foundation
+3.4-6 feature-specific normalization + compatibility
+3.4-7 COMB-005 road/parking gating
+3.4-8 scoring readiness + RealDataPipelineResult integration
+```
 
-No acceptance is based solely on Implementer claims.
+Target outcome:
+
+```text
+one coherent, replayable, dependency-safe, provenance-bound FAZ 3.4 architecture
+with no hidden scoring shortcuts and no unresolved item falsely represented as calibrated/available.
+```
+
+This checkpoint must answer whether FAZ 3.4 is ready to be frozen as a phase baseline.
+
+Do not start FAZ 3-FINAL or FAZ 4.
 
 ---
 
-# 3. PIPE-H001 — RESOLVED
+# 3. MODE: AUDIT FIRST, MINIMAL FREEZE PREPARATION ONLY
 
-The original module-level token/hash authority path is removed.
+Primary work is audit, not new implementation.
 
-Verified production behavior:
+Allowed changes are limited to:
 
-- `NormalizedFeatureAssembly` direct constructor is disabled;
-- `ReadinessEvaluation` direct constructor is disabled;
-- old `_ASSEMBLY_TOKEN`, `_READINESS_TOKEN`, `_assembly_identity`, and exposed installer authority are absent;
-- canonical assembly/readiness registration lives in closure-owned factory state;
-- `derive_scoring_readiness()` accepts only the exact assembly object registered by the canonical `assemble_normalized_location_features()` factory;
-- `build_real_data_pipeline_result()` accepts only the exact readiness object registered by the canonical readiness factory;
-- reproducing assembly semantic hash/fields on a forged object does not register authority.
+- final FAZ 3.4 audit/freeze documentation;
+- architecture/test guards needed to prove already-frozen invariants;
+- narrowly scoped corrections for reproducible blockers discovered by the integrated audit;
+- package metadata/documentation consistency needed for freeze reproducibility.
 
-The canonical assembly also retains the actual six `FeatureNormalizationResult` objects, so readiness provenance is tied to the real 3.4-6 artifacts rather than only a detached feature DTO.
+Do not add new product features, scoring behavior, empirical constants, providers, reductions, category aggregation, or application behavior.
 
-Adversarial regressions verify:
+If a reproducible blocker is found, fix only that blocker and its siblings on this same final branch/PR, with stable IDs such as `FINAL-H001`.
 
-```text
-direct assembly construction rejected
-forged object with reproduced assembly hash rejected
-direct readiness construction rejected
-detached readiness wrapper rejected by terminal factory
-old module-level token authority absent
-canonical readiness API has no caller is_score_ready/fingerprint/state parameters
-```
-
-Controlled `SCORE_READY` coverage now uses the frozen `ScoringReadinessValidator` directly as explicitly test-local logic and is not accepted as pipeline `ReadinessEvaluation` authority.
+If a correct fix requires mutation of a previously frozen contract rather than an additive correction, stop and report:
 
 ```text
-PIPE-H001: RESOLVED
+CONTRACT_CHANGE_REQUIRED = 1
 ```
+
+with exact evidence before making the mutation.
+
+Expected result is `0`.
 
 ---
 
-# 4. PIPE-H002 — RESOLVED
+# 4. AUTHORITATIVE BASELINE / PACKAGE SET
 
-The canonical terminal path now validates `DerivedLocationMetrics` against the actual site measurements retained in the canonical normalization assembly.
-
-For all six direct normalized metrics, the terminal factory derives the corresponding real-unit field and requires exact semantic equality between:
+Audit current `main` at exact SHA:
 
 ```text
-FeatureNormalizationResult.site_measurement.metric_value
-and
-DerivedLocationMetrics.<corresponding field>
+8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
 ```
 
-Comparison covers:
+Package set in scope:
 
 ```text
-value
-unit
-availability
-data_quality
-score_eligibility
-calibration_state
-is_estimate
-is_proxy
-source_refs
-method_version
-reason_codes
+sitescore-core
+sitescore-data
+sitescore-providers
+sitescore-spatial
+sitescore-metrics
+sitescore-benchmarks
+sitescore-pipeline
 ```
 
-The six coherence-bound fields are:
-
-```text
-walkable_population
-target_population_density
-competition_pressure
-walkable_reach_area_km2
-transit_service_departure_equivalents_per_hour
-household_income
-```
-
-Non-overlapping frozen fields remain valid DTO inputs and are not falsely fabricated by this checkpoint.
-
-Adversarial regressions verify rejection of:
-
-```text
-household income value mismatch
-household income method mismatch
-transit source-lineage mismatch
-walkable reach method mismatch
-all-UNKNOWN contradictory overlapping metric surface
-```
-
-A semantically coherent terminal `DerivedLocationMetrics` surface is accepted.
-
-The previous test path that could pair ready normalized values with unrelated UNKNOWN real-unit metrics is no longer a canonical pipeline path.
-
-```text
-PIPE-H002: RESOLVED
-```
+Historical ZIPs/docs are provenance only. Actual GitHub source + commit SHA + current dependency metadata are authoritative.
 
 ---
 
-# 5. FROZEN 3.4-8 SEMANTICS — VERIFIED
+# 5. DAG / DEPENDENCY FINAL AUDIT
 
-The hardening preserves the intended checkpoint behavior:
+Verify the final dependency graph still respects the frozen FAZ 3.4-0 architecture.
 
-- eight frozen normalized feature slots remain required;
-- no missing→0 or generic neutral 50 behavior exists;
-- exact locked age fallback remains the sole numeric UNCALIBRATED exception;
-- current COMB-005 remains unapproved/non-numeric and blocks canonical production readiness;
-- competition measurement-definition compatibility remains actual-artifact-derived;
-- transit source-bundle compatibility remains actual-artifact-derived;
-- readiness is derived, not caller-asserted;
-- readiness fingerprint remains semantic and excludes evaluation timestamp;
-- terminal status is derived from readiness/execution outcome;
-- ordinary unready evidence maps to `NOT_SCORE_READY`, not `PIPELINE_ERROR`;
-- explicit stage failure maps to `PIPELINE_ERROR` without scoring readiness;
-- `SCORE_READY != SCORED` remains intact;
-- no CategoryScores, category weighting, Location Score, dealbreakers, Decision Layer, `core.analyze()`, report/PDF, or FAZ 3.4-FINAL implementation exists.
+Required structural direction:
 
-Current canonical production truth remains expectedly `NOT_SCORE_READY` while COMB-005 and other unresolved inputs remain calibration-gated.
+```text
+core: isolated
+
+data: neutral contracts, no sitescore package dependency
+
+providers -> data
+
+spatial -> external geometry/projection dependencies only as already frozen
+
+metrics -> data + providers + spatial
+
+benchmarks -> spatial + metrics
+
+pipeline -> data + benchmarks
+```
+
+No reverse dependencies.
+No cycles.
+No pipeline import from upstream packages.
+No benchmarks -> pipeline.
+No data/providers/spatial/metrics -> benchmarks unless explicitly frozen already.
+No pipeline -> core for this phase.
+
+Inspect actual `pyproject.toml` files and imports; do not infer from docs alone.
+
+Record a final DAG table with exact direct runtime dependencies for every package.
 
 ---
 
-# 6. PACKAGE / DAG / FROZEN SOURCE REVIEW
+# 6. FROZEN SOURCE BOUNDARY AUDIT
 
-PR #5 remains additive under `sitescore-pipeline` only.
+Verify no later checkpoint silently mutated the intended frozen source surfaces of earlier packages outside its approved scope.
 
-Final changed-file set contains eight files, all under that package.
+At minimum compare actual final main against known freeze/checkpoint baselines and PR histories for:
 
-Runtime dependencies remain exactly:
+- `sitescore-core`;
+- `sitescore-data`;
+- `sitescore-providers`;
+- `sitescore-spatial` after 3.4-1;
+- `sitescore-metrics` after 3.4-3;
+- previously locked benchmark semantics after each benchmark checkpoint.
 
-```text
-sitescore-data==0.1.0
-sitescore-benchmarks==0.1.0
-```
+Distinguish legitimate additive later-package work from mutations of frozen upstream code.
 
-No `sitescore-core` dependency/import exists.
-No frozen upstream source changed.
-No reverse dependency/cycle was introduced.
-
-```text
-CONTRACT_CHANGE_REQUIRED = 0
-```
+Do not treat documentation-only later additions as contract mutation unless they contradict source truth.
 
 ---
 
-# 7. TEST / VALIDATION STATUS
+# 7. END-TO-END SEMANTIC CHAIN AUDIT
 
-GitHub Actions hardening validation independently verified:
-
-```text
-workflow: cp348-hardening-validation
-run id: 31909388401
-validated SHA: c868205a8cc38266153524c9fe275fc46aa918e5
-conclusion: SUCCESS
-```
-
-Implementer-reported exact visible counts:
+Prove the final architecture preserves this chain without detached/self-asserted shortcuts:
 
 ```text
-sitescore-pipeline: 25/25 PASS
-sitescore-benchmarks: 191/191 PASS
-sitescore-metrics: 67/67 PASS
+provider evidence
+→ spatial / metric evidence
+→ DerivedMetricMeasurement
+→ benchmark cell measurement attempts
+→ BenchmarkDistributionArtifact
+→ exact numeric sample / mid-ECDF
+→ FeatureNormalizationResult
+→ honest NormalizedLocationFeatures assembly
+→ derived ScoringReadinessResult
+→ RealDataPipelineResult
 ```
 
-The same workflow completed spatial/providers/data/core successfully; no unsupported exact cardinalities are asserted here for those four suites.
+For every transition audit:
 
-Reviewer independently compared validated SHA `c868205a...` to final reviewed HEAD `6e276176...` and verified the changed file set is only:
+- actual nested artifact authority;
+- identity/fingerprint content binding;
+- source/method/policy/version lineage;
+- missing/unavailable semantics;
+- compatibility semantics;
+- duplicate/completeness behavior;
+- deterministic ordering;
+- no caller boolean/string/score self-assertion authority.
 
-```text
-.github/workflows/cp348-hardening-validation.yml -> removed
-```
-
-Thus final reviewed source/tests/docs equal the successfully validated source/tests/docs. The extra post-cleanup commit did not introduce a tree-level source/test/docs delta.
+Where factory-owned authority exists, verify public/module-level callers cannot reproduce it through importable tokens, detached hashes or arbitrary constructors.
 
 ---
 
-# 8. REVIEW CONCLUSION
+# 8. MISSINGNESS / READINESS FINAL INVARIANT
 
-No reproducible production correctness blocker remains within checkpoint 3.4-8 scope at the reviewed HEAD.
+The following invariant must hold globally:
 
 ```text
-FAZ 3.4-8: READY TO LOCK
-REVIEWED_HEAD_SHA: 6e27617674c7b7bfac539a38f98edf690b17477c
-PR: #5
-PIPE-H001: RESOLVED
-PIPE-H002: RESOLVED
-CONTRACT_CHANGE_REQUIRED: 0
+missing evidence != bad score != neutral score != zero
 ```
+
+For every required normalized feature except the one explicit age fallback:
+
+```text
+unavailable / incompatible / ineligible / uncalibrated
+→ not usable for scoring
+→ readiness false
+→ PipelineStatus.NOT_SCORE_READY
+```
+
+No hidden renormalization over available features.
+No generic neutral 50.
+No silent zero substitution.
+No `core.analyze()` call from an unready real-data path.
+
+The only frozen numeric UNCALIBRATED exception remains exactly:
+
+```text
+age_target_concentration_score = 50
+policy = age_neutral_fallback/1.0
+proxy = true
+reason = age_affinity_not_calibrated
+```
+
+Verify the exception cannot leak to another feature.
 
 ---
 
-# 9. USER-AUTHORIZED LOCK INSTRUCTION
+# 9. BENCHMARK / ECDF / NORMALIZATION FINAL AUDIT
 
-Only if the user explicitly sends:
+Verify the following locked semantics remain exact:
 
-```text
-LOCK
-```
-
-the Implementer may perform the transition.
-
-Immediately before merge, re-fetch PR #5 and verify:
+## Benchmark population / frame
 
 ```text
-current PR HEAD == 6e27617674c7b7bfac539a38f98edf690b17477c
-PR base == main
-PR is open
-main remains compatible with expected base
-CONTRACT_CHANGE_REQUIRED == 0
+commercially evidenced spatial alternatives
+full equal-area cells
+all eligible cells retained
+absence of POI evidence != INELIGIBLE by itself
 ```
 
-If current HEAD differs from the reviewed SHA, do not merge. Record:
+No clipped-boundary equal weighting shortcut.
+
+## Distribution attempts
+
+Every eligible frame cell must have exactly one attempt.
+Missing/unresolved attempts remain retained.
+Numeric observations require the locked availability/eligibility/calibration/finite policy.
+No min-N or coverage threshold has been invented as production authority.
+
+## Mid-ECDF
 
 ```text
-IMPLEMENTER_STATE: LOCK_BLOCKED_REVIEW_STALE
+P(d) = (#below + 0.5 * #equal) / N
 ```
 
-and return for Reviewer re-review.
+No interpolation.
+All ties at midpoint.
+No epsilon/tolerance/rounding/quantization.
+Exact numeric comparison semantics remain frozen.
 
-If exact reviewed SHA remains current and the user explicitly authorized `LOCK`, merge PR #5 using expected-head-SHA protection when available and update `implementer.md` with at minimum:
+## Directionality
 
 ```text
-IMPLEMENTER_STATE: LOCKED
-CHECKPOINT: FAZ 3.4-8
-REVIEWED_HEAD_SHA: 6e27617674c7b7bfac539a38f98edf690b17477c
-PR: #5
-MERGED_MAIN_SHA: <actual merge/main SHA>
-LOCK_TRANSITION_STATUS: SUCCESS
-TAG: <actual tag / PENDING / NOT REQUIRED>
+ordinary higher-is-better feature -> 100 * P(d)
+competition opportunity -> 100 * (1 - P(d))
 ```
 
-Do not start FAZ 3.4-FINAL during the LOCK transition. After successful LOCK, stop and wait for the user to send `Devam` to Reviewer.
+Direction cannot be caller selected/inverted.
+
+## Site/benchmark compatibility
+
+Exact compatibility must still include actual measurement definition/policy/precision/unit/method/source-bundle semantics as applicable.
+
+Transit exact source-bundle identity and competition measurement-definition identity must survive into readiness.
+
+---
+
+# 10. SPATIAL / PRECISION FINAL AUDIT
+
+Re-verify load-bearing 3.4-1 / 3.4-2 invariants in final main:
+
+- executable CRS identity;
+- projected AREA semantics;
+- actual `GeometryPrecisionPolicy` bound into operation policy identity;
+- INTERSECT precision coherence;
+- no silent geometry repair;
+- equal-area frame identity/content binding;
+- production resolution/CRS remain calibration/evidence gated where not frozen empirically.
+
+Do not invent a production CRS/resolution in this final audit.
+
+---
+
+# 11. METRIC FINAL AUDIT
+
+Re-verify the ten frozen `DerivedLocationMetrics` slots and actual measurement foundation.
+
+Confirm numeric pass-through metrics still obey their frozen semantics and unresolved reductions remain unresolved rather than numerically fabricated.
+
+Unresolved/calibration-gated items include as applicable:
+
+```text
+walkable_population reduction
+target_population_density reduction
+competition_pressure reduction
+road_reachable_area reduction
+population allocation
+age affinity
+road reduction
+parking/composite policy
+sample adequacy threshold
+```
+
+Do not confuse structural contract existence with empirical calibration completion.
+
+---
+
+# 12. COMB-005 FINAL AUDIT
+
+Final canonical truth must still be:
+
+```text
+no approved empirical COMB-005 policy
+no production weight vector
+canonical production composite unavailable
+road_parking_access_score nonnumeric/unready
+```
+
+Verify no alternate public constructor/helper/fixture has reintroduced:
+
+- caller-created approval;
+- arbitrary AVAILABLE components;
+- arbitrary final score;
+- 50/50 default;
+- road-only/parking-only substitution;
+- neutral fill;
+- remaining-weight renormalization.
+
+Test-only synthetic composition machinery must not be production authority.
+
+---
+
+# 13. PIPELINE / READINESS FINAL AUDIT
+
+Verify final `sitescore-pipeline` retains:
+
+- canonical assembly from actual six `FeatureNormalizationResult` artifacts;
+- exact locked age fallback;
+- actual 3.4-7 COMB result;
+- benchmark binding/compatibility lineage;
+- factory-owned assembly/readiness authority;
+- deterministic readiness fingerprint;
+- terminal `DerivedLocationMetrics` coherence against actual site measurements;
+- status derived rather than caller supplied;
+- ordinary unready -> `NOT_SCORE_READY`;
+- explicit execution failure -> `PIPELINE_ERROR`;
+- `SCORE_READY != SCORED`.
+
+Current production architecture may legitimately remain NOT_SCORE_READY because unresolved/calibration-gated inputs remain. Do not force a canonical SCORE_READY example.
+
+---
+
+# 14. NO CATEGORY / CORE / PRODUCT LAYER LEAKAGE
+
+FAZ 3.4 final source must not implement real-data category aggregation or product scoring orchestration.
+
+Audit for absence of new pipeline/benchmark logic performing:
+
+```text
+Demand category aggregation
+Competition category aggregation
+Accessibility category aggregation
+Economics category aggregation
+category weights
+base Location Score
+dealbreaker penalties
+final Location Score
+Decision Layer
+core.analyze()
+report/PDF
+payments/UI/application workflow
+```
+
+Frozen data DTOs such as `ReadyCategoryScorePayload` may exist historically, but FAZ 3.4 must not compute those outputs from the real-data pipeline.
+
+---
+
+# 15. EMPIRICAL / CALIBRATION GATE REGISTER
+
+Create one explicit final register separating:
+
+## structurally frozen / implemented
+
+from
+
+## empirically unresolved / calibration-gated
+
+At minimum list:
+
+```text
+production equal-area CRS/resolution/membership calibration
+population allocation
+age affinity
+competition reduction
+road reduction
+approved COMB-005 weights
+sample adequacy threshold
+empirical benchmark/calibration datasets
+```
+
+Also record any additional unresolved item found in actual source/docs.
+
+The final phase claim must remain:
+
+```text
+Mathematically validated scoring engine; empirical validation pending.
+```
+
+Do not upgrade this claim.
+
+---
+
+# 16. TEST / VALIDATION REQUIREMENTS
+
+Run the complete package regression set on the final audit branch:
+
+```text
+sitescore-pipeline
+sitescore-benchmarks
+sitescore-metrics
+sitescore-spatial
+sitescore-providers
+sitescore-data
+sitescore-core
+```
+
+Record exact counts only where actually visible from pytest/job output.
+
+Add or retain architecture guards that prove at minimum:
+
+- dependency DAG/import prohibitions;
+- no later-layer leakage;
+- no production empirical constants introduced in forbidden scopes;
+- no public authority bypasses previously hardened;
+- core/data/provider frozen boundaries remain intact.
+
+If using a temporary GitHub Actions validation workflow, remove it before final review and prove successful validated SHA -> final review HEAD is workflow-removal-only (or explain any exact nonsemantic/tree-neutral delta with evidence).
+
+---
+
+# 17. FINAL AUDIT DOCUMENT / FREEZE RECORD PREPARATION
+
+Create/update an appropriate final FAZ 3.4 audit document under a sensible package/root docs location.
+
+It must record at minimum:
+
+```text
+FAZ 3.4 status
+base/main SHA audited
+checkpoint 3.4-0 through 3.4-8 lock state
+package DAG and direct dependencies
+full test evidence
+key structural invariants
+final calibration-gate register
+known unresolved empirical items
+contract-change status
+final audit decision
+```
+
+Do not falsely label FAZ 3.4 `FROZEN` before Reviewer acceptance and user LOCK.
+
+Allowed pre-lock wording:
+
+```text
+FREEZE_CANDIDATE
+READY_FOR_FINAL_REVIEW
+```
+
+not `FROZEN`.
+
+---
+
+# 18. PR / BRANCH / RETURN PROTOCOL
+
+Use exactly one branch:
+
+```text
+faz3.4/final-audit-freeze
+```
+
+Open/update exactly one PR against `main` for the final audit/freeze candidate.
+
+Do not merge it.
+Do not self-LOCK.
+Do not create FAZ 3-FINAL work.
+
+Replace `implementer.md` with a detailed report containing at minimum:
+
+```text
+IMPLEMENTER_STATE: READY_FOR_REVIEW
+CURRENT_PHASE: FAZ 3.4
+CURRENT_CHECKPOINT: 3.4-FINAL
+BASE_SHA: 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
+CODE_BRANCH: faz3.4/final-audit-freeze
+CODE_HEAD_SHA: <exact SHA>
+PR: <number>
+CONTRACT_CHANGE_REQUIRED: 0/1
+FINAL_AUDIT_DECISION: FREEZE_CANDIDATE / BLOCKED
+FINAL_BLOCKERS: NONE or stable IDs
+```
+
+Also report:
+
+- changed file list;
+- whether source code changed or audit/docs/tests only;
+- exact dependency audit;
+- frozen-boundary audit;
+- exact validation run IDs/SHAs;
+- test counts where visible;
+- unresolved empirical/calibration register;
+- any discrepancy between historical checkpoint claims and actual final GitHub state.
+
+Stop after updating PR and `implementer.md`.
+
+---
+
+# 19. REVIEWER ACCEPTANCE STANDARD
+
+The Reviewer will independently re-fetch and inspect the entire final candidate.
+
+Acceptance standard:
+
+> No reproducible production correctness blocker remains within FAZ 3.4 scope; all locked structural invariants are preserved; unresolved empirical/calibration items are explicitly gated rather than silently defaulted; package DAG and frozen boundaries are clean; final test evidence is green and reproducible.
+
+Only then may Reviewer issue SHA-specific:
+
+```text
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+```
+
+User remains sole LOCK authority.
