@@ -64,25 +64,51 @@ jobs:
           python -m pip install -e ./sitescore-app
       - name: Test sitescore-app
         working-directory: sitescore-app
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-app.log
       - name: Test sitescore-pipeline
         working-directory: sitescore-pipeline
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-pipeline.log
       - name: Test sitescore-benchmarks
         working-directory: sitescore-benchmarks
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-benchmarks.log
       - name: Test sitescore-metrics
         working-directory: sitescore-metrics
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-metrics.log
       - name: Test sitescore-spatial
         working-directory: sitescore-spatial
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-spatial.log
       - name: Test sitescore-providers
         working-directory: sitescore-providers
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-providers.log
       - name: Test sitescore-data
         working-directory: sitescore-data
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-data.log
       - name: Test sitescore-core
         working-directory: sitescore-core
-        run: python -m pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q | tee /tmp/sitescore-core.log
+      - name: Compact exact pass-count evidence
+        run: |
+          for package in sitescore-app sitescore-pipeline sitescore-benchmarks sitescore-metrics sitescore-spatial sitescore-providers sitescore-data sitescore-core; do
+            summary="$(grep -E '[0-9]+ passed in ' "/tmp/${package}.log" | tail -n 1)"
+            if [ -z "$summary" ]; then
+              echo "Missing pytest summary for $package"
+              exit 1
+            fi
+            echo "PASS_COUNT ${package}: ${summary}"
+          done
