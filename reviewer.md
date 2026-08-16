@@ -22,7 +22,7 @@ CODE_BRANCH: corrective/authority-reopen-pipe-app
 REVIEWED_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 PR: #9
 
-CONTRACT_CHANGE_REQUIRED: 1
+CONTRACT_CHANGE_REQUIRED: 0
 USER_REOPEN_AUTHORIZED: YES
 VERSION_CHANGE_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -40,9 +40,41 @@ BLOCKERS: NONE
 
 ---
 
+# 0. CONTROL-FIELD CORRECTION
+
+The prior exact-SHA Reviewer decision already established:
+
+```text
+REVIEWER_STATE: READY_TO_LOCK
+PIPE-AUTH-H001: RESOLVED
+APP-H002-R001: RESOLVED
+APP-H002: RESOLVED
+BLOCKERS: NONE
+VERSION_CHANGE_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+```
+
+However, the control header incorrectly retained:
+
+```text
+CONTRACT_CHANGE_REQUIRED: 1
+```
+
+That bit described the earlier need to open the corrective contract cycle, not an outstanding unresolved contract change after successful correction and review. Leaving it at `1` made the LOCK gate internally inconsistent and correctly caused Implementer to block the merge.
+
+The authoritative LOCK gate is now corrected to:
+
+```text
+CONTRACT_CHANGE_REQUIRED: 0
+```
+
+This correction does not change code, scope, reviewed source, reviewed tests, reviewed Actions evidence, PR head, base SHA, or the exact-SHA Reviewer decision. It only makes the control header consistent with the already-reviewed state.
+
+---
+
 # 1. EXACT REVIEW STATE
 
-Reviewer independently re-fetched live GitHub state before this decision.
+Reviewer independently re-fetched live GitHub state before the READY_TO_LOCK decision and re-verified the lock-gate state before this control-field correction.
 
 Verified:
 
@@ -94,7 +126,7 @@ PIPE-AUTH-H001: RESOLVED
 
 # 3. APP-H002 / APP-H002-R001 — RESOLVED
 
-Final `sitescore-app/src/sitescore_app/gating.py` now establishes both origin and semantic integrity.
+Final `sitescore-app/src/sitescore_app/gating.py` establishes both origin and semantic integrity.
 
 For a canonical `ApplicationPipelineResult`, closure-private state binds:
 
@@ -272,7 +304,7 @@ FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 
 # 8. REVIEWER ACCEPTANCE STATEMENT
 
-Reviewer can now truthfully conclude for exact PR #9 head `df9bcc34bf61a75ef8aedb2347e4ee01ae174935`:
+Reviewer can truthfully conclude for exact PR #9 head `df9bcc34bf61a75ef8aedb2347e4ee01ae174935`:
 
 > Factory-owned pipeline and application authority can no longer be redirected after registration through the reviewed `object.__setattr__` mutation paths; construction-time trusted origin and authority semantics are bound in closure-private state; authorization consumes trusted construction-time bindings; copied, forged, redirected and semantically mutated authority objects fail closed; COMB-005 and scoring/calibration semantics remain unchanged; full package Actions regression is green; validated-source integrity is preserved; FAZ 4.1 remains not started.
 
@@ -282,6 +314,7 @@ Final decision:
 REVIEWER_STATE: READY_TO_LOCK
 IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
+CONTRACT_CHANGE_REQUIRED: 0
 
 PIPE-AUTH-H001: RESOLVED
 APP-H002-R001: RESOLVED
@@ -289,13 +322,15 @@ APP-H002: RESOLVED
 BLOCKERS: NONE
 ```
 
-Do not merge until the user explicitly sends:
+The user's prior explicit `LOCK` attempt was blocked only because this Reviewer-owned control bit was inconsistent. The Reviewer correction removes that inconsistency; Implementer must still re-fetch the current authoritative state before merge.
+
+On the next LOCK attempt, Implementer must verify that PR #9 current head still equals:
 
 ```text
-LOCK
+df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 ```
 
-On LOCK, Implementer must first verify that PR #9 current head still equals the exact reviewed SHA above. If it does not:
+and that `main` still equals the expected base. If either moved:
 
 ```text
 LOCK_BLOCKED_REVIEW_STALE
