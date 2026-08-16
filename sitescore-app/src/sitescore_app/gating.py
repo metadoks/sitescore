@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dataclass_fields, is_dataclass
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum, StrEnum
 from weakref import ref
 
 from sitescore_data.enums import PipelineStatus
@@ -71,9 +71,9 @@ class ApplicationPipelineResult:
 class ApplicationScoringInput:
     """Factory-owned permission to begin later application scoring.
 
-    The capability retains both the app-owned canonical pipeline execution proof
-    and the exact frozen terminal result. It is not a category-score DTO and does
-    not mean scoring has occurred.
+    The capability retains the exact construction-time pipeline authority that
+    earned permission. It is not a category-score DTO and does not mean scoring
+    has occurred.
     """
 
     application_pipeline_result: ApplicationPipelineResult
@@ -86,25 +86,19 @@ class ApplicationScoringInput:
 
     @property
     def pipeline_result(self) -> RealDataPipelineResult:
-        return self.application_pipeline_result.pipeline_result
+        raise RuntimeError("application scoring authority resolver not installed")
 
     @property
     def sector_key(self):
-        return self.pipeline_result.sector_key
+        raise RuntimeError("application scoring authority resolver not installed")
 
     @property
     def normalized_features(self) -> NormalizedLocationFeatures:
-        value = self.pipeline_result.normalized_features
-        if not isinstance(value, NormalizedLocationFeatures):
-            raise RuntimeError("canonical application scoring input lost normalized features")
-        return value
+        raise RuntimeError("application scoring authority resolver not installed")
 
     @property
     def readiness_fingerprint(self) -> str:
-        readiness = self.pipeline_result.scoring_readiness
-        if not isinstance(readiness, ScoringReadinessResult):
-            raise RuntimeError("canonical application scoring input lost readiness")
-        return readiness.readiness_fingerprint
+        raise RuntimeError("application scoring authority resolver not installed")
 
 
 def evaluate_application_scoring_gate(
@@ -165,32 +159,143 @@ def _install_application_factories():
     # closure state. No module-global alias/token becomes an authorization surface.
     from sitescore_pipeline import build_real_data_pipeline_result as canonical_terminal_factory
 
-    pipeline_bindings: dict[int, tuple[object, object]] = {}
-    scoring_bindings: dict[int, tuple[object, object]] = {}
+    pipeline_bindings: dict[int, tuple[object, ...]] = {}
+    scoring_bindings: dict[int, tuple[object, ...]] = {}
 
-    def register_binding(bindings: dict[int, tuple[object, object]], value: object, authority: object) -> None:
+    def semantic_record(value: object) -> object:
+        """Return a deterministic immutable semantic record for authority attestation."""
+        if value is None:
+            return ("none",)
+        if isinstance(value, Enum):
+            return ("enum", type(value).__module__, type(value).__qualname__, value.value)
+        if isinstance(value, datetime):
+            return ("datetime", value.isoformat())
+        if isinstance(value, (str, int, float, bool)):
+            return ("scalar", type(value).__name__, value)
+        if isinstance(value, tuple):
+            return ("tuple", tuple(semantic_record(item) for item in value))
+        if isinstance(value, list):
+            return ("list", tuple(semantic_record(item) for item in value))
+        if isinstance(value, dict):
+            items = tuple(
+                sorted(
+                    (
+                        repr(semantic_record(key)),
+                        semantic_record(key),
+                        semantic_record(item),
+                    )
+                    for key, item in value.items()
+                )
+            )
+            return ("dict", items)
+        if isinstance(value, (set, frozenset)):
+            items = tuple(sorted(repr(semantic_record(item)) for item in value))
+            return ("set", items)
+        if is_dataclass(value):
+            field_records = []
+            for field in dataclass_fields(value):
+                try:
+                    field_value = getattr(value, field.name)
+                except AttributeError:
+                    field_records.append((field.name, ("missing_field", field.name)))
+                else:
+                    field_records.append((field.name, semantic_record(field_value)))
+            return (
+                "dataclass",
+                type(value).__module__,
+                type(value).__qualname__,
+                tuple(field_records),
+            )
+        raise TypeError(
+            "unsupported authority semantic value type: "
+            f"{type(value).__module__}.{type(value).__qualname__}"
+        )
+
+    def terminal_authority_record(
+        terminal: RealDataPipelineResult,
+    ) -> tuple[object, ...]:
+        return (
+            "application_terminal_authority_v2",
+            semantic_record(terminal.status),
+            semantic_record(terminal.sector_key),
+            semantic_record(terminal.normalized_features),
+            semantic_record(terminal.scoring_readiness),
+        )
+
+    def register_pipeline_binding(
+        value: ApplicationPipelineResult,
+        terminal: RealDataPipelineResult,
+    ) -> None:
         object_id = id(value)
 
-        def cleanup(_dead_ref, *, object_id=object_id, bindings=bindings) -> None:
-            bindings.pop(object_id, None)
+        def cleanup(_dead_ref, *, object_id=object_id) -> None:
+            pipeline_bindings.pop(object_id, None)
 
-        bindings[object_id] = (ref(value, cleanup), authority)
+        readiness = terminal.scoring_readiness
+        readiness_flag = (
+            readiness.is_score_ready
+            if isinstance(readiness, ScoringReadinessResult)
+            else None
+        )
+        readiness_reasons = (
+            readiness.reason_codes
+            if isinstance(readiness, ScoringReadinessResult)
+            else ()
+        )
+        readiness_fingerprint = (
+            readiness.readiness_fingerprint
+            if isinstance(readiness, ScoringReadinessResult)
+            else None
+        )
+        pipeline_bindings[object_id] = (
+            ref(value, cleanup),
+            terminal,
+            terminal_authority_record(terminal),
+            terminal.status,
+            terminal.sector_key,
+            terminal.normalized_features,
+            readiness_flag,
+            readiness_reasons,
+            readiness_fingerprint,
+        )
 
-    def resolve_pipeline_result(value: ApplicationPipelineResult) -> RealDataPipelineResult:
+    def resolve_pipeline_binding(
+        value: ApplicationPipelineResult,
+    ) -> tuple[object, ...]:
         if not isinstance(value, ApplicationPipelineResult):
             raise TypeError("value must be an ApplicationPipelineResult")
         binding = pipeline_bindings.get(id(value))
         if binding is None or binding[0]() is not value:
             raise ValueError("application pipeline result is not canonical/factory-owned")
-        trusted_terminal = binding[1]
-        if not isinstance(trusted_terminal, RealDataPipelineResult):
-            raise RuntimeError("canonical application pipeline binding corrupted")
-        if value.pipeline_result is not trusted_terminal:
-            raise ValueError("application pipeline result integrity violation")
-        return trusted_terminal
 
-    def require_pipeline_result(value: ApplicationPipelineResult) -> ApplicationPipelineResult:
-        resolve_pipeline_result(value)
+        terminal = binding[1]
+        if not isinstance(terminal, RealDataPipelineResult):
+            raise RuntimeError("canonical application pipeline binding corrupted")
+        if value.pipeline_result is not terminal:
+            raise ValueError("application pipeline result integrity violation")
+
+        try:
+            current_record = terminal_authority_record(terminal)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "application pipeline result semantic integrity violation"
+            ) from exc
+        if current_record != binding[2]:
+            raise ValueError("application pipeline result semantic integrity violation")
+        return binding
+
+    def resolve_pipeline_result(
+        value: ApplicationPipelineResult,
+    ) -> RealDataPipelineResult:
+        terminal = resolve_pipeline_binding(value)[1]
+        if not isinstance(terminal, RealDataPipelineResult):
+            raise RuntimeError("canonical application pipeline binding corrupted")
+        return terminal
+
+    def require_pipeline_result(
+        value: ApplicationPipelineResult,
+    ) -> ApplicationPipelineResult:
+        resolve_pipeline_binding(value)
         return value
 
     def build_pipeline_result(
@@ -226,14 +331,79 @@ def _install_application_factories():
         )
         value = object.__new__(ApplicationPipelineResult)
         object.__setattr__(value, "pipeline_result", terminal)
-        register_binding(pipeline_bindings, value, terminal)
+        register_pipeline_binding(value, terminal)
         return value
+
+    def bound_gate(binding: tuple[object, ...]) -> ApplicationScoringEligibility:
+        terminal = binding[1]
+        status = binding[3]
+        normalized_features = binding[5]
+        readiness_flag = binding[6]
+        readiness_reasons = binding[7]
+
+        if not isinstance(terminal, RealDataPipelineResult):
+            raise RuntimeError("canonical application pipeline binding corrupted")
+        if status is PipelineStatus.PIPELINE_ERROR:
+            return ApplicationScoringEligibility(
+                pipeline_result=terminal,
+                state=ApplicationScoringGateState.PIPELINE_ERROR,
+                reason_codes=(ApplicationScoringGateReason.PIPELINE_ERROR,),
+                upstream_readiness_reasons=(),
+            )
+        if status is PipelineStatus.NOT_SCORE_READY:
+            return ApplicationScoringEligibility(
+                pipeline_result=terminal,
+                state=ApplicationScoringGateState.NOT_SCORE_READY,
+                reason_codes=(ApplicationScoringGateReason.PIPELINE_NOT_SCORE_READY,),
+                upstream_readiness_reasons=readiness_reasons,
+            )
+
+        reasons: list[ApplicationScoringGateReason] = []
+        if readiness_flag is None:
+            reasons.append(ApplicationScoringGateReason.READINESS_MISSING)
+        elif readiness_flag is not True:
+            reasons.append(ApplicationScoringGateReason.READINESS_FALSE)
+        if not isinstance(normalized_features, NormalizedLocationFeatures):
+            reasons.append(ApplicationScoringGateReason.NORMALIZED_FEATURES_MISSING)
+        if reasons:
+            return ApplicationScoringEligibility(
+                pipeline_result=terminal,
+                state=ApplicationScoringGateState.INCONSISTENT_TERMINAL_STATE,
+                reason_codes=tuple(reasons),
+                upstream_readiness_reasons=readiness_reasons,
+            )
+        return ApplicationScoringEligibility(
+            pipeline_result=terminal,
+            state=ApplicationScoringGateState.ELIGIBLE,
+            reason_codes=(),
+            upstream_readiness_reasons=(),
+        )
+
+    def register_scoring_binding(
+        value: ApplicationScoringInput,
+        application_pipeline_result: ApplicationPipelineResult,
+        pipeline_binding: tuple[object, ...],
+    ) -> None:
+        object_id = id(value)
+
+        def cleanup(_dead_ref, *, object_id=object_id) -> None:
+            scoring_bindings.pop(object_id, None)
+
+        scoring_bindings[object_id] = (
+            ref(value, cleanup),
+            application_pipeline_result,
+            pipeline_binding[1],
+            pipeline_binding[2],
+            pipeline_binding[4],
+            pipeline_binding[5],
+            pipeline_binding[8],
+        )
 
     def build_scoring_input(
         application_pipeline_result: ApplicationPipelineResult,
     ) -> ApplicationScoringInput:
-        trusted_terminal = resolve_pipeline_result(application_pipeline_result)
-        eligibility = evaluate_application_scoring_gate(trusted_terminal)
+        pipeline_binding = resolve_pipeline_binding(application_pipeline_result)
+        eligibility = bound_gate(pipeline_binding)
         if not eligibility.is_eligible:
             raise ApplicationScoringBlocked(eligibility)
 
@@ -243,28 +413,85 @@ def _install_application_factories():
             "application_pipeline_result",
             application_pipeline_result,
         )
-        register_binding(
-            scoring_bindings,
+        register_scoring_binding(
             value,
             application_pipeline_result,
+            pipeline_binding,
         )
         return value
 
-    def require_scoring_input(value: ApplicationScoringInput) -> ApplicationScoringInput:
+    def resolve_scoring_authority(
+        value: ApplicationScoringInput,
+    ) -> tuple[RealDataPipelineResult, SectorKey, NormalizedLocationFeatures, str]:
         if not isinstance(value, ApplicationScoringInput):
             raise TypeError("value must be an ApplicationScoringInput")
         binding = scoring_bindings.get(id(value))
         if binding is None or binding[0]() is not value:
             raise ValueError("application scoring input is not canonical/factory-owned")
-        trusted_app_result = binding[1]
-        if not isinstance(trusted_app_result, ApplicationPipelineResult):
+
+        application_pipeline_result = binding[1]
+        if not isinstance(application_pipeline_result, ApplicationPipelineResult):
             raise RuntimeError("canonical application scoring binding corrupted")
-        if value.application_pipeline_result is not trusted_app_result:
+        if value.application_pipeline_result is not application_pipeline_result:
             raise ValueError("application scoring input integrity violation")
-        resolve_pipeline_result(trusted_app_result)
+
+        pipeline_binding = resolve_pipeline_binding(application_pipeline_result)
+        if (
+            pipeline_binding[1] is not binding[2]
+            or pipeline_binding[2] != binding[3]
+            or pipeline_binding[4] is not binding[4]
+            or pipeline_binding[5] is not binding[5]
+            or pipeline_binding[8] != binding[6]
+        ):
+            raise ValueError("application scoring input semantic integrity violation")
+
+        terminal = binding[2]
+        sector_key = binding[4]
+        normalized_features = binding[5]
+        readiness_fingerprint = binding[6]
+        if not isinstance(terminal, RealDataPipelineResult):
+            raise RuntimeError("canonical application scoring binding corrupted")
+        if not isinstance(sector_key, SectorKey):
+            raise RuntimeError("canonical application scoring sector binding corrupted")
+        if not isinstance(normalized_features, NormalizedLocationFeatures):
+            raise RuntimeError("canonical application scoring feature binding corrupted")
+        if not isinstance(readiness_fingerprint, str):
+            raise RuntimeError("canonical application scoring readiness binding corrupted")
+        return terminal, sector_key, normalized_features, readiness_fingerprint
+
+    def require_scoring_input(
+        value: ApplicationScoringInput,
+    ) -> ApplicationScoringInput:
+        resolve_scoring_authority(value)
         return value
 
-    return build_pipeline_result, require_pipeline_result, build_scoring_input, require_scoring_input
+    def scoring_pipeline_result(value: ApplicationScoringInput) -> RealDataPipelineResult:
+        return resolve_scoring_authority(value)[0]
+
+    def scoring_sector_key(value: ApplicationScoringInput):
+        return resolve_scoring_authority(value)[1]
+
+    def scoring_normalized_features(
+        value: ApplicationScoringInput,
+    ) -> NormalizedLocationFeatures:
+        return resolve_scoring_authority(value)[2]
+
+    def scoring_readiness_fingerprint(value: ApplicationScoringInput) -> str:
+        return resolve_scoring_authority(value)[3]
+
+    ApplicationScoringInput.pipeline_result = property(scoring_pipeline_result)
+    ApplicationScoringInput.sector_key = property(scoring_sector_key)
+    ApplicationScoringInput.normalized_features = property(scoring_normalized_features)
+    ApplicationScoringInput.readiness_fingerprint = property(
+        scoring_readiness_fingerprint
+    )
+
+    return (
+        build_pipeline_result,
+        require_pipeline_result,
+        build_scoring_input,
+        require_scoring_input,
+    )
 
 
 (
