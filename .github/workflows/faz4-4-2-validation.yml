@@ -1,5 +1,6 @@
 name: faz4-4-2-canonical-core-analysis-adapter-validation
 
+# Final validation trigger for the hardened source candidate.
 on:
   push:
     branches:
