@@ -12,14 +12,14 @@ CURRENT_PHASE: FAZ 4
 CURRENT_CHECKPOINT: 4.4
 CHECKPOINT_TITLE: HTTP / API Transport Foundation
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: b2df2c5f7f447f193544f15b285ec5af3f8bdc6e
 CODE_BRANCH: faz4/4.4-http-api-transport-foundation
-REVIEWED_HEAD_SHA: 7b4afd6d52a78a633674ef2590fd92afd6364a12
+REVIEWED_HEAD_SHA: 37497cc64f1031c0e6b298276e184f1d11eca794
 PR: #13
 
 CONTRACT_CHANGE_REQUIRED: 0
@@ -33,16 +33,17 @@ AUTHORITY_CORRECTIVE_REOPEN_STATUS: LOCKED_MERGED
 FAZ_4_1_IMPLEMENTATION_STATUS: LOCKED_MERGED
 FAZ_4_2_IMPLEMENTATION_STATUS: LOCKED_MERGED
 FAZ_4_3_IMPLEMENTATION_STATUS: LOCKED_MERGED
-FAZ_4_4_IMPLEMENTATION_STATUS: HARDENING_REQUIRED
+FAZ_4_4_IMPLEMENTATION_STATUS: READY_TO_LOCK
 
-BLOCKERS: API-CONSUMER-H001
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: API-CONSUMER-H001
 ```
 
 ---
 
-# 1. EXACT REVIEW STATE
+# 1. EXACT RE-REVIEW STATE
 
-Reviewer independently inspected live GitHub for PR #13.
+Reviewer independently re-inspected live GitHub after API-CONSUMER-H001 hardening.
 
 Verified:
 
@@ -55,11 +56,11 @@ draft: FALSE
 base: main
 base SHA: b2df2c5f7f447f193544f15b285ec5af3f8bdc6e
 head branch: faz4/4.4-http-api-transport-foundation
-reviewed head: 7b4afd6d52a78a633674ef2590fd92afd6364a12
+reviewed head: 37497cc64f1031c0e6b298276e184f1d11eca794
 changed files: 4
 ```
 
-Persistent changed files are exactly:
+Persistent files remain exactly:
 
 ```text
 sitescore-app/docs/CHECKPOINT_4_4_HTTP_API_TRANSPORT_FOUNDATION.md
@@ -68,15 +69,13 @@ sitescore-app/src/sitescore_app/transport.py
 sitescore-app/tests/test_http_api_transport_foundation.py
 ```
 
-No frozen upstream production source, dependency, or package version changed.
-
-The Implementer-reported accidental temporary main commit was independently checked by current state: live `main` is exactly the authorized base above, and PR #13 is based on that exact main. The accidental commit is not part of the current PR diff.
+No frozen upstream production source, pyproject, dependency, or package-version change exists.
 
 ---
 
 # 2. INTERNAL TRANSPORT IMPLEMENTATION — PASS
 
-The current production implementation is acceptable on its internal authority/security mechanics:
+Canonical runtime remains:
 
 ```text
 canonical ApplicationCoreAnalysisInput
@@ -86,49 +85,100 @@ canonical ApplicationCoreAnalysisInput
 -> require_canonical_application_analysis_result(...)
 -> resolver-backed core_result
 -> CanonicalAnalysisResult.to_dict()
--> deep-owned transport snapshot
+-> deep-owned ApplicationHttpResponse snapshot
 ```
 
-PASS items:
+Reviewer accepts:
 
 ```text
-raw dict/JSON is not promoted to application authority
-raw AnalysisInput is rejected
-raw CanonicalAnalysisResult is rejected
-forged ApplicationCoreAnalysisInput is rejected
-transport does not call core analyze directly
-transport does not call individual calculate_* engines
-transport does not generate fingerprint/model versions
-success preserves exact canonical result semantics
-success body is JSON-safe
-response snapshot is isolated from canonical-result mutation
-canonical result is isolated from response-body mutation
-400 invalid_application_authority mapping is stable
-500 analysis_execution_failed mapping is generic/non-sensitive
-no exception text/traceback/secret reflection
-no web framework/runtime dependency added
-COMB-005 truth unchanged
+raw JSON/dict cannot create application authority
+raw AnalysisInput rejected
+raw CanonicalAnalysisResult rejected
+forged ApplicationCoreAnalysisInput rejected
+no direct core analyze call in transport
+no calculate_* engine calls
+no score/model-version/fingerprint recomputation
+exact canonical result semantics preserved
+JSON-safe response snapshot
+response/result mutation isolation
+stable 200 / 400 / 500 mapping
+generic non-sensitive errors
+no web framework dependency
+COMB-005 unchanged
 FAZ 4.0-4.3 authority chain preserved
 ```
 
-No scoring-math or execution-authority defect was found in `transport.py` at the reviewed head.
+---
+
+# 3. API-CONSUMER-H001 — RESOLVED
+
+The hardened FAZ 4.4 document now serves as a durable consumer-contract ledger and explicitly records each required downstream field as implemented, unresolved, not provided, or not applicable without inventing absent behavior.
+
+Verified ledger truth includes:
+
+```text
+API package/version: RESOLVED — sitescore-app==0.1.0
+API contract version: UNRESOLVED_IN_FAZ4
+network endpoint inventory: NOT_PROVIDED_IN_FAZ4
+HTTP methods: NOT_APPLICABLE_TO_CURRENT_FOUNDATION
+implemented request boundary: canonical ApplicationCoreAnalysisInput only
+external raw JSON authority request schema: NOT_PROVIDED_IN_FAZ4
+response schema: RESOLVED — ApplicationHttpResponse(status_code, body)
+domain outcomes: SUCCESS / INVALID_APPLICATION_AUTHORITY / ANALYSIS_EXECUTION_FAILED
+status mapping: 200 / 400 / 500
+422 blocked mapping: NOT_PROVIDED_IN_FAZ4
+error schema: RESOLVED stable {error:{code,message}}
+request ID: NOT_PROVIDED_IN_FAZ4
+analysis_fingerprint: canonical result metadata only, not request/job/idempotency/auth authority
+separate analysis lifecycle ID: NOT_PROVIDED_IN_FAZ4
+job ID / async identity: NOT_PROVIDED_IN_FAZ4
+implemented execution mode: synchronous in-process final response
+future network execution policy: UNRESOLVED_IN_FAZ4
+timeout contract: NOT_PROVIDED_IN_FAZ4
+result retrieval: same-call direct return only
+external result retrieval endpoint/store: NOT_PROVIDED_IN_FAZ4
+polling: NOT_PROVIDED_IN_FAZ4
+callback/webhook: NOT_PROVIDED_IN_FAZ4
+retry guarantee: UNRESOLVED_IN_FAZ4
+IDEMPOTENCY: NOT PROVIDED IN FAZ 4
+authentication/authorization: NOT_PROVIDED_IN_FAZ4
+OpenAPI/runtime route schema: NOT_APPLICABLE_TO_CURRENT_FOUNDATION
+backward compatibility: post-freeze changes to frozen runtime-observable consumer semantics or authority boundaries require CONTRACT_CHANGE_REQUIRED: 1
+```
+
+The ledger explicitly states that no network-callable n8n endpoint currently exists.
+
+Future n8n may only consume a separately authorized canonical external API if one is later implemented. It MUST NOT calculate category scores or Location Score, infer readiness, replace missing values, re-run core formulas, fabricate successful analysis, alter canonical result semantics, or treat JSON/fingerprint/id/hash/flags as authority.
+
+No n8n, Stripe/payment, report/PDF, email delivery, auth, deployment, FAZ 5/6, empirical calibration, or COMB-005 approval was implemented.
 
 ---
 
-# 3. AUTHORITATIVE VALIDATION — PASS FOR CURRENT IMPLEMENTATION
+# 4. RUNTIME / DOCUMENTATION CONSISTENCY — PASS
 
-Successful Actions candidate:
+Reviewer compared the durable ledger against actual runtime behavior.
+
+No documentation-only route, method, OpenAPI runtime, async job, polling, webhook, retry guarantee, idempotency mechanism, auth scheme, or deployment claim was introduced.
+
+The hardening delta from prior reviewed head changes only the durable checkpoint document; runtime source/tests are unchanged.
+
+---
+
+# 5. AUTHORITATIVE HARDENING VALIDATION — PASS
 
 ```text
 workflow: faz4-4-4-http-api-transport-validation
-run ID: 31959275214
-job ID: 95194655543
-validated SHA: 1e3d74d1a0b13c54c19e66d5f89bd839358f6c1f
-conclusion: SUCCESS
-scope audit: SUCCESS
+run ID: 31968349822
+job ID: 95216838645
+validated SHA: 8b145949c3b65db6d9bf65512c49db1f22571c8a
+run conclusion: SUCCESS
+job conclusion: SUCCESS
+FAZ 4.4 scope audit: SUCCESS
 ```
 
-Recorded regression:
+All eight package test steps completed SUCCESS.
+
+Recorded regression baseline:
 
 ```text
 sitescore-app:         19 PASS
@@ -142,199 +192,63 @@ sitescore-core:        86 PASS
 TOTAL:               1375 / 1375 PASS
 ```
 
-Validated SHA -> current reviewed HEAD:
+Reviewer independently compared validated SHA to final head:
 
 ```text
-1e3d74d1a0b13c54c19e66d5f89bd839358f6c1f
+8b145949c3b65db6d9bf65512c49db1f22571c8a
 ->
-7b4afd6d52a78a633674ef2590fd92afd6364a12
+37497cc64f1031c0e6b298276e184f1d11eca794
 ```
 
-Diff is only:
+Tree diff contains only:
 
 ```text
 .github/workflows/faz4-4-4-validation.yml REMOVED
 ```
 
-Therefore the blocker below is not caused by an unvalidated production change.
+Therefore final production source, tests, documentation content, dependencies, and versions are byte-equivalent to the successful validated candidate; only the temporary workflow is absent.
 
 ---
 
-# 4. API-CONSUMER-H001 — HARDENING REQUIRED
+# 6. REVIEWER ACCEPTANCE
 
-The user-supplied **FAZ 4 Reviewer API Consumer Handoff Addendum** is additive and now applies to this normal 4.4 review action.
+Reviewer can truthfully conclude for exact PR #13 head `37497cc64f1031c0e6b298276e184f1d11eca794`:
 
-The current 4.4 documentation describes the framework-neutral handler and says several public HTTP concepts are not implemented/frozen. That is not yet sufficient as the mandatory downstream-consumer contract.
+> FAZ 4.4 preserves the locked application authority chain; exposes only a framework-neutral in-process transport adapter over canonical ApplicationCoreAnalysisInput; delegates exactly once to the locked FAZ 4.3 use-case; projects only canonical result semantics into an owned JSON-safe response; rejects raw/forged authority; preserves stable non-sensitive transport errors; introduces no framework/dependency/version or frozen-upstream change; preserves COMB-005 truth; and now contains the additive consumer-facing contract ledger required by API-CONSUMER-H001 without fabricating endpoint, method, async, polling, webhook, idempotency, auth, OpenAPI, deployment, or n8n behavior.
 
-The 4.4 repository artifact must explicitly enumerate the consumer-facing contract fields below and record each as one of:
-
-```text
-RESOLVED: <exact implemented/frozen value>
-UNRESOLVED_IN_FAZ4: <explicit reason / boundary>
-NOT_PROVIDED_IN_FAZ4
-NOT_APPLICABLE_TO_CURRENT_FOUNDATION
-```
-
-Do not invent values merely to satisfy the ledger.
-
-At minimum explicitly record:
+Final decision:
 
 ```text
-API package/version
-API contract version
-endpoint / route inventory
-HTTP methods
-request schema
-response schema
-domain status model
-HTTP status mapping
-error schema
-request identifier semantics
-analysis identifier semantics
-job identifier semantics
-sync vs async execution behavior
-timeout expectations
-result retrieval model
-polling model
-callback/webhook model
-retry expectations
-idempotency semantics
-authentication boundary/status
-machine-readable schema/OpenAPI status and location
-known limitations
-backward-compatibility expectations
-```
-
-The current document does not explicitly ledger all of these fields. Statements such as "no route/path/OpenAPI lifecycle" are useful but incomplete because downstream consumers need an unambiguous field-by-field contract, including explicit absence/unresolved status.
-
----
-
-# 5. REQUIRED HARDENING SCOPE
-
-This is a narrow additive hardening. Do NOT redesign the authority model and do NOT implement FAZ 5/6 functionality.
-
-Required:
-
-1. Harden `sitescore-app/docs/CHECKPOINT_4_4_HTTP_API_TRANSPORT_FOUNDATION.md` or add a narrowly scoped durable app-local consumer-contract artifact referenced by it.
-2. Add an explicit consumer contract ledger covering every field in Section 4 above.
-3. State clearly that current runtime entry is framework-neutral/in-process and accepts canonical `ApplicationCoreAnalysisInput`, not raw external JSON authority.
-4. State explicitly whether a network-callable external endpoint exists. If none exists, record endpoint inventory/method/request schema as unresolved or not provided rather than implying n8n can already invoke a deployed HTTP route.
-5. State sync/async behavior of the implemented handler exactly. If only synchronous in-process execution exists, say so and distinguish that from unresolved external HTTP execution policy.
-6. State idempotency exactly. If no idempotency implementation exists, include the exact durable statement:
-
-```text
-IDEMPOTENCY: NOT PROVIDED IN FAZ 4
-```
-
-7. State polling/callback/webhook behavior exactly; do not claim unsupported behavior.
-8. State authentication status exactly; do not invent auth.
-9. State machine-readable contract status. If OpenAPI is not technically applicable because no route/framework exists, record that explicitly and identify what canonical code/docs currently constitute the equivalent contract source.
-10. State backward-compatibility policy/status for the FAZ 4 contract, including what would require `CONTRACT_CHANGE_REQUIRED: 1` after freeze.
-11. Add explicit future consumer invariants:
-
-```text
-n8n MAY later submit/consume only a canonical API contract once an external callable boundary exists,
-receive/poll canonical status only if such behavior is implemented,
-branch on canonical API status,
-pass completed canonical results downstream.
-
-n8n MUST NOT calculate scores, infer readiness, replace missing values,
-re-run core formulas, fabricate successful analysis, or alter canonical result semantics.
-```
-
-12. Explicitly state that FAZ 4.4 does NOT implement n8n, Stripe/payment, report/PDF, email delivery, auth, deployment, or later phases.
-
-If the hardening changes only docs/contract artifacts and no runtime behavior, no dependency/version change is authorized.
-
----
-
-# 6. TEST / CONTRACT CONSISTENCY REQUIREMENT
-
-If any hardening establishes a new runtime-observable contract value, add/adjust tests so code and docs cannot drift.
-
-Examples:
-
-```text
-stable error codes/status mappings
-public response field inventory
-sync handler behavior
-public exported symbols
-```
-
-Do not add a documentation-only endpoint/OpenAPI schema that claims runtime behavior the code does not provide.
-
-If no runtime behavior changes and the hardening only makes unresolved/absence states explicit, existing runtime tests may remain unchanged; nevertheless run the full regression on the final hardened candidate and report exact validated SHA -> final HEAD integrity again.
-
----
-
-# 7. NO FALSE EXTERNAL-API CLAIM
-
-Current reviewed code exposes a Python transport function, not a deployed network route.
-
-Therefore until actual code establishes otherwise, do NOT claim:
-
-```text
-POST /analyze exists
-POST /analyses exists
-GET /analyses/{id} exists
-OpenAPI runtime exists
-polling exists
-callback/webhook exists
-idempotency exists
-auth exists
-n8n-ready network endpoint exists
-```
-
-The consumer handoff must make these absences/unresolved states explicit.
-
----
-
-# 8. IMPLEMENTER RETURN REQUIREMENTS
-
-Implementer must return on the same PR/branch with:
-
-```text
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-BASE_SHA: b2df2c5f7f447f193544f15b285ec5af3f8bdc6e
-CODE_BRANCH: faz4/4.4-http-api-transport-foundation
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+LOCK_AUTHORITY: USER_ONLY
+REVIEWED_HEAD_SHA: 37497cc64f1031c0e6b298276e184f1d11eca794
 PR: #13
-new CODE_HEAD_SHA
-exact changed-file list
-API-CONSUMER-H001 resolution summary
-complete consumer contract ledger
-runtime-vs-documentation consistency statement
-full regression run/job ids
-validated SHA
-validated-SHA -> final-head diff
-BLOCKERS
-```
-
-Do not merge.
-Do not claim READY_TO_LOCK.
-Do not start FAZ 4-FINAL.
-
----
-
-# 9. REVIEWER DECISION
-
-For exact reviewed head:
-
-```text
-7b4afd6d52a78a633674ef2590fd92afd6364a12
-```
-
-Decision:
-
-```text
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
-BLOCKER: API-CONSUMER-H001
 CONTRACT_CHANGE_REQUIRED: 0
 VERSION_CHANGE_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-FAZ_4_4_IMPLEMENTATION_STATUS: HARDENING_REQUIRED
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: API-CONSUMER-H001
+FAZ_4_4_IMPLEMENTATION_STATUS: READY_TO_LOCK
 ```
 
-The internal transport implementation is accepted provisionally, but the checkpoint cannot become READY_TO_LOCK until the additive API consumer handoff obligations are satisfied and revalidated.
+Do not merge until the user explicitly sends `LOCK`.
+
+On LOCK, Implementer must re-fetch live state and require:
+
+```text
+PR #13 current head == 37497cc64f1031c0e6b298276e184f1d11eca794
+main == b2df2c5f7f447f193544f15b285ec5af3f8bdc6e
+PR base == main
+PR OPEN / not merged / mergeable
+CONTRACT_CHANGE_REQUIRED == 0
+VERSION_CHANGE_REQUIRED == 0
+ADDITIONAL_REOPEN_REQUIRED == 0
+BLOCKERS == NONE
+```
+
+Any head/base/main drift invalidates this review and must return LOCK_BLOCKED_REVIEW_STALE.
+
+After successful user-authorized LOCK, next step is FAZ 4-FINAL integrated audit/freeze. No FAZ 4.5 exists.
 
 STOP.
