@@ -7,224 +7,467 @@ HANDOFF_PROTOCOL_VERSION: 1.0
 AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: REVIEWER CHAT
-CURRENT_PHASE: FAZ 3.4
-CURRENT_CHECKPOINT: 3.4-FINAL
-CHECKPOINT_TITLE: Integrated Architecture Audit + Freeze Readiness
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+CURRENT_PHASE: FAZ 3
+CURRENT_CHECKPOINT: FAZ 3-FINAL
+CHECKPOINT_TITLE: Full Phase Integrated Audit + Freeze Readiness
+REVIEWER_STATE: IMPLEMENTATION_REQUESTED
+IMPLEMENTER_ACTION: AUDIT_AND_PREPARE_PHASE_FREEZE
 LOCK_AUTHORITY: USER_ONLY
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
-CODE_BRANCH: faz3.4/final-audit-freeze
-REVIEWED_HEAD_SHA: b66b0030760281a2b05391237007cdfabf69fb7b
-PR: #6
-CONTRACT_CHANGE_REQUIRED: 0
-FINAL_AUDIT_DECISION: FREEZE_READY
-FINAL_BLOCKERS: NONE
+EXPECTED_BASE_SHA: 3519b118c9f5d04a16096003657a0058cef4af42
+CODE_BRANCH: faz3/final-audit-freeze
+REVIEWED_HEAD_SHA: NONE
+PR: NONE
+CONTRACT_CHANGE_REQUIRED_EXPECTATION: 0
 ```
 
 ---
 
-# 1. FINAL REVIEW DECISION
+# 1. PREVIOUS PHASE-SUBSECTION FREEZE VERIFICATION
+
+FAZ 3.4-FINAL is accepted, user-authorized and merged.
+
+Reviewer independently verified:
 
 ```text
-FAZ 3.4-FINAL
-Decision: READY TO LOCK / FREEZE READY
-PR: #6
-Reviewed HEAD: b66b0030760281a2b05391237007cdfabf69fb7b
-Audited main/base: 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
-CONTRACT_CHANGE_REQUIRED: 0
-FINAL_BLOCKERS: NONE
+PR #6 state: closed
+PR #6 merged: true
+reviewed branch HEAD: b66b0030760281a2b05391237007cdfabf69fb7b
+merge/main SHA: 3519b118c9f5d04a16096003657a0058cef4af42
 ```
 
-Acceptance is SHA-specific. `READY_TO_LOCK` / `FREEZE_READY` is not yet `LOCKED` or `FROZEN`.
-
-Only the user may authorize the lock transition by explicitly sending `LOCK` to the Implementer chat.
-
-Do not start FAZ 3-FINAL or FAZ 4 before the lock transition completes and is verified.
-
----
-
-# 2. INDEPENDENT REVIEW SCOPE
-
-Reviewer independently re-fetched and inspected:
-
-- latest `implementer.md` final-audit report;
-- PR #6 metadata and exact current HEAD;
-- exact changed-file set;
-- full `docs/FAZ3_4_FINAL_AUDIT_FREEZE_CANDIDATE.md` audit record;
-- full `sitescore-pipeline/tests/test_final_phase_architecture.py` integrated guard;
-- current `main` SHA;
-- final GitHub Actions run and job-step conclusions;
-- validated SHA -> final review HEAD comparison;
-- representative historical GitHub commit comparisons for frozen-source claims.
-
-No acceptance is based solely on Implementer claims.
-
----
-
-# 3. FINAL CANDIDATE DIFF — CLEAN
-
-PR #6 persistent base -> reviewed-head diff contains exactly:
+The merge commit has the exact reviewed HEAD as its second parent and current `main` points exactly to:
 
 ```text
-docs/FAZ3_4_FINAL_AUDIT_FREEZE_CANDIDATE.md
-sitescore-pipeline/tests/test_final_phase_architecture.py
+3519b118c9f5d04a16096003657a0058cef4af42
 ```
 
-No production source changed.
-No package dependency metadata changed.
-No frozen upstream source changed.
-No temporary validation workflow remains in final diff.
-
-The audit document correctly uses pre-lock wording:
+Therefore the operational state is now:
 
 ```text
-FREEZE_CANDIDATE
-READY_FOR_FINAL_REVIEW
+FAZ 3.4-FINAL: LOCKED
+FAZ 3.4: FROZEN
 ```
 
-and does not falsely declare FAZ 3.4 `FROZEN` before user LOCK.
+The merged 3.4 audit document intentionally retains its historically correct pre-lock `FREEZE_CANDIDATE` wording. Do not create a post-lock rewrite merely to change historical wording.
+
+Do not modify the frozen FAZ 3.4 baseline as part of opening FAZ 3-FINAL.
 
 ---
 
-# 4. PACKAGE DAG / IMPORT BOUNDARY — VERIFIED
+# 2. PURPOSE
 
-The integrated architecture guard and actual package metadata preserve the final runtime DAG:
+Perform the final integrated audit for the **entire FAZ 3 real-data architecture**, not merely FAZ 3.4.
+
+The audit must reconcile actual GitHub state across:
 
 ```text
-sitescore-core -> no SiteScore runtime dependency
-sitescore-data -> no SiteScore runtime dependency
-sitescore-providers -> sitescore-data==0.1.0
-sitescore-spatial -> shapely==2.1.2 + pyproj==3.7.2
-sitescore-metrics -> data + providers + spatial ==0.1.0
-sitescore-benchmarks -> spatial + metrics ==0.1.0
-sitescore-pipeline -> data + benchmarks ==0.1.0
+FAZ 3.1 — real-data architecture / structural contract decisions
+FAZ 3.2 — core + data contract architecture/freeze
+FAZ 3.3 — provider layer
+FAZ 3.4 — spatial/frame/metric/benchmark/normalization/readiness/pipeline architecture
 ```
 
-Verified structural conclusions:
-
-- DAG remains acyclic;
-- core remains isolated;
-- no upstream -> pipeline dependency/import exists;
-- pipeline does not import/depend on core;
-- no reverse dependency was introduced.
-
----
-
-# 5. FROZEN SOURCE / HISTORY REVIEW — CLEAN
-
-Reviewer independently verified representative historical comparisons:
-
-- pre-3.4-4 baseline `91608d7f70e2cdb28ba6aa9c287baea0af9f2275` -> audited main `8919edb9...` changes only benchmark and additive pipeline surfaces; no core/data/providers/spatial/metrics files appear in the compare;
-- 3.4-7 merge `c8514401...` -> 3.4-8 merged main `8919edb9...` contains exactly the additive `sitescore-pipeline` package surface.
-
-Together with previously reviewed checkpoint SHA-specific locks and current integrated tests, no silent post-lock mutation requiring a contract change was found.
-
----
-
-# 6. INTEGRATED SEMANTIC INVARIANTS — VERIFIED
-
-The final candidate preserves the reviewed FAZ 3.4 chain:
+Target outcome:
 
 ```text
-provider evidence / frozen snapshots
--> spatial artifacts + provider-neutral real-unit measurements
--> complete eligible benchmark attempt population
--> compatibility/calibration-gated numeric observations
--> BenchmarkDistributionArtifact
+one coherent, dependency-safe, replayable, provenance-bound FAZ 3 baseline
+ready to be frozen before FAZ 4 backend/application work begins
+```
+
+This is **not** a new feature checkpoint.
+
+Do not start FAZ 4.
+Do not add application/backend/API/UI/payment/report behavior.
+Do not perform empirical calibration merely to make current architecture SCORE_READY.
+
+---
+
+# 3. AUTHORITATIVE BASELINE
+
+Audit actual `main` at exact SHA:
+
+```text
+3519b118c9f5d04a16096003657a0058cef4af42
+```
+
+Create/use exactly one audit branch:
+
+```text
+faz3/final-audit-freeze
+```
+
+from that baseline.
+
+If the branch already legitimately exists, re-fetch and continue it rather than resetting or duplicating work.
+
+Historical ZIPs and old markdown are provenance only. Actual GitHub source, commit history, merged PR state, dependency metadata, and coordination handoffs are authoritative.
+
+---
+
+# 4. MODE — AUDIT FIRST, FREEZE PREPARATION ONLY
+
+Allowed persistent changes are limited to:
+
+- one FAZ 3 final audit/freeze-candidate document;
+- architecture/regression guards proving already-intended invariants;
+- narrowly scoped corrections only if an actual reproducible final blocker is found;
+- minimal documentation/metadata consistency needed for reproducible freeze evidence.
+
+Do not introduce new product semantics, providers, scoring formulas, weights, thresholds, calibration constants, benchmark policies, or application behavior.
+
+If a reproducible blocker requires mutation of a previously frozen contract rather than an additive safe correction, stop and report:
+
+```text
+CONTRACT_CHANGE_REQUIRED = 1
+```
+
+with exact GitHub evidence before changing frozen source.
+
+Expected result remains `0`.
+
+---
+
+# 5. RECONSTRUCT THE ACTUAL FAZ 3 FREEZE / LOCK REGISTER
+
+Do not rely on memory alone.
+
+From GitHub history, merged PRs, package docs, and coordination state, reconstruct the actual operational register for:
+
+```text
+FAZ 3.1
+FAZ 3.2
+FAZ 3.3
+FAZ 3.4
+```
+
+For each subsection record:
+
+- relevant baseline/final SHA(s);
+- lock/freeze state actually supported by GitHub;
+- package(s) owned by that subsection;
+- material architectural decisions;
+- test evidence where retrievable;
+- whether later work legitimately added downstream packages without mutating its frozen source.
+
+Important distinction:
+
+- historical docs may preserve pre-lock wording;
+- current operational state must be derived from merged GitHub state and explicit user-authorized lock transitions.
+
+If any prior subsection cannot honestly be called frozen from actual evidence, do **not** silently mark it frozen. Record the discrepancy as a final blocker or explicit state gap.
+
+---
+
+# 6. PACKAGE SET / FINAL DAG
+
+Audit all current FAZ 3 runtime packages:
+
+```text
+sitescore-core
+sitescore-data
+sitescore-providers
+sitescore-spatial
+sitescore-metrics
+sitescore-benchmarks
+sitescore-pipeline
+```
+
+Expected final dependency direction remains:
+
+```text
+core: isolated
+
+data: neutral contracts
+
+providers -> data
+
+spatial -> Shapely + pyproj only
+
+metrics -> data + providers + spatial
+
+benchmarks -> spatial + metrics
+
+pipeline -> data + benchmarks
+```
+
+Required conclusions:
+
+- exact direct runtime dependency table from current `pyproject.toml` files;
+- actual source import graph from AST/source inspection;
+- DAG acyclic;
+- no reverse dependencies;
+- no upstream -> pipeline dependency;
+- no pipeline -> core dependency;
+- core isolated;
+- data neutral;
+- package versions/pins internally coherent with frozen architecture.
+
+Do not infer this from README text alone.
+
+---
+
+# 7. FAZ 3.1 ARCHITECTURAL DECISION AUDIT
+
+Reconstruct and verify the structural decisions that FAZ 3 implementation is supposed to embody.
+
+At minimum audit actual source/contracts against these frozen architectural truths:
+
+```text
+metric != score
+missing evidence != bad != neutral != zero
+provider evidence remains distinct from derived metrics
+site metric semantics must match benchmark metric semantics
+normalization occurs only after real-unit metric + compatible benchmark distribution
+required unresolved/incompatible/uncalibrated feature -> NOT_SCORE_READY
+SCORE_READY != SCORED
+Location Engine and Financial Engine remain separated at this layer
+```
+
+Also verify the specific structural decisions that entered implementation:
+
+- competition benchmark semantics = commercially evidenced spatial alternatives;
+- full equal-area cells / no clipped-boundary equal weighting shortcut;
+- tri-state commercial eligibility;
+- mid-ECDF ties/endpoints/no interpolation;
+- competition opportunity direction inversion;
+- transit service-frequency semantics rather than stop count;
+- road and parking remain semantically separate before COMB-005;
+- COMB-005 remains calibration-gated;
+- exact age fallback remains the sole explicit uncalibrated numeric exception.
+
+If actual source diverges from an intended structural decision, report the exact divergence rather than rewriting history.
+
+---
+
+# 8. FAZ 3.2 CORE / DATA FROZEN BOUNDARY AUDIT
+
+Re-audit actual current `sitescore-core` and `sitescore-data` against their frozen architecture.
+
+At minimum verify:
+
+```text
+sitescore-core runtime dependencies = []
+sitescore-core has no external SiteScore imports
+sitescore-data has no SiteScore runtime dependency
+no circular dependency
+frozen DTO/state semantics still present
+```
+
+Re-check load-bearing data contracts used downstream, including at minimum:
+
+```text
+MetricValue
+DerivedLocationMetrics
+NormalizedLocationFeatures
+FeatureReadinessPolicy
+ReadinessCompatibilityInput
+ApprovedFallbackPolicyRef
+ScoringReadinessResult
+RealDataPipelineResult
+PipelineStatus
+```
+
+Confirm availability, eligibility and calibration remain separate dimensions.
+
+Confirm the frozen normalized surface still has exactly eight V1 feature slots and the derived metric surface ten V1 metric slots.
+
+Confirm later provider/spatial/benchmark/pipeline work has not silently altered core/data source after their accepted freeze baseline.
+
+Do not mutate core/data merely to improve final documentation.
+
+---
+
+# 9. FAZ 3.3 PROVIDER LAYER FINAL AUDIT
+
+Audit the actual current `sitescore-providers` package as a complete provider layer, including the previously hardened provider families and cross-cutting foundation.
+
+At minimum inspect/reconcile actual source for:
+
+- provider foundation / request-response identity and temporal semantics;
+- geocoding + Census geography binding;
+- ACS statistical evidence semantics;
+- competition evidence/taxonomy/manifest lineage;
+- pedestrian / routing / Valhalla execution binding and warning semantics;
+- transit / GTFS semantics and source-bundle identity where implemented;
+- road / parking provider evidence contracts where implemented;
+- content hashes, manifest identities, execution-policy identities and compatibility attestations;
+- provider evidence persistence/licensing boundaries where encoded.
+
+Final provider audit must prove:
+
+```text
+provider layer emits evidence/snapshots, not normalized scores
+no missing provider evidence becomes numeric zero by default
+source/bundle/content identity is preserved into downstream metric compatibility
+no provider imports benchmark/pipeline/core scoring logic
+```
+
+Use actual current GitHub state; do not assume checkpoint reports are sufficient.
+
+If old provider documents conflict with current source, source + merged SHA wins and discrepancy must be recorded.
+
+---
+
+# 10. FAZ 3.4 FROZEN BASELINE RE-ATTESTATION
+
+Treat merged FAZ 3.4 at:
+
+```text
+3519b118c9f5d04a16096003657a0058cef4af42
+```
+
+as frozen input to this phase audit.
+
+Do not re-implement it.
+
+Re-attest the load-bearing chain only to ensure it remains coherent with FAZ 3.1–3.3:
+
+```text
+provider evidence
+-> spatial / real-unit measurement
+-> benchmark population / distribution
 -> exact mid-ECDF
 -> feature-specific normalization
--> exact age fallback + COMB-005 gate
+-> age fallback + COMB-005 gate
 -> NormalizedLocationFeatures
--> derived ScoringReadinessResult
+-> ScoringReadinessResult
 -> RealDataPipelineResult
 ```
 
-Reviewer found no reproducible regression in the previously locked load-bearing invariants:
-
-- metric != score;
-- missing/unresolved/incompatible evidence != zero/neutral;
-- required numeric benchmark observation requires AVAILABLE + ELIGIBLE + CALIBRATED + finite + compatible lineage;
-- mid-ECDF remains `(#below + 0.5 * #equal) / N` with no interpolation, epsilon, tolerance, rounding or quantization;
-- ordinary higher-better normalization remains `100 * P`;
-- competition opportunity remains `100 * (1-P)`;
-- age fallback remains the sole numeric UNCALIBRATED exception at exact score 50 / proxy / `age_affinity_not_calibrated` / `age_neutral_fallback/1.0`;
-- transit exact source-bundle and competition exact measurement-definition compatibility remain explicit;
-- current COMB-005 remains NOT_APPROVED, weightless, nonnumeric and non-substituting;
-- canonical pipeline assembly/readiness remains factory-owned;
-- terminal overlapping real-unit metrics remain semantically coherent with actual normalization site measurements;
-- readiness false -> NOT_SCORE_READY;
-- explicit execution-stage failure -> PIPELINE_ERROR;
-- SCORE_READY != SCORED.
+Confirm the 3.4 final audit/guard merged via PR #6 is present and no post-freeze mutation has occurred after merge.
 
 ---
 
-# 7. NO LATER-LAYER LEAKAGE — VERIFIED
+# 11. CROSS-PACKAGE LINEAGE / AUTHORITY AUDIT
 
-The final guard and source review preserve absence of real-data-layer implementation of:
+The central FAZ 3-FINAL question is whether evidence authority survives package boundaries without caller self-assertion.
+
+Audit end-to-end for:
+
+- actual nested evidence/artifact objects rather than detached IDs alone;
+- request/content/manifest/source bundle identity;
+- method/policy/version lineage;
+- precision and CRS identity where spatial operations are involved;
+- benchmark frame/distribution identity;
+- site↔benchmark compatibility;
+- normalization policy identity;
+- age fallback authority;
+- COMB-005 authority/gating;
+- pipeline assembly/readiness factory authority;
+- terminal real-unit metric coherence.
+
+Search for public/module-level bypasses or constructors that could fabricate canonical AVAILABLE/CALIBRATED/APPROVED/SCORE_READY state without actual evidence.
+
+Do not treat underscore naming as an authority boundary by itself.
+
+---
+
+# 12. GLOBAL MISSINGNESS / NO-HIDDEN-DEFAULT AUDIT
+
+Search actual FAZ 3 source for production shortcuts that could violate:
 
 ```text
-CategoryScores/category aggregation
-category weights
-base/final Location Score
-dealbreaker application
-Decision Layer
-core.analyze()
-report/PDF
-payment workflow
+missing != zero
+missing != neutral
+uncalibrated != calibrated
+incompatible != compatible
+unknown != negative evidence
 ```
 
-Frozen historical DTO presence does not itself constitute computation leakage.
+Specifically audit for hidden or default:
 
-No new empirical scoring shortcut was introduced by the final candidate.
+- zero fill;
+- neutral 50 fill outside exact age fallback;
+- feature-weight renormalization over available inputs;
+- minimum-N that silently changes structural availability;
+- coverage threshold invented as production authority;
+- road/parking 50/50;
+- one-sided road/parking substitution;
+- default empirical CRS/resolution/overlap threshold;
+- caller-selected competition direction;
+- provider-missing treated as no competition/no transit/no parking.
+
+Any such production behavior is a final blocker unless explicitly frozen and evidenced.
 
 ---
 
-# 8. EMPIRICAL / CALIBRATION GATES — HONESTLY UNRESOLVED
+# 13. EMPIRICAL / CALIBRATION GATE REGISTER — WHOLE FAZ 3
 
-The final audit record correctly keeps unresolved/calibration-gated items explicit rather than inventing defaults, including:
+Produce one phase-wide register separating:
+
+## A. structurally frozen / implemented
+
+from
+
+## B. empirically unresolved / calibration-gated
+
+At minimum preserve unresolved status for applicable items such as:
 
 ```text
-production equal-area CRS / attestation
-benchmark-cell resolution and lattice anchor
-boundary-membership policy
-commercial ontology/applicability/provider reconciliation
-population allocation
-exact target-population definition
-age-affinity empirical calibration
-household-income-ratio reference
-competition scalar reduction
-road scalar reduction
-COMB-005 component normalization authority
+production equal-area CRS selection/attestation
+benchmark cell resolution
+lattice anchor/origin
+boundary-membership calibration
+commercial ontology/category mapping
+commercial evidence-to-cell applicability
+provider precedence / cross-provider reconciliation
+population allocation/intersection policy
+target population definition
+age affinity calibration
+household income ratio denominator/reference
+competition multi-scale scalar reduction
+road multi-scale scalar reduction
+COMB-005 component normalization authorities
 COMB-005 formula/weights
-sample adequacy / coverage policy if later required
-production calibration datasets / acceptance evidence
-production empirical validation across target archetypes/geographies
+sample adequacy/minimum-N policy if later required
+benchmark coverage threshold if later required
+production calibration datasets/acceptance evidence
+empirical validation across target archetypes/geographies
 ```
 
-These are not FAZ 3.4 structural blockers because the architecture explicitly gates them and does not represent them as calibrated/available.
+Add any other unresolved item actually found in current source/docs.
 
-Final allowed phase claim remains exactly:
+Do not invent a value to close any gate.
+
+The final phase claim remains exactly:
 
 ```text
 Mathematically validated scoring engine; empirical validation pending.
 ```
 
+Do not upgrade this claim to empirically validated, production-calibrated, or production-ready scoring.
+
 ---
 
-# 9. FINAL TEST / VALIDATION STATUS
+# 14. NO FAZ 4 / PRODUCT-LAYER LEAKAGE
 
-GitHub Actions final documentation-inclusive validation independently verified:
+FAZ 3 final source must remain a real-data architecture baseline, not an application implementation.
+
+Audit for absence of newly implemented:
 
 ```text
-workflow: cp34-final-validation
-run id: 31925019955
-validated SHA: bf42ae3650cbd1c8a6e3bf22bee5007460804d53
-conclusion: SUCCESS
+HTTP/API application layer
+user/account/auth flows
+payment orchestration
+report/PDF generation
+UI/frontend
+job orchestration for commercial product delivery
+category aggregation from real-data pipeline
+Location Score orchestration
+Decision Layer execution
+core.analyze() invocation from pipeline
 ```
 
-The visible job confirms successful execution of all seven package test steps:
+Historical/frozen DTO definitions alone are not leakage; executable orchestration is.
+
+FAZ 4 begins only after FAZ 3-FINAL is reviewed, user-LOCKED and independently verified.
+
+---
+
+# 15. FULL REGRESSION / REPRODUCIBILITY VALIDATION
+
+Run the complete current package regression set:
 
 ```text
 sitescore-pipeline
@@ -236,92 +479,123 @@ sitescore-data
 sitescore-core
 ```
 
-Implementer-reported visible exact counts retained:
+Record exact pytest counts only where directly visible.
 
-```text
-sitescore-pipeline: 33/33 PASS
-sitescore-benchmarks: 191/191 PASS
-sitescore-metrics: 67/67 PASS
-```
+Add/retain phase-final architecture guards sufficient to prove at minimum:
 
-No unsupported exact counts are asserted for the other four successful steps.
+- exact runtime dependency DAG;
+- forbidden import directions;
+- core/data frozen boundaries;
+- provider no-score boundary;
+- no upstream -> pipeline reverse dependency;
+- no FAZ 4/product-layer leakage;
+- no hidden empirical/default scoring shortcuts;
+- COMB-005 remains unapproved;
+- exact age exception remains unique;
+- phase claim/gate register remains honest.
 
-Reviewer independently compared validated SHA `bf42ae3650cbd1c8a6e3bf22bee5007460804d53` to final reviewed HEAD `b66b0030760281a2b05391237007cdfabf69fb7b` and verified the only changed file is:
-
-```text
-.github/workflows/cp34-final-validation.yml -> removed
-```
-
-Therefore reviewed source/tests/docs equal the successfully validated source/tests/docs.
-
----
-
-# 10. FINAL ACCEPTANCE
-
-Acceptance standard is satisfied:
-
-> No reproducible production correctness blocker remains within FAZ 3.4 scope; all locked structural invariants are preserved; unresolved empirical/calibration items are explicitly gated rather than silently defaulted; package DAG and frozen boundaries are clean; final test evidence is green and reproducible.
-
-```text
-FAZ 3.4-FINAL: READY TO LOCK
-FAZ 3.4: FREEZE READY
-REVIEWED_HEAD_SHA: b66b0030760281a2b05391237007cdfabf69fb7b
-PR: #6
-FINAL_BLOCKERS: NONE
-CONTRACT_CHANGE_REQUIRED: 0
-```
+If using a temporary GitHub Actions workflow, remove it before final review and prove successful validated SHA -> final review HEAD is workflow-removal-only, or document any exact tree-neutral delta.
 
 ---
 
-# 11. USER-AUTHORIZED LOCK / FREEZE TRANSITION
+# 16. PHASE FINAL AUDIT / FREEZE-CANDIDATE RECORD
 
-Only if the user explicitly sends:
-
-```text
-LOCK
-```
-
-the Implementer may perform the transition.
-
-Immediately before merge, re-fetch reviewer.md, implementer.md, PR #6 and current main and verify:
+Create a phase-level audit document, preferably:
 
 ```text
-REVIEWER_STATE == READY_TO_LOCK
-IMPLEMENTER_ACTION == LOCK_IF_USER_AUTHORIZED
-current PR HEAD == b66b0030760281a2b05391237007cdfabf69fb7b
-PR base == main
-PR is open
-current main == 8919edb9a2791047ff10f7d08bd3fc5ed251a6e0
-CONTRACT_CHANGE_REQUIRED == 0
-FINAL_BLOCKERS == NONE
+docs/FAZ3_FINAL_AUDIT_FREEZE_CANDIDATE.md
 ```
 
-If the current PR HEAD differs from the reviewed SHA, or main moved incompatibly, do not merge. Record:
+unless an existing authoritative phase-final location is already present.
+
+Record at minimum:
 
 ```text
-IMPLEMENTER_STATE: LOCK_BLOCKED_REVIEW_STALE
+FAZ 3 status
+exact audited base/main SHA
+3.1 / 3.2 / 3.3 / 3.4 operational state register
+package/version/dependency DAG
+frozen-source history evidence
+end-to-end lineage/authority audit
+missingness/no-hidden-default audit
+full test evidence
+structural vs empirical/calibration gate register
+known unresolved empirical items
+contract-change status
+final blockers
+final audit decision
 ```
 
-and return for Reviewer re-review.
-
-If all exact checks pass and the user explicitly authorized `LOCK`, merge PR #6 using expected-head-SHA protection when available.
-
-After successful merge, update only the coordination handoff needed to record the transition. Do not perform new feature/source/hardening work as part of LOCK.
-
-Record at minimum in `implementer.md`:
+Before user LOCK, allowed wording is only:
 
 ```text
-IMPLEMENTER_STATE: LOCKED
-CHECKPOINT: FAZ 3.4-FINAL
-FAZ_3_4_STATUS: FROZEN
-REVIEWED_HEAD_SHA: b66b0030760281a2b05391237007cdfabf69fb7b
-PR: #6
-MERGED_MAIN_SHA: <actual merge/main SHA>
-LOCK_TRANSITION_STATUS: SUCCESS
-CONTRACT_CHANGE_REQUIRED: 0
-FINAL_BLOCKERS: NONE
+FREEZE_CANDIDATE
+READY_FOR_FINAL_REVIEW
 ```
 
-The merged audit document may retain its historically correct pre-lock `FREEZE_CANDIDATE` wording; the authoritative operational frozen state after merge is the exact GitHub merge state plus coordination handoff. Do not create an unreviewed post-lock source/doc commit merely to rewrite that wording.
+Do not write `FAZ 3: FROZEN` before Reviewer acceptance and explicit user LOCK.
 
-Do not start FAZ 3-FINAL or FAZ 4 during the lock transition. Stop after recording successful LOCK and wait for the user to send `Devam` to Reviewer.
+---
+
+# 17. BRANCH / PR / RETURN PROTOCOL
+
+Use exactly one branch:
+
+```text
+faz3/final-audit-freeze
+```
+
+Open/update exactly one PR against `main`.
+
+Do not merge it.
+Do not self-LOCK.
+Do not start FAZ 4.
+
+Replace `implementer.md` with detailed evidence containing at minimum:
+
+```text
+CURRENT_PHASE: FAZ 3
+CURRENT_CHECKPOINT: FAZ 3-FINAL
+IMPLEMENTER_STATE: READY_FOR_REVIEW
+BASE_SHA: 3519b118c9f5d04a16096003657a0058cef4af42
+CODE_BRANCH: faz3/final-audit-freeze
+CODE_HEAD_SHA: <exact SHA>
+PR: <number>
+CONTRACT_CHANGE_REQUIRED: 0/1
+FINAL_AUDIT_DECISION: FREEZE_CANDIDATE / BLOCKED
+FINAL_BLOCKERS: NONE or stable IDs
+```
+
+Also report:
+
+- exact changed files;
+- production-source changed yes/no;
+- reconstructed 3.1–3.4 state register;
+- exact package dependency/import audit;
+- cross-package lineage findings;
+- frozen-source history comparisons;
+- regression run IDs/SHAs/counts where directly visible;
+- complete empirical/calibration gate register;
+- any discrepancy between historical docs and actual GitHub state.
+
+Stop after PR + handoff. No merge, tag, FAZ 4, or post-review rewrite.
+
+---
+
+# 18. REVIEWER ACCEPTANCE STANDARD
+
+The Reviewer will independently re-fetch and review the phase-final candidate.
+
+Acceptance requires:
+
+> No reproducible production correctness blocker remains across FAZ 3.1–3.4; the current package DAG and frozen-source boundaries are coherent; provider evidence through terminal pipeline lineage remains authority-bound; no hidden default turns missing or uncalibrated evidence into a score; all unresolved empirical/calibration items remain explicitly gated; full regression evidence is green; and no FAZ 4/product behavior has leaked into the frozen real-data architecture.
+
+Only after that may Reviewer issue exact-SHA:
+
+```text
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+FINAL_AUDIT_DECISION: FREEZE_READY
+```
+
+User remains sole LOCK authority.
