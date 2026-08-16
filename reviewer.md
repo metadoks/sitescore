@@ -12,14 +12,14 @@ CURRENT_PHASE: FAZ 4
 CURRENT_CHECKPOINT: 4-FINAL
 CHECKPOINT_TITLE: Integrated Application / Backend Audit + Freeze Gate
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: a0c2461a7c23618273ab44496011d849584d19fa
 CODE_BRANCH: faz4/final-integrated-audit-freeze
-REVIEWED_HEAD_SHA: 3f250a7485a93a907abd96608e2c87c99db4e7a2
+REVIEWED_HEAD_SHA: 1c6205c0c2fef6c6e17e16179ef459a943fc51d6
 PR: #14
 
 CONTRACT_CHANGE_REQUIRED: 0
@@ -34,18 +34,19 @@ FAZ_4_1_IMPLEMENTATION_STATUS: LOCKED_MERGED
 FAZ_4_2_IMPLEMENTATION_STATUS: LOCKED_MERGED
 FAZ_4_3_IMPLEMENTATION_STATUS: LOCKED_MERGED
 FAZ_4_4_IMPLEMENTATION_STATUS: LOCKED_MERGED
-FAZ_4_FINAL_IMPLEMENTATION_STATUS: HARDENING_REQUIRED
-FAZ_4_STATUS: NOT_FROZEN
+FAZ_4_FINAL_IMPLEMENTATION_STATUS: READY_TO_LOCK
+FAZ_4_STATUS: NOT_FROZEN_PRE_LOCK
+FINAL_AUDIT_DECISION: FREEZE_CANDIDATE
 
-BLOCKERS: FINAL-SHA-CLOSURE-H001
-RESOLVED_BLOCKERS: API-CONSUMER-H001
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: API-CONSUMER-H001, FINAL-SHA-CLOSURE-H001
 ```
 
 ---
 
-# 1. EXACT REVIEW STATE
+# 1. EXACT RE-REVIEW STATE
 
-Reviewer independently inspected exact PR #14.
+Reviewer independently re-inspected live PR #14 and hardening artifacts.
 
 Verified:
 
@@ -58,24 +59,24 @@ draft: FALSE
 base: main
 base SHA: a0c2461a7c23618273ab44496011d849584d19fa
 head branch: faz4/final-integrated-audit-freeze
-reviewed head: 3f250a7485a93a907abd96608e2c87c99db4e7a2
+reviewed head: 1c6205c0c2fef6c6e17e16179ef459a943fc51d6
 changed files: 2
 ```
 
-Persistent files are exactly:
+Persistent files remain exactly:
 
 ```text
 docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md
 sitescore-app/docs/API_CONSUMER_HANDOFF.md
 ```
 
-No production source, tests, pyproject, dependency, or version changed.
+No production source, tests, pyproject, dependency, or package-version change exists.
 
 ---
 
-# 2. INTEGRATED FINAL AUDIT — PASS EXCEPT SHA CLOSURE
+# 2. INTEGRATED FINAL AUDIT — ACCEPTED
 
-Reviewer accepts the integrated audit findings at the reviewed head:
+Reviewer accepts the final integrated FAZ 4 audit findings:
 
 ```text
 4.0-4.4 lock history reconciled
@@ -93,17 +94,51 @@ COMB-005 remains NOT_APPROVED / () / () / UNRESOLVED
 no FAZ 5/6/n8n/payment/report/deployment implementation
 ```
 
-The durable final audit record correctly keeps the product validity statement:
+Canonical product validity statement remains:
 
 > Mathematically validated scoring engine; empirical validation pending.
 
-No empirical production-readiness claim is accepted.
+No empirical production-readiness claim is made.
 
 ---
 
-# 3. API_CONSUMER_HANDOFF CONTENT — PASS EXCEPT FINAL SHA FIELDS
+# 3. FINAL-SHA-CLOSURE-H001 — RESOLVED
 
-The mandatory `sitescore-app/docs/API_CONSUMER_HANDOFF.md` exists and correctly preserves the locked 4.4 consumer truth, including:
+Both mandatory durable artifacts now define the same non-recursive post-LOCK closure location:
+
+```text
+FINAL_SHA_CLOSURE_REF: ops/faz4-final-freeze-closure
+FINAL_SHA_CLOSURE_PATH: docs/FAZ4_FINAL_FREEZE_CLOSURE.md
+```
+
+They explicitly pre-authorize a deterministic final LOCK procedure and require the closure artifact to contain literal actual values only after merge facts exist:
+
+```text
+FAZ_4_STATUS: FROZEN
+FINAL_PR: #14
+FINAL_REVIEWED_CANDIDATE_SHA: <exact Reviewer-approved PR #14 head>
+FINAL_MERGED_FROZEN_MAIN_SHA: <actual PR #14 merge commit == exact main immediately after merge>
+API_CONSUMER_HANDOFF_PATH: sitescore-app/docs/API_CONSUMER_HANDOFF.md
+FINAL_AUDIT_RECORD_PATH: docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md
+```
+
+The closure ref is repository governance evidence only. It is not merged into frozen main and is not runtime/application authority.
+
+If closure creation/update fails after merge, Implementer must record:
+
+```text
+LOCK_CLOSURE_INCOMPLETE
+```
+
+and Reviewer must not declare FAZ 4 frozen.
+
+---
+
+# 4. API CONSUMER HANDOFF — ACCEPTED
+
+`sitescore-app/docs/API_CONSUMER_HANDOFF.md` exists and preserves the locked 4.4 truth without inventing external API behavior.
+
+Accepted truth includes:
 
 ```text
 sitescore-app==0.1.0
@@ -113,7 +148,7 @@ HTTP methods: NOT_APPLICABLE_TO_CURRENT_FOUNDATION
 request authority: canonical in-process ApplicationCoreAnalysisInput only
 external JSON authority schema: NOT_PROVIDED_IN_FAZ4
 response: ApplicationHttpResponse(status_code, body)
-200 / 400 / 500 status model
+200 / 400 invalid_application_authority / 500 analysis_execution_failed
 request ID: NOT_PROVIDED_IN_FAZ4
 separate analysis lifecycle ID: NOT_PROVIDED_IN_FAZ4
 job ID: NOT_PROVIDED_IN_FAZ4
@@ -129,37 +164,37 @@ authentication: NOT_PROVIDED_IN_FAZ4
 OpenAPI/runtime route schema: NOT_APPLICABLE_TO_CURRENT_FOUNDATION
 ```
 
-Future n8n/report/payment/delivery consumers are correctly constrained to consumer-only authority.
+Future n8n/report/payment/delivery layers remain consumer-only and do not gain scoring/readiness authority.
 
 ---
 
-# 4. AUTHORITATIVE FINAL VALIDATION — PASS
+# 5. AUTHORITATIVE HARDENING VALIDATION — PASS
 
 Reviewer independently verified:
 
 ```text
 workflow: faz4-final-integrated-audit-validation
-run ID: 31970421190
-job ID: 95221932150
-validated SHA: 277f621c52ea8c6599afd7a3dc4707748c59daf5
+run ID: 31971687599
+job ID: 95225014066
+validated SHA: a24cc284900e19a6f47209bc83b56579cc64b645
 run conclusion: SUCCESS
 job conclusion: SUCCESS
 ```
 
-Dedicated audit steps completed SUCCESS:
+Successful dedicated gates:
 
 ```text
 Exact base and persistent scope audit
 Lock history ancestry audit
 Dependency DAG and reverse-import audit
 Application authority architecture audit
-Consumer handoff and freeze-record audit
+Consumer handoff and SHA closure audit
 Runtime COMB-005 audit
 ```
 
 All eight package test steps completed SUCCESS.
 
-Recorded baseline:
+Recorded regression:
 
 ```text
 sitescore-app:         19 PASS
@@ -173,12 +208,12 @@ sitescore-core:        86 PASS
 TOTAL:               1375 / 1375 PASS
 ```
 
-Reviewer independently compared validated SHA -> final reviewed head:
+Reviewer independently compared:
 
 ```text
-277f621c52ea8c6599afd7a3dc4707748c59daf5
+a24cc284900e19a6f47209bc83b56579cc64b645
 ->
-3f250a7485a93a907abd96608e2c87c99db4e7a2
+1c6205c0c2fef6c6e17e16179ef459a943fc51d6
 ```
 
 Only net change:
@@ -187,168 +222,75 @@ Only net change:
 .github/workflows/faz4-final-integrated-audit-validation.yml REMOVED
 ```
 
-Thus no unvalidated source/test/doc semantic change exists at the reviewed head.
+Therefore no unvalidated production/test/durable-document semantic change exists at the final reviewed head.
 
 ---
 
-# 5. FINAL-SHA-CLOSURE-H001 — HARDENING REQUIRED
+# 6. FINAL REVIEWER ACCEPTANCE
 
-The additive API Consumer Handoff protocol requires the durable final handoff to contain or explicitly reference:
+For exact PR #14 head:
 
 ```text
-final reviewed SHA
-final merged/frozen main SHA
+1c6205c0c2fef6c6e17e16179ef459a943fc51d6
 ```
 
-The current two durable artifacts leave both fields as resolution rules / PENDING placeholders.
-
-That is truthful pre-lock behavior, but it is not yet a complete durable post-freeze closure mechanism.
-
-A coordination-only post-lock statement is explicitly insufficient under the active final contract.
-
-There is also a real self-reference constraint:
+Reviewer decision:
 
 ```text
-a file in the candidate commit cannot literally embed the SHA of the commit that contains it;
-a pre-merge file cannot literally embed a merge SHA that does not yet exist;
-updating main after merge merely to insert the merge SHA would move main again and create recursive final-main identity.
-```
-
-Therefore the final contract needs a durable repository closure record that does NOT mutate frozen main.
-
----
-
-# 6. REQUIRED HARDENING — DURABLE POST-LOCK SHA CLOSURE
-
-Hardening must define, in BOTH final durable artifacts, an explicit post-LOCK closure mechanism with a stable repository location.
-
-Required model:
-
-```text
-frozen main:
-  remains the actual merge commit of the exact Reviewer-approved PR #14 head
-
-post-lock closure artifact:
-  lives on a separate repository ref/branch so recording the frozen-main SHA does not move frozen main
-```
-
-Recommended stable ref/path:
-
-```text
-REF: ops/faz4-final-freeze-closure
-PATH: docs/FAZ4_FINAL_FREEZE_CLOSURE.md
-```
-
-Equivalent naming is acceptable only if both pre-lock artifacts record it exactly.
-
-The post-lock closure artifact MUST contain literal resolved values:
-
-```text
-FAZ_4_STATUS: FROZEN
-FINAL_PR: #14
-FINAL_REVIEWED_CANDIDATE_SHA: <exact Reviewer-approved PR head>
-FINAL_MERGED_FROZEN_MAIN_SHA: <actual PR #14 merge commit == exact main immediately after merge>
-API_CONSUMER_HANDOFF_PATH: sitescore-app/docs/API_CONSUMER_HANDOFF.md
-FINAL_AUDIT_RECORD_PATH: docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md
-```
-
-It may also include verification timestamp / merge-parent evidence, but MUST NOT invent any product/API semantics.
-
-The closure artifact does not become application/runtime authority.
-
----
-
-# 7. LOCK-TURN PROCEDURE MUST BE PRE-AUTHORIZED AND DETERMINISTIC
-
-The hardened pre-lock artifacts must explicitly authorize this exact final LOCK procedure:
-
-1. Implementer re-fetches Reviewer state, PR #14, and main.
-2. Require exact reviewed head/base and all normal gates.
-3. User explicit LOCK must exist.
-4. Merge PR #14 with exact-head guard.
-5. Re-fetch PR #14 and main.
-6. Require:
-
-```text
-PR #14 merged == TRUE
-merge_commit_sha == current main
-merge parent 1 == pre-lock main/base
-merge parent 2 == exact Reviewer-approved head
-```
-
-7. Only after those facts exist, create/update the dedicated closure ref/branch from a safe repository base and write `docs/FAZ4_FINAL_FREEZE_CLOSURE.md` with the literal actual values above.
-8. Do NOT merge the closure-record commit into frozen main.
-9. Implementer writes its normal post-lock coordination record and stops.
-10. Reviewer on the next normal `Devam` independently verifies PR/main/merge parents AND the dedicated closure artifact.
-11. Only then Reviewer may declare:
-
-```text
-FAZ_4_STATUS: FROZEN
-```
-
-This deterministic closure action is part of the user-authorized final LOCK protocol; it is not a new feature/checkpoint and does not authorize arbitrary post-lock edits.
-
-If the repository tooling cannot create the dedicated closure ref/artifact exactly as pre-authorized, Implementer must report:
-
-```text
-LOCK_CLOSURE_INCOMPLETE
-```
-
-and Reviewer MUST NOT declare FAZ 4 FROZEN.
-
----
-
-# 8. HARDENING CHANGE SCOPE
-
-This hardening should remain documentation-only on PR #14.
-
-Expected hardening paths:
-
-```text
-docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md
-sitescore-app/docs/API_CONSUMER_HANDOFF.md
-```
-
-No runtime source/test/dependency/version change is needed.
-
-Add to both documents:
-
-```text
-FINAL_SHA_CLOSURE_REF: ops/faz4-final-freeze-closure
-FINAL_SHA_CLOSURE_PATH: docs/FAZ4_FINAL_FREEZE_CLOSURE.md
-```
-
-and the exact deterministic procedure above.
-
-Because documentation semantics change, rerun the full final validation and update exact validated SHA -> final HEAD integrity.
-
----
-
-# 9. REVIEWER DECISION
-
-For exact reviewed head:
-
-```text
-3f250a7485a93a907abd96608e2c87c99db4e7a2
-```
-
-Decision:
-
-```text
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
-BLOCKER: FINAL-SHA-CLOSURE-H001
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+FINAL_AUDIT_DECISION: FREEZE_CANDIDATE
 CONTRACT_CHANGE_REQUIRED: 0
 VERSION_CHANGE_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-FAZ_4_FINAL_IMPLEMENTATION_STATUS: HARDENING_REQUIRED
-FAZ_4_STATUS: NOT_FROZEN
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: API-CONSUMER-H001, FINAL-SHA-CLOSURE-H001
+FAZ_4_FINAL_IMPLEMENTATION_STATUS: READY_TO_LOCK
+FAZ_4_STATUS: NOT_FROZEN_PRE_LOCK
 ```
 
-The integrated architecture audit itself is accepted provisionally. The only blocker is making the mandatory final reviewed/frozen SHA closure durable and non-recursive under the existing user-only LOCK protocol.
+Only the user can authorize the final LOCK.
 
-Do not merge.
-Do not declare FAZ 4 FROZEN.
-Do not start FAZ 5.
+---
+
+# 7. EXACT FINAL LOCK PROCEDURE
+
+On explicit user `LOCK`, Implementer must re-fetch live Reviewer state, PR #14, and main and require:
+
+```text
+PR #14 current head == 1c6205c0c2fef6c6e17e16179ef459a943fc51d6
+main == a0c2461a7c23618273ab44496011d849584d19fa
+PR base == main
+PR OPEN / not merged / mergeable
+CONTRACT_CHANGE_REQUIRED == 0
+VERSION_CHANGE_REQUIRED == 0
+ADDITIONAL_REOPEN_REQUIRED == 0
+BLOCKERS == NONE
+```
+
+Any head/base/main drift invalidates this review and must return:
+
+```text
+LOCK_BLOCKED_REVIEW_STALE
+```
+
+If gates remain exact and user LOCK exists:
+
+1. merge PR #14 with exact-head protection;
+2. re-fetch PR #14, main, and merge commit;
+3. require `merge_commit_sha == current main`;
+4. require merge parent 1 == `a0c2461a7c23618273ab44496011d849584d19fa`;
+5. require merge parent 2 == `1c6205c0c2fef6c6e17e16179ef459a943fc51d6`;
+6. create/update `ops/faz4-final-freeze-closure` and write `docs/FAZ4_FINAL_FREEZE_CLOSURE.md` with literal actual final values;
+7. do not merge closure record into frozen main;
+8. update Implementer coordination and STOP.
+
+A successful merge alone is not sufficient for Reviewer to declare FAZ 4 frozen. On the next normal `Devam`, Reviewer must independently verify PR/main/merge parents plus the closure artifact. Only then may Reviewer set:
+
+```text
+FAZ_4_STATUS: FROZEN
+```
+
+Do not start FAZ 5 in the LOCK turn.
 
 STOP.
