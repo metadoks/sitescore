@@ -1,0 +1,79 @@
+name: Full Repository Audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-test-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout audit tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install repository packages from local source
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pytest \
+            -e ./sitescore-core \
+            -e ./sitescore-data \
+            -e ./sitescore-providers \
+            -e ./sitescore-spatial \
+            -e ./sitescore-metrics \
+            -e ./sitescore-benchmarks \
+            -e ./sitescore-pipeline \
+            -e ./sitescore-app
+          python -m pip check
+
+      - name: Compile all production source
+        run: |
+          python -m compileall -q \
+            sitescore-core/src \
+            sitescore-data/src \
+            sitescore-providers/src \
+            sitescore-spatial/src \
+            sitescore-metrics/src \
+            sitescore-benchmarks/src \
+            sitescore-pipeline/src \
+            sitescore-app/src
+
+      - name: Run every package test suite
+        shell: bash
+        run: |
+          set +e
+          overall=0
+          packages=(
+            sitescore-core
+            sitescore-data
+            sitescore-providers
+            sitescore-spatial
+            sitescore-metrics
+            sitescore-benchmarks
+            sitescore-pipeline
+            sitescore-app
+          )
+          for pkg in "${packages[@]}"; do
+            echo ""
+            echo "================================================================"
+            echo "TEST SUITE: ${pkg}"
+            echo "================================================================"
+            python -m pytest -q "${pkg}/tests"
+            rc=$?
+            echo "SUITE_EXIT_CODE ${pkg}=${rc}"
+            if [ "$rc" -ne 0 ]; then
+              overall=1
+            fi
+          done
+          echo "FULL_REPOSITORY_TEST_EXIT_CODE=${overall}"
+          exit "$overall"
