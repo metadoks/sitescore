@@ -1,3 +1,4 @@
+# Temporary final exact-HEAD validation; remove before Reviewer handoff.
 name: authority-corrective-validation
 
 on:
