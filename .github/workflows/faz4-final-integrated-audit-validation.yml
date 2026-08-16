@@ -1,0 +1,297 @@
+name: faz4-final-integrated-audit-validation
+
+on:
+  push:
+    branches:
+      - faz4/final-integrated-audit-freeze
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Exact base and persistent scope audit
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "a0c2461a7c23618273ab44496011d849584d19fa"
+          changed="$(git diff --name-only a0c2461a7c23618273ab44496011d849584d19fa...HEAD)"
+          printf '%s\n' "$changed"
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev '^(docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE\.md|sitescore-app/docs/API_CONSUMER_HANDOFF\.md|\.github/workflows/faz4-final-integrated-audit-validation\.yml)$' || true)"
+          test -z "$unexpected" || { echo "Unexpected 4-FINAL path(s):"; echo "$unexpected"; exit 1; }
+          test -z "$(printf '%s\n' "$changed" | grep -E '^sitescore-.*/(src|tests)/' || true)"
+          test -z "$(printf '%s\n' "$changed" | grep -E '/pyproject\.toml$' || true)"
+
+      - name: Lock history ancestry audit
+        run: |
+          for sha in \
+            16427d8bb74611a3de46652d55b708edc93b055b \
+            67333dc0189e43cdca6347e9115a8426cac5ce19 \
+            b003089ef9351f7ee5ec5d53e596da6f83db23d4 \
+            5cd39f48b6c0a4882e0be3402dfa9303b791350f \
+            b2df2c5f7f447f193544f15b285ec5af3f8bdc6e \
+            a0c2461a7c23618273ab44496011d849584d19fa; do
+            git merge-base --is-ancestor "$sha" HEAD
+          done
+          parents="$(git show -s --format='%P' a0c2461a7c23618273ab44496011d849584d19fa)"
+          echo "$parents"
+          echo "$parents" | grep -F 'b2df2c5f7f447f193544f15b285ec5af3f8bdc6e'
+          echo "$parents" | grep -F '37497cc64f1031c0e6b298276e184f1d11eca794'
+
+      - name: Dependency DAG and reverse-import audit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          import tomllib
+
+          expected = {
+              "sitescore-core": [],
+              "sitescore-data": [],
+              "sitescore-providers": ["sitescore-data==0.1.0"],
+              "sitescore-spatial": ["shapely==2.1.2", "pyproj==3.7.2"],
+              "sitescore-metrics": [
+                  "sitescore-data==0.1.0",
+                  "sitescore-providers==0.1.0",
+                  "sitescore-spatial==0.1.0",
+              ],
+              "sitescore-benchmarks": [
+                  "sitescore-spatial==0.1.0",
+                  "sitescore-metrics==0.1.0",
+              ],
+              "sitescore-pipeline": [
+                  "sitescore-data==0.1.0",
+                  "sitescore-benchmarks==0.1.0",
+              ],
+              "sitescore-app": [
+                  "sitescore-data==0.1.0",
+                  "sitescore-pipeline==0.1.0",
+                  "sitescore-core==0.1.0",
+              ],
+          }
+
+          for package, deps in expected.items():
+              data = tomllib.loads(Path(package, "pyproject.toml").read_text())
+              project = data["project"]
+              assert project["version"] == "0.1.0", (package, project["version"])
+              actual = project.get("dependencies", [])
+              assert sorted(actual) == sorted(deps), (package, actual, deps)
+
+          for package in expected:
+              if package == "sitescore-app":
+                  continue
+              for path in Path(package, "src").rglob("*.py"):
+                  tree = ast.parse(path.read_text(), filename=str(path))
+                  for node in ast.walk(tree):
+                      if isinstance(node, ast.Import):
+                          for alias in node.names:
+                              assert not alias.name.startswith("sitescore_app"), (path, alias.name)
+                      elif isinstance(node, ast.ImportFrom):
+                          module = node.module or ""
+                          assert not module.startswith("sitescore_app"), (path, module)
+          print("DEPENDENCY_DAG_AND_REVERSE_IMPORT_AUDIT=PASS")
+          PY
+
+      - name: Application authority architecture audit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          root = Path("sitescore-app/src/sitescore_app")
+          files = {p.name: p for p in root.glob("*.py")}
+          required = {"gating.py", "aggregation.py", "analysis_adapter.py", "analysis_use_case.py", "transport.py", "__init__.py"}
+          assert required <= set(files), set(files)
+
+          def tree(name):
+              return ast.parse(files[name].read_text(), filename=str(files[name]))
+
+          # Public-call argument surfaces may not introduce caller trust/force bypasses.
+          forbidden_arg_names = {
+              "trusted", "is_trusted", "ready", "is_ready", "force",
+              "skip_validation", "skip_readiness", "authority_token",
+          }
+          for path in root.glob("*.py"):
+              parsed = ast.parse(path.read_text(), filename=str(path))
+              for node in ast.walk(parsed):
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      args = {a.arg for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)}
+                      assert not (args & forbidden_arg_names), (path, node.name, args & forbidden_arg_names)
+
+          # 4.3: exact frozen core analyze authority appears as one production call.
+          use_case = tree("analysis_use_case.py")
+          frozen_calls = [n for n in ast.walk(use_case) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "frozen_core_analyze"]
+          assert len(frozen_calls) == 1, len(frozen_calls)
+          forbidden_engine_names = {
+              "calculate_revenue", "calculate_location_score", "calculate_financial_metrics",
+              "calculate_decision", "calculate_confidence", "current_model_versions",
+              "generate_analysis_fingerprint",
+          }
+          seen_use_case = {n.id for n in ast.walk(use_case) if isinstance(n, ast.Name)}
+          assert not (seen_use_case & forbidden_engine_names), seen_use_case & forbidden_engine_names
+
+          # 4.4: transport delegates once to 4.3 and cannot import/call core engines directly.
+          transport = tree("transport.py")
+          delegate_calls = [n for n in ast.walk(transport) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "analyze_application_core_input"]
+          assert len(delegate_calls) == 1, len(delegate_calls)
+          seen_transport = {n.id for n in ast.walk(transport) if isinstance(n, ast.Name)}
+          assert not (seen_transport & (forbidden_engine_names | {"frozen_core_analyze", "analyze"})), seen_transport & (forbidden_engine_names | {"frozen_core_analyze", "analyze"})
+          for n in ast.walk(transport):
+              if isinstance(n, ast.ImportFrom):
+                  assert (n.module or "") != "sitescore.analyze", n.module
+
+          # Final checkpoint itself must not introduce product/framework implementation.
+          forbidden_import_prefixes = ("fastapi", "starlette", "flask", "django", "stripe", "reportlab", "weasyprint", "uvicorn", "gunicorn")
+          for path in root.glob("*.py"):
+              parsed = ast.parse(path.read_text(), filename=str(path))
+              for n in ast.walk(parsed):
+                  if isinstance(n, ast.Import):
+                      for alias in n.names:
+                          assert not alias.name.startswith(forbidden_import_prefixes), (path, alias.name)
+                  elif isinstance(n, ast.ImportFrom):
+                      module = n.module or ""
+                      assert not module.startswith(forbidden_import_prefixes), (path, module)
+
+          init_text = files["__init__.py"].read_text()
+          for symbol in (
+              "ApplicationPipelineResult", "ApplicationScoringInput",
+              "build_application_pipeline_result", "build_application_scoring_input",
+              "ApplicationCategoryAggregationResult", "aggregate_application_category_scores",
+              "ApplicationCoreAnalysisInput", "build_application_core_analysis_input",
+              "ApplicationAnalysisResult", "analyze_application_core_input",
+              "ApplicationHttpResponse", "handle_application_analysis_transport",
+          ):
+              assert symbol in init_text, symbol
+
+          print("APPLICATION_AUTHORITY_ARCHITECTURE_AUDIT=PASS")
+          PY
+
+      - name: Consumer handoff and freeze-record audit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          final = Path("docs/FAZ4_FINAL_AUDIT_FREEZE_CANDIDATE.md").read_text()
+          handoff = Path("sitescore-app/docs/API_CONSUMER_HANDOFF.md").read_text()
+          locked = Path("sitescore-app/docs/CHECKPOINT_4_4_HTTP_API_TRANSPORT_FOUNDATION.md").read_text()
+
+          for phrase in (
+              "FINAL_AUDIT_DECISION: FREEZE_CANDIDATE",
+              "FINAL_MERGED_FROZEN_MAIN_SHA: PENDING_UNTIL_USER_LOCK",
+              "Mathematically validated scoring engine; empirical validation pending.",
+              "FAZ 4.0 was genuinely locked and merged",
+              "CONTRACT_CHANGE_REQUIRED: 0",
+              "VERSION_CHANGE_REQUIRED: 0",
+              "ADDITIONAL_REOPEN_REQUIRED: 0",
+              "COMB005_V1_POLICY.approval_state = NOT_APPROVED",
+          ):
+              assert phrase in final, phrase
+
+          required_handoff = (
+              "sitescore-app==0.1.0",
+              "UNRESOLVED_IN_FAZ4: no separate external/network API contract version",
+              "NOT_PROVIDED_IN_FAZ4: no network-callable HTTP endpoint",
+              "NOT_APPLICABLE_TO_CURRENT_FOUNDATION: no network route exists",
+              "canonical factory-owned ApplicationCoreAnalysisInput",
+              "ApplicationHttpResponse",
+              "200 -> successful canonical analysis projection",
+              "400 -> invalid_application_authority",
+              "500 -> analysis_execution_failed",
+              "NOT_PROVIDED_IN_FAZ4: no request ID",
+              "NOT_PROVIDED_IN_FAZ4: no job object",
+              "synchronous in-process final-response execution",
+              "NOT_PROVIDED_IN_FAZ4: no client/server timeout",
+              "NOT_PROVIDED_IN_FAZ4: no polling endpoint",
+              "NOT_PROVIDED_IN_FAZ4: no callback URL",
+              "UNRESOLVED_IN_FAZ4: no external retry contract",
+              "IDEMPOTENCY: NOT PROVIDED IN FAZ 4",
+              "NOT_PROVIDED_IN_FAZ4: no authentication",
+              "NOT_APPLICABLE_TO_CURRENT_FOUNDATION: no network framework/route exists",
+              "CONTRACT_CHANGE_REQUIRED: 1",
+              "Future n8n MUST NOT",
+          )
+          for phrase in required_handoff:
+              assert phrase in handoff, phrase
+
+          # Durable handoff must preserve the locked 4.4 absence truth.
+          for phrase in (
+              "IDEMPOTENCY: NOT PROVIDED IN FAZ 4",
+              "NOT_PROVIDED_IN_FAZ4: no network-callable HTTP endpoint",
+          ):
+              assert phrase in locked, phrase
+              assert phrase in handoff, phrase
+
+          print("CONSUMER_HANDOFF_AND_FREEZE_RECORD_AUDIT=PASS")
+          PY
+
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install -e ./sitescore-core
+          python -m pip install -e ./sitescore-data
+          python -m pip install -e ./sitescore-spatial
+          python -m pip install -e ./sitescore-providers
+          python -m pip install -e ./sitescore-metrics
+          python -m pip install -e ./sitescore-benchmarks
+          python -m pip install -e ./sitescore-pipeline
+          python -m pip install -e ./sitescore-app
+
+      - name: Runtime COMB-005 audit
+        run: |
+          python - <<'PY'
+          from sitescore_benchmarks.composite import (
+              APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1,
+              COMB005_V1_POLICY,
+              RoadParkingPolicyApprovalState,
+              RoadParkingCompositeState,
+              evaluate_road_parking_composite,
+          )
+          assert COMB005_V1_POLICY.approval_state is RoadParkingPolicyApprovalState.NOT_APPROVED
+          assert APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1 == ()
+          assert COMB005_V1_POLICY.weights == ()
+          assert COMB005_V1_POLICY.composition_method == "UNRESOLVED"
+          assert COMB005_V1_POLICY.missing_side_behavior == "REQUIRE_ALL_COMPONENTS_NO_SUBSTITUTION"
+          result = evaluate_road_parking_composite()
+          assert result.state is RoadParkingCompositeState.POLICY_NOT_APPROVED
+          assert result.score is None
+          print("COMB005_RUNTIME_AUDIT=PASS")
+          PY
+
+      - name: Test sitescore-app
+        working-directory: sitescore-app
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-pipeline
+        working-directory: sitescore-pipeline
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-benchmarks
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-metrics
+        working-directory: sitescore-metrics
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-spatial
+        working-directory: sitescore-spatial
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-providers
+        working-directory: sitescore-providers
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-data
+        working-directory: sitescore-data
+        run: python -m pytest -o addopts='' -q
+
+      - name: Test sitescore-core
+        working-directory: sitescore-core
+        run: python -m pytest -o addopts='' -q
