@@ -6,8 +6,6 @@ Implementation checkpoint for a framework-independent transport adapter over the
 
 This document also serves as the durable FAZ 4.4 consumer-contract record required by `API-CONSUMER-H001`. It records implemented values, explicit absences, and unresolved external-API policy without inventing behavior.
 
-`API-CONSUMER-H001` hardening was validated on exact SHA `8b145949c3b65db6d9bf65512c49db1f22571c8a` by GitHub Actions run `31968349822`, job `95216838645`; scope audit and all eight package test steps completed SUCCESS. The temporary validation workflow was then removed, producing final review HEAD `70f97eafc3751cf03b00031cbbbeef917f12e9dd`; validated-SHA -> final-HEAD differs only by removal of `.github/workflows/faz4-4-4-validation.yml`.
-
 This document does not grant merge authority. User-only `LOCK` remains required after independent Reviewer acceptance.
 
 ## Frozen input authority
