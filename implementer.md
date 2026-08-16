@@ -1,80 +1,80 @@
 # SiteScore AI — Implementer → Reviewer Handoff
 
 CURRENT_PHASE: FAZ 4
-CURRENT_CHECKPOINT: 4.0
-CHECKPOINT_TITLE: Application / Backend Boundary Foundation
-IMPLEMENTER_STATE: LOCKED
-CHECKPOINT: FAZ 4.0
-BASE_SHA: b2906b9cc1b8e4bf3c17f6d3801753bc89c581cf
-CODE_BRANCH: faz4/cp4.0-application-boundary-foundation
-REVIEWED_HEAD_SHA: e89ec05f9c0e789670135f0c1ef46ef78707419f
-PR: #8
-MERGED_MAIN_SHA: 16427d8bb74611a3de46652d55b708edc93b055b
-CONTRACT_CHANGE_REQUIRED: 0
-APP-H001: RESOLVED
+CURRENT_CHECKPOINT: 4.1
+CHECKPOINT_TITLE: Category Aggregation Authority
+IMPLEMENTER_STATE: CONTRACT_CHANGE_BLOCKED_AWAIT_USER_AUTHORIZATION
+BASE_SHA: 16427d8bb74611a3de46652d55b708edc93b055b
+CODE_BRANCH: NONE
+CODE_HEAD_SHA: NONE
+PR: NONE
+CONTRACT_CHANGE_REQUIRED: 1
 FAZ_3_STATUS: FROZEN
-LOCK_TRANSITION_STATUS: SUCCESS
+FAZ_4_0_STATUS: LOCKED_BUT_INHERITED_AUTHORITY_DEFECT_FOUND
+FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 LOCK_AUTHORITY: USER_ONLY
 
-## Lock verification
+BLOCKERS:
+- PIPE-AUTH-H001: frozen sitescore-pipeline canonical authority is identity-only and post-registration mutable
+- APP-H002: sitescore-app 4.0 wrapper/scoring capability bindings are identity-only and post-registration mutable
 
-User explicitly authorized `LOCK`.
+## Devam verification — 2026-08-16
 
-Immediately before merge, Implementer re-fetched and verified:
+Implementer re-fetched the live coordination state before any implementation work.
 
-- latest `reviewer.md`: `REVIEWER_STATE=READY_TO_LOCK`;
-- `IMPLEMENTER_ACTION=LOCK_IF_USER_AUTHORIZED`;
-- Reviewer `REVIEWED_HEAD_SHA=e89ec05f9c0e789670135f0c1ef46ef78707419f`;
-- Reviewer `APP-H001=RESOLVED`;
-- Reviewer `CONTRACT_CHANGE_REQUIRED=0`;
-- PR #8 current head exact `e89ec05f9c0e789670135f0c1ef46ef78707419f`;
-- PR #8 base `main`, state open, mergeable true;
-- current `main=b2906b9cc1b8e4bf3c17f6d3801753bc89c581cf`.
+Verified:
 
-PR #8 was merged using `expected_head_sha=e89ec05f9c0e789670135f0c1ef46ef78707419f` protection.
+- authoritative repo: `metadoks/sitescore`;
+- coordination branch: `ops/reviewer-implementer-handoff`;
+- current `main`: `16427d8bb74611a3de46652d55b708edc93b055b`;
+- Reviewer `CURRENT_PHASE=FAZ 4`;
+- Reviewer `CURRENT_CHECKPOINT=4.1`;
+- Reviewer `REVIEWER_STATE=CONTRACT_CHANGE_REQUIRED`;
+- Reviewer `IMPLEMENTER_ACTION=STOP_AWAIT_USER_AUTHORIZATION`;
+- Reviewer `EXPECTED_BASE_SHA=16427d8bb74611a3de46652d55b708edc93b055b`;
+- Reviewer `CODE_BRANCH=NONE`;
+- Reviewer `CONTRACT_CHANGE_REQUIRED=1`.
 
-Post-merge verification:
+The requested state matches actual GitHub `main`.
 
-- PR #8 state: closed;
-- PR #8 merged: true;
-- merge commit SHA: `16427d8bb74611a3de46652d55b708edc93b055b`;
-- current `main` SHA: `16427d8bb74611a3de46652d55b708edc93b055b`;
-- merge/main SHA match: exact.
+No implementation branch or PR was created because the live Reviewer handoff explicitly prohibits starting 4.1 until user/master authority decides whether to reopen the frozen `sitescore-pipeline` authority contract for narrow corrective hardening.
 
-Therefore:
+## Required governance decision
 
-`FAZ 4.0: LOCKED`
+Reviewer identified `PIPE-AUTH-H001` in frozen `sitescore-pipeline` and `APP-H002` in the FAZ 4.0 application authority wrapper. The upstream pipeline defect cannot be repaired correctly downstream without duplicating frozen authority semantics.
 
-## Locked checkpoint semantics
+Therefore the next valid transition requires explicit user/master authorization to reopen the frozen pipeline contract for the narrow authority-only correction described in `reviewer.md`, including the package/version governance decision.
 
-APP-H001 remains resolved by the reviewed additive application authority chain:
+Until that authorization exists:
 
 ```text
-canonical frozen ReadinessEvaluation
--> sitescore-app build_application_pipeline_result(...)
--> closure-captured frozen sitescore-pipeline build_real_data_pipeline_result(...)
--> exact returned RealDataPipelineResult
--> factory-owned ApplicationPipelineResult
--> build_application_scoring_input(...)
--> factory-owned ApplicationScoringInput
+FAZ 4.1: NOT STARTED
+FAZ 4.2: NOT STARTED
+FAZ 5: FORBIDDEN
 ```
 
-No frozen FAZ 3 source or dependency metadata was modified by the checkpoint. `SCORE_READY != SCORED` remains preserved. No category aggregation, `CategoryScores`, production core `analyze()`, Location Score, Decision Layer, HTTP/API/auth/payment/report/UI/queue/deployment, or empirical/calibration shortcut was introduced.
+## Code / test / scope record
 
-## Validation evidence retained
+- code changes: NONE
+- frozen source changes: NONE
+- branch created: NONE
+- PR created: NONE
+- tests run: NONE (no implementation authorized)
+- scope leakage: NONE
+- checkpoint transition: NONE
 
-Hardening validation:
+## Prior FAZ 4.0 locked record
 
-- workflow: `cp40-validation`
-- run: `31934523323`
-- validated SHA: `926a92126d325a5dc14f61e746a0a31d8acb10a0`
-- conclusion: SUCCESS
-- sitescore-app: 11/11 PASS
-- sitescore-pipeline: 41/41 PASS
-- sitescore-benchmarks: 191/191 PASS
-- sitescore-metrics: 67/67 PASS
-- sitescore-spatial/providers/data/core: PASS
+FAZ 4.0 remains historically user-authorized and merged:
 
-Validated SHA -> reviewed HEAD changed only by removal of the temporary validation workflow; source/tests/docs were unchanged.
+- checkpoint: Application / Backend Boundary Foundation
+- base SHA: `b2906b9cc1b8e4bf3c17f6d3801753bc89c581cf`
+- branch: `faz4/cp4.0-application-boundary-foundation`
+- reviewed head: `e89ec05f9c0e789670135f0c1ef46ef78707419f`
+- PR: `#8`
+- merged main SHA: `16427d8bb74611a3de46652d55b708edc93b055b`
+- historical lock transition: `SUCCESS`
 
-STOP: FAZ 4.1 NOT STARTED. Wait for Reviewer/user `Devam` protocol.
+The newly reported inherited authority defect does not erase that historical merge record; it blocks safe continuation until explicitly governed.
+
+STOP: await explicit user/master frozen-contract reopen decision. Do not start 4.1 feature work from this state.
