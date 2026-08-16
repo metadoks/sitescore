@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from weakref import WeakValueDictionary
 
 from sitescore_data.enums import PipelineStatus
-from sitescore_data.schemas.features import NormalizedLocationFeatures
+from sitescore_data.schemas.common import SourceMetadata
+from sitescore_data.schemas.competition import CompetitionSnapshot
+from sitescore_data.schemas.demographics import DemographicSnapshot
+from sitescore_data.schemas.features import DerivedLocationMetrics, NormalizedLocationFeatures
+from sitescore_data.schemas.geography import ResolvedLocation
+from sitescore_data.schemas.parking import ParkingSnapshot
+from sitescore_data.schemas.pedestrian import IsochroneSnapshot, PedestrianCatchmentArtifact
 from sitescore_data.schemas.pipeline import RealDataPipelineResult
 from sitescore_data.schemas.readiness import ScoringReadinessReason, ScoringReadinessResult
+from sitescore_data.schemas.road import RoadAccessSnapshot
+from sitescore_data.schemas.transit import TransitSnapshot
+from sitescore_data.validation import SectorKey
+from sitescore_pipeline import ReadinessEvaluation
 
 
 class ApplicationScoringGateState(StrEnum):
@@ -44,21 +55,38 @@ class ApplicationScoringBlocked(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
-class ApplicationScoringInput:
-    """Factory-owned capability binding a trusted terminal pipeline result.
-
-    This is not a category-score DTO and does not mean scoring has occurred.
-    Future scoring adapters must validate this capability with
-    ``require_canonical_application_scoring_input`` before use.
-    """
+class ApplicationPipelineResult:
+    """Factory-owned proof that the app invoked the frozen canonical terminal factory."""
 
     pipeline_result: RealDataPipelineResult
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError(
+            "ApplicationPipelineResult is factory-owned; use "
+            "build_application_pipeline_result"
+        )
+
+
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
+class ApplicationScoringInput:
+    """Factory-owned permission to begin later application scoring.
+
+    The capability retains both the app-owned canonical pipeline execution proof
+    and the exact frozen terminal result. It is not a category-score DTO and does
+    not mean scoring has occurred.
+    """
+
+    application_pipeline_result: ApplicationPipelineResult
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         raise TypeError(
             "ApplicationScoringInput is factory-owned; use "
             "build_application_scoring_input"
         )
+
+    @property
+    def pipeline_result(self) -> RealDataPipelineResult:
+        return self.application_pipeline_result.pipeline_result
 
     @property
     def sector_key(self):
@@ -82,14 +110,13 @@ class ApplicationScoringInput:
 def evaluate_application_scoring_gate(
     pipeline_result: RealDataPipelineResult,
 ) -> ApplicationScoringEligibility:
+    """Describe terminal state only; this function does not grant authority."""
     if not isinstance(pipeline_result, RealDataPipelineResult):
         raise TypeError("pipeline_result must be a RealDataPipelineResult")
 
     readiness = pipeline_result.scoring_readiness
     upstream_reasons = (
-        readiness.reason_codes
-        if isinstance(readiness, ScoringReadinessResult)
-        else ()
+        readiness.reason_codes if isinstance(readiness, ScoringReadinessResult) else ()
     )
 
     if pipeline_result.status is PipelineStatus.PIPELINE_ERROR:
@@ -133,33 +160,85 @@ def evaluate_application_scoring_gate(
     )
 
 
-def _install_application_scoring_input_factory():
-    registry: WeakValueDictionary[int, ApplicationScoringInput] = WeakValueDictionary()
+def _install_application_factories():
+    # Import inside the installer so the exact frozen factory is captured only in
+    # closure state. No module-global alias/token becomes an authorization surface.
+    from sitescore_pipeline import build_real_data_pipeline_result as canonical_terminal_factory
 
-    def build(
-        pipeline_result: RealDataPipelineResult,
+    pipeline_registry: WeakValueDictionary[int, ApplicationPipelineResult] = WeakValueDictionary()
+    scoring_registry: WeakValueDictionary[int, ApplicationScoringInput] = WeakValueDictionary()
+
+    def require_pipeline_result(value: ApplicationPipelineResult) -> ApplicationPipelineResult:
+        if not isinstance(value, ApplicationPipelineResult):
+            raise TypeError("value must be an ApplicationPipelineResult")
+        if pipeline_registry.get(id(value)) is not value:
+            raise ValueError("application pipeline result is not canonical/factory-owned")
+        return value
+
+    def build_pipeline_result(
+        *,
+        readiness: ReadinessEvaluation,
+        sector_key: SectorKey,
+        resolved_location: ResolvedLocation | None,
+        derived_metrics: DerivedLocationMetrics,
+        source_metadata: tuple[SourceMetadata, ...],
+        generated_at: datetime,
+        demographics: DemographicSnapshot | None = None,
+        pedestrian_catchment: PedestrianCatchmentArtifact | None = None,
+        isochrone: IsochroneSnapshot | None = None,
+        competition: CompetitionSnapshot | None = None,
+        transit: TransitSnapshot | None = None,
+        road: RoadAccessSnapshot | None = None,
+        parking: ParkingSnapshot | None = None,
+    ) -> ApplicationPipelineResult:
+        terminal = canonical_terminal_factory(
+            readiness=readiness,
+            sector_key=sector_key,
+            resolved_location=resolved_location,
+            derived_metrics=derived_metrics,
+            source_metadata=source_metadata,
+            generated_at=generated_at,
+            demographics=demographics,
+            pedestrian_catchment=pedestrian_catchment,
+            isochrone=isochrone,
+            competition=competition,
+            transit=transit,
+            road=road,
+            parking=parking,
+        )
+        value = object.__new__(ApplicationPipelineResult)
+        object.__setattr__(value, "pipeline_result", terminal)
+        pipeline_registry[id(value)] = value
+        return value
+
+    def build_scoring_input(
+        application_pipeline_result: ApplicationPipelineResult,
     ) -> ApplicationScoringInput:
-        eligibility = evaluate_application_scoring_gate(pipeline_result)
+        canonical_app_result = require_pipeline_result(application_pipeline_result)
+        eligibility = evaluate_application_scoring_gate(canonical_app_result.pipeline_result)
         if not eligibility.is_eligible:
             raise ApplicationScoringBlocked(eligibility)
 
         value = object.__new__(ApplicationScoringInput)
-        object.__setattr__(value, "pipeline_result", pipeline_result)
-        registry[id(value)] = value
+        object.__setattr__(value, "application_pipeline_result", canonical_app_result)
+        scoring_registry[id(value)] = value
         return value
 
-    def require(value: ApplicationScoringInput) -> ApplicationScoringInput:
+    def require_scoring_input(value: ApplicationScoringInput) -> ApplicationScoringInput:
         if not isinstance(value, ApplicationScoringInput):
             raise TypeError("value must be an ApplicationScoringInput")
-        if registry.get(id(value)) is not value:
+        if scoring_registry.get(id(value)) is not value:
             raise ValueError("application scoring input is not canonical/factory-owned")
+        require_pipeline_result(value.application_pipeline_result)
         return value
 
-    return build, require
+    return build_pipeline_result, require_pipeline_result, build_scoring_input, require_scoring_input
 
 
 (
+    build_application_pipeline_result,
+    require_canonical_application_pipeline_result,
     build_application_scoring_input,
     require_canonical_application_scoring_input,
-) = _install_application_scoring_input_factory()
-del _install_application_scoring_input_factory
+) = _install_application_factories()
+del _install_application_factories
