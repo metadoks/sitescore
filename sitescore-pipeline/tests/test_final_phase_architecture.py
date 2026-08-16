@@ -5,6 +5,7 @@ from pathlib import Path
 import tomllib
 
 from sitescore_benchmarks import (
+    AGE_TARGET_CONCENTRATION_FALLBACK_V1,
     APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1,
     COMB005_V1_POLICY,
     RoadParkingPolicyApprovalState,
@@ -114,11 +115,40 @@ def test_real_data_layers_do_not_leak_category_location_or_product_scoring():
         assert token not in text
 
 
+def test_no_empirical_threshold_weight_or_neutralization_shortcuts_in_real_data_layers():
+    text = (_source_text("sitescore-benchmarks") + "\n" + _source_text("sitescore-pipeline")).lower()
+    for token in (
+        "minimum_n",
+        "minimum_sample",
+        "coverage_threshold",
+        "default_road_weight",
+        "default_parking_weight",
+        "renormalize_missing",
+        "neutral_parking_fallback",
+        "neutral_road_fallback",
+        "missing_to_zero",
+    ):
+        assert token not in text
+
+
 def test_comb005_canonical_production_authority_remains_unapproved():
     assert APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1 == ()
     assert COMB005_V1_POLICY.approval_state is RoadParkingPolicyApprovalState.NOT_APPROVED
     assert COMB005_V1_POLICY.weights == ()
     assert COMB005_V1_POLICY.composition_method == "UNRESOLVED"
+
+
+def test_age_fallback_is_the_exact_single_frozen_numeric_uncalibrated_exception():
+    policy = AGE_TARGET_CONCENTRATION_FALLBACK_V1
+    assert policy.policy_id == "age_neutral_fallback"
+    assert policy.policy_version == "1.0"
+    assert policy.normalized_feature_key == "age_target_concentration_score"
+    assert policy.score == 50.0
+    assert policy.availability == "available"
+    assert policy.score_eligibility == "eligible"
+    assert policy.calibration_state == "uncalibrated"
+    assert policy.is_proxy is True
+    assert policy.reason_code == "age_affinity_not_calibrated"
 
 
 def test_core_remains_isolated_from_all_other_sitescore_packages():
