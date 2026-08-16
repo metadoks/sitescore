@@ -15,7 +15,7 @@ CHECKPOINT_TITLE: PIPE-AUTH-H001 + APP-H002 Authority Corrective Reopen
 IMPLEMENTER_STATE: READY_FOR_REVIEW
 BASE_SHA: 16427d8bb74611a3de46652d55b708edc93b055b
 CODE_BRANCH: corrective/authority-reopen-pipe-app
-CODE_HEAD_SHA: c8cc9cee90981578fba5d088f1008e8f8b1a511a
+CODE_HEAD_SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 PR: #9
 CONTRACT_CHANGE_REQUIRED: 1
 USER_REOPEN_AUTHORIZED: YES
@@ -23,27 +23,31 @@ VERSION_CHANGE_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 LOCK_AUTHORITY: USER_ONLY
 
-PIPE-AUTH-H001: IMPLEMENTED
+PIPE-AUTH-H001: RESOLVED
+APP-H002-R001: IMPLEMENTED
 APP-H002: IMPLEMENTED
 FAZ_4_1_IMPLEMENTATION_STATUS: NOT_STARTED
 ```
 
-## 1. Scope and authority
+## 1. Reviewer hardening request addressed
 
-Implemented only the user-authorized narrow corrective reopen requested by Reviewer for:
-
-```text
-PIPE-AUTH-H001
-APP-H002
-```
-
-FAZ 4.1 category aggregation was not started. Historical FAZ 4.0 lock/merge remains factual.
-
-Reviewer expected base was independently rechecked against GitHub `main` before handoff:
+Reviewer independently reviewed prior PR #9 head:
 
 ```text
-main = 16427d8bb74611a3de46652d55b708edc93b055b
+c8cc9cee90981578fba5d088f1008e8f8b1a511a
 ```
+
+and returned:
+
+```text
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
+PIPE-AUTH-H001: RESOLVED
+APP-H002: OPEN
+APP-H002-R001: exact factory-returned RealDataPipelineResult semantic state remained mutable in place after app registration
+```
+
+Hardening was performed on the same Reviewer-required branch and PR. No new checkpoint, branch, PR, frozen-contract scope, or FAZ 4.1 work was created.
 
 ## 2. Final PR metadata
 
@@ -51,19 +55,19 @@ main = 16427d8bb74611a3de46652d55b708edc93b055b
 PR: #9
 state: OPEN
 mergeable: TRUE
+merged: FALSE
 base: main
 base SHA: 16427d8bb74611a3de46652d55b708edc93b055b
 head branch: corrective/authority-reopen-pipe-app
-head SHA: c8cc9cee90981578fba5d088f1008e8f8b1a511a
+final head SHA: df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 changed files: 5
-additions: 750
-deletions: 49
-merged: FALSE
+additions: 1155
+deletions: 66
 ```
 
 No merge or LOCK was performed.
 
-## 3. Final changed filenames
+## 3. Final persistent changed filenames
 
 ```text
 docs/AUTHORITY_CORRECTIVE_REOPEN_PIPE_APP.md
@@ -75,103 +79,101 @@ sitescore-pipeline/tests/test_readiness_pipeline.py
 
 Temporary validation workflow was removed before final PR HEAD.
 
-## 4. PIPE-AUTH-H001 implementation
+## 4. PIPE-AUTH-H001 status
 
-`sitescore-pipeline/src/sitescore_pipeline/integration.py` now uses closure-private construction-time authority bindings rather than registered object identity alone.
+Reviewer marked PIPE-AUTH-H001 RESOLVED on prior reviewed head. This hardening did not redesign or broaden the pipeline correction.
 
-Canonical `NormalizedFeatureAssembly` authority binds construction-time:
+The existing pipeline correction continues to provide closure-private construction-time bindings for canonical assembly/readiness authority and consumes trusted bound values during readiness/terminal execution.
 
-```text
-features
-direct_results
-feature_policies
-compatibility
-approved_fallback_policies
-artifact_identities
-assembly_id
-semantic authority attestation
-```
+Fresh full regression confirms the resolved pipeline boundary remains green.
 
-Canonical resolution requires exact factory-owned origin plus current integrity against the trusted binding. Post-registration mutation through `object.__setattr__` fails closed.
+## 5. APP-H002-R001 hardening
 
-Canonical `ReadinessEvaluation` authority binds construction-time:
+`sitescore-app/src/sitescore_app/gating.py` now binds both exact factory origin and construction-time authority semantics.
+
+For each canonical `ApplicationPipelineResult`, closure-private state binds at least:
 
 ```text
-assembly
-result
-readiness-result semantic attestation
+exact construction-time RealDataPipelineResult
+construction-time PipelineStatus
+construction-time SectorKey
+construction-time NormalizedLocationFeatures authority surface
+construction-time ScoringReadinessResult authority surface
+construction-time readiness fingerprint
+closure-private recursive semantic authority record
 ```
 
-Readiness derivation and terminal construction consume closure-resolved trusted values. They do not validate one object and then continue from caller-mutable public fields.
-
-Terminal status, normalized features, readiness result, and real-unit coherence therefore derive from trusted construction-time material.
-
-## 5. APP-H002 implementation
-
-`sitescore-app/src/sitescore_app/gating.py` now binds:
+Canonical resolution requires all of:
 
 ```text
-ApplicationPipelineResult
--> exact construction-time RealDataPipelineResult
-
-ApplicationScoringInput
--> exact construction-time ApplicationPipelineResult
+exact registered wrapper identity
++ exact construction-time terminal identity
++ current terminal authority semantics equal construction-time semantic binding
 ```
 
-`require_canonical_application_pipeline_result(...)` rejects a canonical wrapper if `.pipeline_result` has been redirected after registration.
+Therefore retaining the same exact `RealDataPipelineResult` object does not preserve authority after `object.__setattr__` changes status, sector, readiness state/fingerprint, or normalized feature semantics.
 
-`require_canonical_application_scoring_input(...)` rejects a canonical scoring input if `.application_pipeline_result` has been redirected and revalidates the nested wrapper against its trusted terminal binding.
+`build_application_scoring_input(...)` authorizes from the verified construction-time binding instead of reading mutable live terminal authority after a wrapper check.
 
-`build_application_scoring_input(...)` bases authorization on the closure-resolved trusted terminal, not a mutable public nested reference.
-
-## 6. Adversarial tests
-
-Direct `object.__setattr__` regressions cover pipeline mutations of:
+For each canonical `ApplicationScoringInput`, closure-private state additionally binds:
 
 ```text
-assembly.features
-assembly.direct_results
-assembly.feature_policies
-assembly.compatibility
-assembly.approved_fallback_policies
-assembly.artifact_identities
-assembly.assembly_id
-readiness.assembly
-readiness.result
-readiness.result.is_score_ready
-nested forged numeric road_parking_access_score
+exact accepted ApplicationPipelineResult
+exact terminal
+construction-time authority record
+sector
+normalized feature object
+readiness fingerprint
 ```
 
-They also preserve copied/reconstructed object rejection, forged SCORE_READY rejection, COMB-005 bypass rejection, and normal canonical behavior.
+The scoring capability resolver revalidates the nested application binding on every authority access.
 
-App adversarial regressions cover:
+Public capability properties:
 
 ```text
-ApplicationPipelineResult.pipeline_result replacement
-redirect to forged SCORE_READY terminal
-ApplicationScoringInput.application_pipeline_result replacement
-redirect to another otherwise-canonical wrapper
-manual/copy-equivalent wrappers
-raw forged RealDataPipelineResult
-detached ready/trusted/force/status/fingerprint/features authority attempts
-normal canonical wrapper path
+pipeline_result
+sector_key
+normalized_features
+readiness_fingerprint
 ```
 
-## 7. COMB-005 / production-truth verification
+are closure-resolver-backed. If authority semantics mutate after capability grant, canonicality/property access fails closed rather than following mutated public state.
 
-Corrective work did not alter COMB-005 semantics.
+No caller-visible hash, token, boolean, registry, sentinel, or self-assertion grants authority.
+
+## 6. Direct adversarial regression coverage
+
+Tests directly use `object.__setattr__` and cover Reviewer-required same-object cases:
+
+```text
+A. same NOT_SCORE_READY terminal: status -> SCORE_READY => rejected
+B. same readiness object: is_score_ready False -> True => rejected
+C. same normalized feature surface: road_parking_access_score -> forged numeric/calibrated/eligible MetricValue => rejected
+D. same terminal: sector mutation => rejected
+E. same readiness object: readiness_fingerprint mutation => rejected
+F. legitimate controlled scoring input granted, then same terminal mutated => require_canonical rejects
+G. after post-grant mutation, pipeline_result / sector_key / normalized_features / readiness_fingerprint properties fail closed
+H. prior different-terminal / different-wrapper redirects remain rejected
+I. production COMB-005 firewall remains unchanged; no corrective path fabricates readiness
+```
+
+Existing manual/copy-equivalent wrapper rejection, raw forged terminal rejection, and caller-controlled ready/trusted/force/status/fingerprint/features authority rejection remain intact.
+
+## 7. COMB-005 / production truth firewall
+
+No COMB-005 policy/configuration source was modified.
 
 ```text
 COMB-005: NOT_APPROVED
 approved registry: unchanged / empty
 weights: unchanged / empty
-road_parking_access_score: remains unavailable / nonnumeric in current production truth
-production canonical path: NOT_SCORE_READY
+road_parking_access_score: unavailable / nonnumeric in current production truth
+production scoring readiness: remains gated / NOT_SCORE_READY
 ```
 
-No neutral score, fallback, 50/50 composition, missing-side renormalization, or implicit approval was introduced.
+No neutral score, fallback, 50/50 composition, missing-side renormalization, implicit approval, or empirical calibration was introduced.
 
-## 8. Version / dependency / public contract audit
+## 8. Version / dependency / public-contract audit
 
 ```text
 sitescore-pipeline version: 0.1.0 unchanged
@@ -181,99 +183,102 @@ new runtime dependencies: NONE
 runtime dependency DAG: unchanged
 sitescore-app -> sitescore-core: NOT ADDED
 pyproject / dependency metadata changes: NONE
+VERSION_CHANGE_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
 ```
 
-No changes to core scoring math, category weights, subfeature weights, normalization formulas, benchmark semantics, providers, spatial semantics, metrics semantics, data contracts, dealbreakers, age fallback, empirical calibration, financial engine, or HTTP/API layers.
+No changes to core scoring math, category/subfeature weights, normalization formulas, benchmark semantics, provider/spatial/metrics/data semantics, dealbreakers, age fallback, empirical calibration, financial engine, HTTP/API, auth, payment, report/PDF, UI, deployment, queue, or n8n.
 
-## 9. GitHub Actions validation evidence
+## 9. Final GitHub Actions validation evidence
 
-### Successful transform + regression run
+Fresh final validation after APP-H002-R001 hardening:
 
 ```text
-workflow: authority-corrective-validation
-run ID: 31943607498
-job ID: 95156249045
+workflow: app-authority-hardening-validation
+run ID: 31946050436
+job ID: 95162058612
+validated SHA: 248325ea608fd70ca71ccb6b33fad66e6410352d
 conclusion: SUCCESS
-source commit produced from tested workspace: 9c4f80da4385771848d0b3fd3b4b296470b8c152
+corrective scope audit: PASS
 ```
 
-### Final exact-source/tests/docs validation
+Full package results:
 
 ```text
-workflow: authority-corrective-validation
-run ID: 31944221603
-job ID: 95157706187
-validated SHA: db7d0aa43d529ab766f3eabbbea1fd77d9f34acf
-conclusion: SUCCESS
-scope audit: PASS
-```
-
-Full package results on the validated candidate:
-
-```text
-sitescore-app: 12/12 PASS
-sitescore-pipeline: 53/53 PASS
+sitescore-app:        12/12 PASS
+sitescore-pipeline:   53/53 PASS
 sitescore-benchmarks: 191/191 PASS
-sitescore-metrics: 67/67 PASS
-sitescore-spatial: 180/180 PASS
-sitescore-providers: 418/418 PASS
-sitescore-data: 361/361 PASS
-sitescore-core: 86/86 PASS
-TOTAL: 1368/1368 PASS
+sitescore-metrics:    67/67 PASS
+sitescore-spatial:    180/180 PASS
+sitescore-providers:  418/418 PASS
+sitescore-data:       361/361 PASS
+sitescore-core:       86/86 PASS
+TOTAL:                1368/1368 PASS
 ```
 
-A bootstrap workflow run `31943413778` failed before jobs/source correction and is explicitly not validation evidence.
+The validation candidate contained production source, tests, corrective documentation, and only the temporary validation workflow.
 
 ## 10. Validated SHA -> final PR HEAD integrity
 
-Temporary validation workflow removal was the only post-validation delta.
+After successful validation the temporary workflow was removed.
 
 ```text
 validated SHA:
-db7d0aa43d529ab766f3eabbbea1fd77d9f34acf
+248325ea608fd70ca71ccb6b33fad66e6410352d
 
 final PR HEAD:
-c8cc9cee90981578fba5d088f1008e8f8b1a511a
+df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 
 compare status: ahead by 1 commit
 only changed path:
 .github/workflows/authority-corrective-validation.yml
 status: REMOVED
-source changes after validation: NONE
+
+production source changes after validation: NONE
 test changes after validation: NONE
 doc changes after validation: NONE
 ```
 
-## 11. Scope firewall / artifact hygiene
+Final `main -> PR HEAD` diff contains exactly the five persistent files listed above.
 
-Final base-to-head diff contains exactly five persistent files and no temporary workflow.
+## 11. Scope / artifact hygiene
 
-Forbidden frozen production packages remain unchanged:
+Corrective scope audit explicitly passed on the validated candidate.
+
+No persistent changes exist under:
 
 ```text
-sitescore-core
-sitescore-data
-sitescore-providers
-sitescore-spatial
-sitescore-metrics
-sitescore-benchmarks
+sitescore-core/
+sitescore-data/
+sitescore-providers/
+sitescore-spatial/
+sitescore-metrics/
+sitescore-benchmarks/
 ```
 
-No cache/build/temp artifacts were added.
+No package/version/dependency metadata changed. No cache/build/temp artifact or validation workflow remains in final PR diff.
 
-Implementation was initially validated on temporary working branch `faz4/authority-corrective-reopen` before the live Reviewer handoff's canonical branch name was re-read. The exact validated SHA was then used to create the required canonical branch `corrective/authority-reopen-pipe-app`; the temporary workflow was removed there. PR #9 uses only the Reviewer-required canonical branch. The temporary working branch is non-authoritative and is not used by the PR.
+`main` remained:
+
+```text
+16427d8bb74611a3de46652d55b708edc93b055b
+```
+
+through final preparation.
 
 ## 12. Self-audit
 
 ```text
-scope completeness: PASS
+Reviewer hardening completeness: PASS
+same-object semantic mutation defense: PASS
+post-grant capability mutation defense: PASS
 public contract integrity: PASS
 authority / anti-forgery: PASS
-lineage / trusted execution binding: PASS
-sector semantics: unchanged
+trusted execution binding: PASS
+PIPE-AUTH-H001 regression: PASS
+COMB-005 firewall: PASS
 missingness semantics: unchanged
 failure semantics: fail-closed / PASS
-determinism: unchanged
 runtime dependency DAG: unchanged
 forbidden frozen source diff: NONE
 future-scope leakage: NONE
@@ -287,10 +292,10 @@ artifact hygiene: PASS
 Please independently review exact PR #9 / head:
 
 ```text
-c8cc9cee90981578fba5d088f1008e8f8b1a511a
+df9bcc34bf61a75ef8aedb2347e4ee01ae174935
 ```
 
-Implementer does not claim Reviewer approval, READY_TO_LOCK, relock, or merge authority.
+Implementer does not claim Reviewer approval, READY_TO_LOCK, corrective relock, or merge authority.
 
 ```text
 IMPLEMENTER_STATE: READY_FOR_REVIEW
