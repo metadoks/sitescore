@@ -1,0 +1,868 @@
+name: authority-corrective-validation
+
+on:
+  push:
+    branches:
+      - faz4/authority-corrective-reopen
+
+permissions:
+  contents: write
+
+jobs:
+  harden-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply narrow authority correction
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_regex(text: str, pattern: str, replacement: str, label: str) -> str:
+              updated, count = re.subn(pattern, lambda _match: replacement, text, flags=re.S)
+              if count != 1:
+                  raise RuntimeError(f"{label}: expected exactly one replacement, got {count}")
+              return updated
+
+          integration_path = Path("sitescore-pipeline/src/sitescore_pipeline/integration.py")
+          integration = integration_path.read_text(encoding="utf-8")
+
+          if "canonical normalized-feature assembly integrity violation" not in integration:
+              helper_block = '''def _assembly_authority_attestation(
+              features: NormalizedLocationFeatures,
+              direct_results: tuple[FeatureNormalizationResult, ...],
+              feature_policies: tuple[FeatureReadinessPolicy, ...],
+              compatibility: ReadinessCompatibilityInput,
+              approved_fallback_policies: tuple[ApprovedFallbackPolicyRef, ...],
+              artifact_identities: tuple[tuple[str, str], ...],
+              assembly_id: str,
+          ) -> str:
+              """Attest the construction-time semantics bound to one canonical assembly."""
+              return _semantic_hash({
+                  "computed_assembly_id": _compute_assembly_id(
+                      features,
+                      direct_results,
+                      feature_policies,
+                      compatibility,
+                      approved_fallback_policies,
+                      artifact_identities,
+                  ),
+                  "assembly_id": assembly_id,
+                  "features_generated_at": features.generated_at.isoformat(),
+              })
+
+
+          def _readiness_result_record(result: ScoringReadinessResult) -> dict[str, object]:
+              return {
+                  "is_score_ready": result.is_score_ready,
+                  "missing_required_features": result.missing_required_features,
+                  "uncalibrated_features": result.uncalibrated_features,
+                  "insufficient_quality_features": result.insufficient_quality_features,
+                  "incompatible_features": result.incompatible_features,
+                  "reason_codes": tuple(reason.value for reason in result.reason_codes),
+                  "required_policy_versions": tuple(
+                      (item.policy_id, item.version)
+                      for item in result.required_policy_versions
+                  ),
+                  "resolved_policy_versions": tuple(
+                      (item.policy_id, item.version)
+                      for item in result.resolved_policy_versions
+                  ),
+                  "feature_states": tuple(
+                      (
+                          state.feature_name,
+                          state.required,
+                          state.availability.value,
+                          state.data_quality.value,
+                          state.score_eligibility.value,
+                          state.calibration_state.value,
+                          state.required_policy_version,
+                          state.resolved_policy_version,
+                          state.fallback_policy_id,
+                          state.fallback_policy_version,
+                          tuple(reason.value for reason in state.reason_codes),
+                      )
+                      for state in result.feature_states
+                  ),
+                  "validator_version": result.validator_version,
+                  "evaluated_at": result.evaluated_at.isoformat(),
+                  "readiness_fingerprint": result.readiness_fingerprint,
+              }
+
+
+          def _readiness_result_attestation(result: ScoringReadinessResult) -> str:
+              return _semantic_hash(_readiness_result_record(result))
+
+
+          def _readiness_fingerprint(
+              *,
+              assembly_id: str,
+              features: NormalizedLocationFeatures,
+              feature_policies: tuple[FeatureReadinessPolicy, ...],
+              compatibility: ReadinessCompatibilityInput,
+              approved_fallback_policies: tuple[ApprovedFallbackPolicyRef, ...],
+              artifact_identities: tuple[tuple[str, str], ...],
+          ) -> str:
+              return _semantic_hash({
+                  "assembly_id": assembly_id,
+                  "validator_version": READINESS_VALIDATOR_VERSION,
+                  "features": _feature_surface_record(features),
+                  "feature_policies": tuple(
+                      (
+                          p.feature_name,
+                          p.required_policy_version,
+                          p.resolved_policy_version,
+                          p.fallback_policy_id,
+                          p.fallback_policy_version,
+                      )
+                      for p in feature_policies
+                  ),
+                  "compatibility": (
+                      compatibility.competition_benchmark_measurement_definition_id,
+                      compatibility.transit_benchmark_source_bundle_fingerprint,
+                  ),
+                  "approved_fallback_policies": tuple(
+                      (p.feature_name, p.policy_id, p.policy_version)
+                      for p in approved_fallback_policies
+                  ),
+                  "artifact_identities": artifact_identities,
+              })
+
+
+          def _validate_derived_metrics_coherence(
+              direct_results: tuple[FeatureNormalizationResult, ...],
+              derived_metrics: DerivedLocationMetrics,
+          ) -> None:
+              """Require overlapping real-unit DTO fields to match actual site measurements."""
+              for result in direct_results:
+                  metric_key = result.site_measurement.definition.metric_key
+                  field_name = _DIRECT_METRIC_FIELDS.get(metric_key)
+                  if field_name is None:
+                      raise ValueError(
+                          f"unsupported direct normalization metric lineage: {metric_key}"
+                      )
+                  expected = result.site_measurement.metric_value
+                  actual = getattr(derived_metrics, field_name)
+                  if _metric_record(actual) != _metric_record(expected):
+                      raise ValueError(
+                          "derived_metrics real-unit lineage mismatch for "
+                          f"{field_name}: terminal metric must equal the actual site "
+                          "measurement used by canonical normalization"
+                      )
+
+
+          def _install_canonical_factories():'''
+              integration = replace_regex(
+                  integration,
+                  r"def _readiness_fingerprint\(assembly: NormalizedFeatureAssembly\) -> str:\n.*?\n\ndef _install_canonical_factories\(\):",
+                  helper_block,
+                  "pipeline helper/attestation block",
+              )
+
+              registry_block = '''    canonical_assemblies: dict[int, tuple[object, ...]] = {}
+              canonical_readiness: dict[int, tuple[object, ...]] = {}
+
+              def resolve_canonical_assembly(value: object):
+                  if not isinstance(value, NormalizedFeatureAssembly):
+                      raise TypeError(
+                          "assembly must be the exact object returned by canonical "
+                          "assemble_normalized_location_features()"
+                      )
+                  binding = canonical_assemblies.get(id(value))
+                  if binding is None or binding[0] is not value:
+                      raise TypeError(
+                          "assembly must be the exact object returned by canonical "
+                          "assemble_normalized_location_features()"
+                      )
+                  (
+                      _registered,
+                      trusted_features,
+                      trusted_direct_results,
+                      trusted_feature_policies,
+                      trusted_compatibility,
+                      trusted_fallbacks,
+                      trusted_artifact_identities,
+                      trusted_assembly_id,
+                      trusted_attestation,
+                  ) = binding
+                  if (
+                      value.features is not trusted_features
+                      or value.direct_results is not trusted_direct_results
+                      or value.feature_policies is not trusted_feature_policies
+                      or value.compatibility is not trusted_compatibility
+                      or value.approved_fallback_policies is not trusted_fallbacks
+                      or value.artifact_identities is not trusted_artifact_identities
+                      or value.assembly_id != trusted_assembly_id
+                  ):
+                      raise ValueError(
+                          "canonical normalized-feature assembly integrity violation"
+                      )
+                  try:
+                      current_attestation = _assembly_authority_attestation(
+                          value.features,
+                          value.direct_results,
+                          value.feature_policies,
+                          value.compatibility,
+                          value.approved_fallback_policies,
+                          value.artifact_identities,
+                          value.assembly_id,
+                      )
+                  except (AttributeError, TypeError, ValueError) as exc:
+                      raise ValueError(
+                          "canonical normalized-feature assembly integrity violation"
+                      ) from exc
+                  if current_attestation != trusted_attestation:
+                      raise ValueError(
+                          "canonical normalized-feature assembly integrity violation"
+                      )
+                  return (
+                      trusted_features,
+                      trusted_direct_results,
+                      trusted_feature_policies,
+                      trusted_compatibility,
+                      trusted_fallbacks,
+                      trusted_artifact_identities,
+                      trusted_assembly_id,
+                  )
+
+              def resolve_canonical_readiness(value: object):
+                  if not isinstance(value, ReadinessEvaluation):
+                      raise TypeError(
+                          "readiness must be the exact object returned by canonical "
+                          "derive_scoring_readiness()"
+                      )
+                  binding = canonical_readiness.get(id(value))
+                  if binding is None or binding[0] is not value:
+                      raise TypeError(
+                          "readiness must be the exact object returned by canonical "
+                          "derive_scoring_readiness()"
+                      )
+                  _registered, trusted_assembly, trusted_result, trusted_attestation = binding
+                  if (
+                      value.assembly is not trusted_assembly
+                      or value.result is not trusted_result
+                  ):
+                      raise ValueError("canonical readiness evaluation integrity violation")
+                  try:
+                      current_attestation = _readiness_result_attestation(value.result)
+                  except (AttributeError, TypeError, ValueError) as exc:
+                      raise ValueError(
+                          "canonical readiness evaluation integrity violation"
+                      ) from exc
+                  if current_attestation != trusted_attestation:
+                      raise ValueError("canonical readiness evaluation integrity violation")
+                  resolve_canonical_assembly(trusted_assembly)
+                  return trusted_assembly, trusted_result
+
+              def assemble_normalized_location_features('''
+              integration = replace_regex(
+                  integration,
+                  r"    canonical_assemblies: dict\[int, NormalizedFeatureAssembly\] = \{\}\n    canonical_readiness: dict\[int, ReadinessEvaluation\] = \{\}\n\n    def is_canonical_assembly\(value: object\) -> bool:\n.*?\n    def assemble_normalized_location_features\(",
+                  registry_block,
+                  "pipeline closure registry block",
+              )
+
+              old_registration = "        canonical_assemblies[id(assembly)] = assembly\n        return assembly"
+              new_registration = '''        canonical_assemblies[id(assembly)] = (
+                  assembly,
+                  features,
+                  direct_tuple,
+                  policy_tuple,
+                  compatibility,
+                  approved_fallbacks,
+                  artifact_identities,
+                  assembly_id,
+                  _assembly_authority_attestation(
+                      features,
+                      direct_tuple,
+                      policy_tuple,
+                      compatibility,
+                      approved_fallbacks,
+                      artifact_identities,
+                      assembly_id,
+                  ),
+              )
+              return assembly'''
+              if integration.count(old_registration) != 1:
+                  raise RuntimeError("pipeline assembly registration patch target mismatch")
+              integration = integration.replace(old_registration, new_registration)
+
+              derive_prefix = '''        (
+                  trusted_features,
+                  _trusted_direct_results,
+                  trusted_feature_policies,
+                  trusted_compatibility,
+                  trusted_fallbacks,
+                  trusted_artifact_identities,
+                  trusted_assembly_id,
+              ) = resolve_canonical_assembly(assembly)
+              require_aware_datetime(evaluated_at, field_name="evaluated_at")
+              fingerprint = _readiness_fingerprint(
+                  assembly_id=trusted_assembly_id,
+                  features=trusted_features,
+                  feature_policies=trusted_feature_policies,
+                  compatibility=trusted_compatibility,
+                  approved_fallback_policies=trusted_fallbacks,
+                  artifact_identities=trusted_artifact_identities,
+              )
+'''
+              integration = replace_regex(
+                  integration,
+                  r"        if not is_canonical_assembly\(assembly\):\n.*?        fingerprint = _readiness_fingerprint\(assembly\)\n",
+                  derive_prefix,
+                  "pipeline derive trusted binding",
+              )
+              for old, new in (
+                  ("features=assembly.features", "features=trusted_features"),
+                  ("feature_policies=assembly.feature_policies", "feature_policies=trusted_feature_policies"),
+                  ("compatibility=assembly.compatibility", "compatibility=trusted_compatibility"),
+                  ("approved_fallback_policies=assembly.approved_fallback_policies", "approved_fallback_policies=trusted_fallbacks"),
+              ):
+                  if integration.count(old) != 1:
+                      raise RuntimeError(f"pipeline validator binding target mismatch: {old}")
+                  integration = integration.replace(old, new)
+
+              old_ready_registration = "        canonical_readiness[id(evaluation)] = evaluation\n        return evaluation"
+              new_ready_registration = '''        canonical_readiness[id(evaluation)] = (
+                  evaluation,
+                  assembly,
+                  result,
+                  _readiness_result_attestation(result),
+              )
+              return evaluation'''
+              if integration.count(old_ready_registration) != 1:
+                  raise RuntimeError("pipeline readiness registration patch target mismatch")
+              integration = integration.replace(old_ready_registration, new_ready_registration)
+
+              terminal_prefix = '''        trusted_assembly, trusted_result = resolve_canonical_readiness(readiness)
+              (
+                  trusted_features,
+                  trusted_direct_results,
+                  _trusted_feature_policies,
+                  _trusted_compatibility,
+                  _trusted_fallbacks,
+                  _trusted_artifact_identities,
+                  _trusted_assembly_id,
+              ) = resolve_canonical_assembly(trusted_assembly)
+              if not isinstance(derived_metrics, DerivedLocationMetrics):
+                  raise TypeError("derived_metrics must be DerivedLocationMetrics")
+              require_aware_datetime(generated_at, field_name="generated_at")
+              _validate_derived_metrics_coherence(
+                  trusted_direct_results, derived_metrics
+              )
+              status = (
+                  PipelineStatus.SCORE_READY
+                  if trusted_result.is_score_ready
+                  else PipelineStatus.NOT_SCORE_READY
+              )'''
+              integration = replace_regex(
+                  integration,
+                  r"        if not is_canonical_readiness\(readiness\):\n.*?        status = \(\n            PipelineStatus.SCORE_READY\n            if readiness.result.is_score_ready\n            else PipelineStatus.NOT_SCORE_READY\n        \)",
+                  terminal_prefix,
+                  "pipeline terminal trusted binding",
+              )
+              if integration.count("normalized_features=readiness.assembly.features") != 1:
+                  raise RuntimeError("pipeline terminal features target mismatch")
+              integration = integration.replace(
+                  "normalized_features=readiness.assembly.features",
+                  "normalized_features=trusted_features",
+              )
+              if integration.count("scoring_readiness=readiness.result") != 1:
+                  raise RuntimeError("pipeline terminal readiness target mismatch")
+              integration = integration.replace(
+                  "scoring_readiness=readiness.result",
+                  "scoring_readiness=trusted_result",
+              )
+              integration_path.write_text(integration, encoding="utf-8")
+
+          gating_path = Path("sitescore-app/src/sitescore_app/gating.py")
+          gating = gating_path.read_text(encoding="utf-8")
+          if "application pipeline result integrity violation" not in gating:
+              if gating.count("from weakref import WeakValueDictionary") != 1:
+                  raise RuntimeError("app weakref import target mismatch")
+              gating = gating.replace("from weakref import WeakValueDictionary", "from weakref import ref")
+
+              app_registry_block = '''    pipeline_bindings: dict[int, tuple[object, object]] = {}
+              scoring_bindings: dict[int, tuple[object, object]] = {}
+
+              def register_binding(bindings: dict[int, tuple[object, object]], value: object, authority: object) -> None:
+                  object_id = id(value)
+
+                  def cleanup(_dead_ref, *, object_id=object_id, bindings=bindings) -> None:
+                      bindings.pop(object_id, None)
+
+                  bindings[object_id] = (ref(value, cleanup), authority)
+
+              def resolve_pipeline_result(value: ApplicationPipelineResult) -> RealDataPipelineResult:
+                  if not isinstance(value, ApplicationPipelineResult):
+                      raise TypeError("value must be an ApplicationPipelineResult")
+                  binding = pipeline_bindings.get(id(value))
+                  if binding is None or binding[0]() is not value:
+                      raise ValueError("application pipeline result is not canonical/factory-owned")
+                  trusted_terminal = binding[1]
+                  if not isinstance(trusted_terminal, RealDataPipelineResult):
+                      raise RuntimeError("canonical application pipeline binding corrupted")
+                  if value.pipeline_result is not trusted_terminal:
+                      raise ValueError("application pipeline result integrity violation")
+                  return trusted_terminal
+
+              def require_pipeline_result(value: ApplicationPipelineResult) -> ApplicationPipelineResult:
+                  resolve_pipeline_result(value)
+                  return value
+
+              def build_pipeline_result('''
+              gating = replace_regex(
+                  gating,
+                  r"    pipeline_registry: WeakValueDictionary\[int, ApplicationPipelineResult\] = WeakValueDictionary\(\)\n    scoring_registry: WeakValueDictionary\[int, ApplicationScoringInput\] = WeakValueDictionary\(\)\n\n    def require_pipeline_result\(value: ApplicationPipelineResult\) -> ApplicationPipelineResult:\n.*?\n    def build_pipeline_result\(",
+                  app_registry_block,
+                  "app closure registry block",
+              )
+
+              if gating.count("        pipeline_registry[id(value)] = value") != 1:
+                  raise RuntimeError("app pipeline registration target mismatch")
+              gating = gating.replace(
+                  "        pipeline_registry[id(value)] = value",
+                  "        register_binding(pipeline_bindings, value, terminal)",
+              )
+
+              scoring_block = '''    def build_scoring_input(
+                  application_pipeline_result: ApplicationPipelineResult,
+              ) -> ApplicationScoringInput:
+                  trusted_terminal = resolve_pipeline_result(application_pipeline_result)
+                  eligibility = evaluate_application_scoring_gate(trusted_terminal)
+                  if not eligibility.is_eligible:
+                      raise ApplicationScoringBlocked(eligibility)
+
+                  value = object.__new__(ApplicationScoringInput)
+                  object.__setattr__(
+                      value,
+                      "application_pipeline_result",
+                      application_pipeline_result,
+                  )
+                  register_binding(
+                      scoring_bindings,
+                      value,
+                      application_pipeline_result,
+                  )
+                  return value
+
+              def require_scoring_input(value: ApplicationScoringInput) -> ApplicationScoringInput:
+                  if not isinstance(value, ApplicationScoringInput):
+                      raise TypeError("value must be an ApplicationScoringInput")
+                  binding = scoring_bindings.get(id(value))
+                  if binding is None or binding[0]() is not value:
+                      raise ValueError("application scoring input is not canonical/factory-owned")
+                  trusted_app_result = binding[1]
+                  if not isinstance(trusted_app_result, ApplicationPipelineResult):
+                      raise RuntimeError("canonical application scoring binding corrupted")
+                  if value.application_pipeline_result is not trusted_app_result:
+                      raise ValueError("application scoring input integrity violation")
+                  resolve_pipeline_result(trusted_app_result)
+                  return value
+
+'''
+              gating = replace_regex(
+                  gating,
+                  r"    def build_scoring_input\(\n.*?\n    return build_pipeline_result, require_pipeline_result, build_scoring_input, require_scoring_input\n",
+                  scoring_block + "    return build_pipeline_result, require_pipeline_result, build_scoring_input, require_scoring_input\n",
+                  "app scoring binding block",
+              )
+              gating_path.write_text(gating, encoding="utf-8")
+
+          pipeline_test_path = Path("sitescore-pipeline/tests/test_readiness_pipeline.py")
+          pipeline_tests = pipeline_test_path.read_text(encoding="utf-8")
+          marker = "def test_pipe_auth_h001_registered_assembly_field_replacement_is_rejected"
+          if marker not in pipeline_tests:
+              pipeline_tests += r'''
+
+
+def _copy_factory_owned_assembly(source):
+    copied = object.__new__(integration.NormalizedFeatureAssembly)
+    for name in (
+        "features",
+        "direct_results",
+        "feature_policies",
+        "compatibility",
+        "approved_fallback_policies",
+        "artifact_identities",
+        "assembly_id",
+    ):
+        object.__setattr__(copied, name, getattr(source, name))
+    return copied
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "features",
+        "direct_results",
+        "feature_policies",
+        "compatibility",
+        "approved_fallback_policies",
+        "artifact_identities",
+        "assembly_id",
+    ),
+)
+def test_pipe_auth_h001_registered_assembly_field_replacement_is_rejected(
+    canonical_assembly,
+    field_name,
+):
+    replacements = {
+        "features": replace(canonical_assembly.features),
+        "direct_results": tuple(list(canonical_assembly.direct_results)),
+        "feature_policies": tuple(list(canonical_assembly.feature_policies)),
+        "compatibility": replace(canonical_assembly.compatibility),
+        "approved_fallback_policies": tuple(
+            list(canonical_assembly.approved_fallback_policies)
+        ),
+        "artifact_identities": tuple(list(canonical_assembly.artifact_identities)),
+        "assembly_id": canonical_assembly.assembly_id + "0",
+    }
+    object.__setattr__(canonical_assembly, field_name, replacements[field_name])
+    with pytest.raises(ValueError, match="assembly integrity violation"):
+        integration.derive_scoring_readiness(canonical_assembly, evaluated_at=T0)
+
+
+def test_pipe_auth_h001_readiness_assembly_replacement_is_rejected(
+    canonical_readiness,
+):
+    forged = _copy_factory_owned_assembly(canonical_readiness.assembly)
+    object.__setattr__(canonical_readiness, "assembly", forged)
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(forged),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_readiness_result_replacement_is_rejected(
+    canonical_readiness,
+):
+    object.__setattr__(
+        canonical_readiness,
+        "result",
+        replace(canonical_readiness.result),
+    )
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(canonical_readiness.assembly),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_nested_readiness_score_ready_mutation_is_rejected(
+    canonical_readiness,
+):
+    assert canonical_readiness.result.is_score_ready is False
+    object.__setattr__(canonical_readiness.result, "is_score_ready", True)
+    with pytest.raises(ValueError, match="readiness evaluation integrity violation"):
+        integration.build_real_data_pipeline_result(
+            readiness=canonical_readiness,
+            sector_key=SectorKey("coffee"),
+            resolved_location=_location(),
+            derived_metrics=_coherent_derived(canonical_readiness.assembly),
+            source_metadata=(),
+            generated_at=T0,
+        )
+
+
+def test_pipe_auth_h001_nested_forged_road_parking_score_is_rejected(
+    canonical_assembly,
+):
+    original = canonical_assembly.features.road_parking_access_score
+    assert original.value is None
+    forged_metric = replace(
+        original,
+        value=66.0,
+        availability=AvailabilityState.AVAILABLE,
+        data_quality=DataQualityState.FULL,
+        score_eligibility=ScoreEligibility.ELIGIBLE,
+        calibration_state=CalibrationState.CALIBRATED,
+        source_refs=(SOURCE,),
+        method_version="forged-comb005/1.0",
+        reason_codes=(),
+    )
+    object.__setattr__(
+        canonical_assembly.features,
+        "road_parking_access_score",
+        forged_metric,
+    )
+    with pytest.raises(ValueError, match="assembly integrity violation"):
+        integration.derive_scoring_readiness(canonical_assembly, evaluated_at=T0)
+
+
+def test_pipe_auth_h001_unmodified_canonical_path_preserves_not_score_ready(
+    canonical_readiness,
+):
+    terminal = integration.build_real_data_pipeline_result(
+        readiness=canonical_readiness,
+        sector_key=SectorKey("coffee"),
+        resolved_location=_location(),
+        derived_metrics=_coherent_derived(canonical_readiness.assembly),
+        source_metadata=(),
+        generated_at=T0,
+    )
+    assert terminal.status is PipelineStatus.NOT_SCORE_READY
+    assert terminal.normalized_features is canonical_readiness.assembly.features
+    assert terminal.scoring_readiness is canonical_readiness.result
+    assert terminal.normalized_features.road_parking_access_score.value is None
+'''
+              pipeline_test_path.write_text(pipeline_tests, encoding="utf-8")
+
+          app_test_path = Path("sitescore-app/tests/test_authority_corrective_reopen.py")
+          app_test_path.write_text(r'''from __future__ import annotations
+
+import subprocess
+import sys
+import textwrap
+
+
+def test_app_h002_construction_time_bindings_reject_post_registration_redirects():
+    script = textwrap.dedent(r"""
+        import inspect
+
+        import sitescore_pipeline
+        from sitescore_data.enums import PipelineStatus
+        from sitescore_data.schemas.features import NormalizedLocationFeatures
+        from sitescore_data.schemas.pipeline import RealDataPipelineResult
+        from sitescore_data.schemas.readiness import ScoringReadinessResult
+
+        def terminal_shell():
+            terminal = object.__new__(RealDataPipelineResult)
+            object.__setattr__(terminal, "status", PipelineStatus.SCORE_READY)
+            readiness = object.__new__(ScoringReadinessResult)
+            object.__setattr__(readiness, "is_score_ready", True)
+            object.__setattr__(readiness, "reason_codes", ())
+            object.__setattr__(readiness, "readiness_fingerprint", "controlled-test-ready")
+            object.__setattr__(terminal, "scoring_readiness", readiness)
+            object.__setattr__(terminal, "normalized_features", object.__new__(NormalizedLocationFeatures))
+            return terminal
+
+        def controlled_terminal_factory(**_kwargs):
+            return terminal_shell()
+
+        sitescore_pipeline.build_real_data_pipeline_result = controlled_terminal_factory
+        import sitescore_app.gating as gating
+
+        app_result = gating.build_application_pipeline_result(
+            readiness=None,
+            sector_key=None,
+            resolved_location=None,
+            derived_metrics=None,
+            source_metadata=(),
+            generated_at=None,
+        )
+        original_terminal = app_result.pipeline_result
+        assert gating.require_canonical_application_pipeline_result(app_result) is app_result
+
+        scoring_input = gating.build_application_scoring_input(app_result)
+        assert gating.require_canonical_application_scoring_input(scoring_input) is scoring_input
+
+        forged_terminal = terminal_shell()
+        object.__setattr__(app_result, "pipeline_result", forged_terminal)
+        try:
+            gating.require_canonical_application_pipeline_result(app_result)
+        except ValueError as exc:
+            assert "integrity violation" in str(exc)
+        else:
+            raise AssertionError("redirected ApplicationPipelineResult was accepted")
+
+        object.__setattr__(app_result, "pipeline_result", original_terminal)
+        assert gating.require_canonical_application_pipeline_result(app_result) is app_result
+
+        another_app_result = gating.build_application_pipeline_result(
+            readiness=None,
+            sector_key=None,
+            resolved_location=None,
+            derived_metrics=None,
+            source_metadata=(),
+            generated_at=None,
+        )
+        object.__setattr__(
+            scoring_input,
+            "application_pipeline_result",
+            another_app_result,
+        )
+        try:
+            gating.require_canonical_application_scoring_input(scoring_input)
+        except ValueError as exc:
+            assert "integrity violation" in str(exc)
+        else:
+            raise AssertionError("redirected ApplicationScoringInput was accepted")
+
+        manual = object.__new__(gating.ApplicationPipelineResult)
+        object.__setattr__(manual, "pipeline_result", original_terminal)
+        try:
+            gating.require_canonical_application_pipeline_result(manual)
+        except ValueError as exc:
+            assert "not canonical" in str(exc)
+        else:
+            raise AssertionError("manual wrapper was accepted")
+
+        raw_forged = terminal_shell()
+        try:
+            gating.build_application_scoring_input(raw_forged)
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("raw forged terminal was accepted")
+
+        parameters = inspect.signature(gating.build_application_scoring_input).parameters
+        assert tuple(parameters) == ("application_pipeline_result",)
+        for forbidden in (
+            "ready",
+            "trusted",
+            "force",
+            "status",
+            "readiness_fingerprint",
+            "normalized_features",
+        ):
+            assert forbidden not in parameters
+    """)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+''', encoding="utf-8")
+
+          doc_path = Path("docs/AUTHORITY_CORRECTIVE_REOPEN_PIPE_APP.md")
+          doc_path.write_text('''# Authority Corrective Reopen — Pipeline / App
+
+## Status
+
+This record documents a user-authorized narrow corrective reopen for `PIPE-AUTH-H001` and `APP-H002` only.
+
+- FAZ 3 remains historically frozen; this correction does not reopen scoring, normalization, benchmark, provider, spatial, metrics, or data semantics.
+- FAZ 4.0 remains historically LOCKED / merged. The inherited authority defect was discovered after that factual transition.
+- FAZ 4.1 is NOT STARTED.
+- Package versions remain `0.1.0`; public factory signatures remain stable.
+
+## Authorized production-source scope
+
+Only these production files are changed:
+
+- `sitescore-pipeline/src/sitescore_pipeline/integration.py`
+- `sitescore-app/src/sitescore_app/gating.py`
+
+Associated adversarial tests and this record are additive.
+
+## PIPE-AUTH-H001 correction
+
+The pipeline no longer treats registered object identity alone as canonical execution authority. `_install_canonical_factories()` now keeps closure-private construction-time bindings for every canonical `NormalizedFeatureAssembly` and `ReadinessEvaluation`.
+
+For assemblies the binding retains the exact construction-time `features`, `direct_results`, `feature_policies`, `compatibility`, `approved_fallback_policies`, `artifact_identities`, and `assembly_id`, plus a construction-time semantic attestation. Resolution requires both exact registered object identity and current-field integrity. The attestation is recomputed to detect nested semantic mutation, including mutation of normalized feature values.
+
+For readiness evaluations the binding retains the exact construction-time assembly and readiness result plus a semantic attestation of the full readiness result. Replacement of `assembly` / `result`, or mutation such as flipping `is_score_ready`, fails closed.
+
+Readiness validation and terminal construction consume closure-resolved trusted construction-time values rather than caller-mutated public fields. Existing hashes remain diagnostic/semantic records; they do not grant origin authority by themselves.
+
+## APP-H002 correction
+
+`_install_application_factories()` now retains closure-private construction-time bindings through weak references:
+
+- `ApplicationPipelineResult` -> exact `RealDataPipelineResult` returned by the closure-captured canonical pipeline factory.
+- `ApplicationScoringInput` -> exact `ApplicationPipelineResult` used to create it.
+
+Canonical requirements verify registered wrapper identity and exact current nested-reference integrity. Authorization decisions use the closure-bound terminal reference. Redirecting either wrapper after registration fails closed.
+
+## Adversarial coverage
+
+The corrective regressions exercise `object.__setattr__` directly and cover:
+
+- replacement of every authority-bearing `NormalizedFeatureAssembly` field;
+- replacement of `ReadinessEvaluation.assembly` and `.result`;
+- nested readiness mutation attempting to flip `is_score_ready`;
+- nested forged numeric `road_parking_access_score` while COMB-005 remains unavailable;
+- copied/reconstructed pipeline authority objects (retained prior regressions);
+- `ApplicationPipelineResult.pipeline_result` redirection;
+- `ApplicationScoringInput.application_pipeline_result` redirection;
+- manual/copy wrappers and raw forged terminal DTO rejection;
+- unmodified canonical pipeline behavior remaining `NOT_SCORE_READY` under current COMB-005 truth.
+
+## Non-regression / governance
+
+- `SCORING_MATH_CHANGED: NO`
+- `NORMALIZATION_MATH_CHANGED: NO`
+- `COMB005_STATE_CHANGED: NO`
+- `EMPIRICAL_GATE_CHANGED: NO`
+- `FAZ_4_1_IMPLEMENTATION_STARTED: NO`
+- `VERSION_CHANGE_REQUIRED: 0`
+- `ADDITIONAL_REOPEN_REQUIRED: 0`
+
+No core weights, dealbreakers, benchmark formulas, provider semantics, spatial semantics, age fallback, or empirical gates are changed.
+
+## Validation and relock
+
+Full package regression is executed by the temporary `authority-corrective-validation` workflow across app, pipeline, benchmarks, metrics, spatial, providers, data, and core. Final run/SHA evidence is recorded in `implementer.md` after validation. The temporary workflow is removed before Reviewer handoff, and final HEAD must differ from the validated SHA only by workflow removal.
+
+This correction requires independent Reviewer verification and user-authorized relock/merge. It does not self-LOCK and does not begin FAZ 4.1.
+''', encoding="utf-8")
+          PY
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install -e ./sitescore-core
+          python -m pip install -e ./sitescore-data
+          python -m pip install -e ./sitescore-spatial
+          python -m pip install -e ./sitescore-providers
+          python -m pip install -e ./sitescore-metrics
+          python -m pip install -e ./sitescore-benchmarks
+          python -m pip install -e ./sitescore-pipeline
+          python -m pip install -e ./sitescore-app
+      - name: Test sitescore-app
+        working-directory: sitescore-app
+        run: python -m pytest -q
+      - name: Test sitescore-pipeline
+        working-directory: sitescore-pipeline
+        run: python -m pytest -q
+      - name: Test sitescore-benchmarks
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -q
+      - name: Test sitescore-metrics
+        working-directory: sitescore-metrics
+        run: python -m pytest -q
+      - name: Test sitescore-spatial
+        working-directory: sitescore-spatial
+        run: python -m pytest -q
+      - name: Test sitescore-providers
+        working-directory: sitescore-providers
+        run: python -m pytest -q
+      - name: Test sitescore-data
+        working-directory: sitescore-data
+        run: python -m pytest -q
+      - name: Test sitescore-core
+        working-directory: sitescore-core
+        run: python -m pytest -q
+      - name: Commit validated correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sitescore-pipeline/src/sitescore_pipeline/integration.py \
+                  sitescore-pipeline/tests/test_readiness_pipeline.py \
+                  sitescore-app/src/sitescore_app/gating.py \
+                  sitescore-app/tests/test_authority_corrective_reopen.py \
+                  docs/AUTHORITY_CORRECTIVE_REOPEN_PIPE_APP.md
+          if git diff --cached --quiet; then
+            echo "No corrective source changes to commit."
+          else
+            git commit -m "Harden pipeline and app authority bindings"
+            git push origin HEAD:faz4/authority-corrective-reopen
+          fi
