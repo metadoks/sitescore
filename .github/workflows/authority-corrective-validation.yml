@@ -5,11 +5,8 @@ on:
     branches:
       - faz4/authority-corrective-reopen
 
-permissions:
-  contents: write
-
 jobs:
-  harden-and-test:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +15,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply narrow authority correction
+      - name: Corrective scope audit
         run: |
-          python - <<'PY'
-          import base64, gzip
-          payload = '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' 
-          exec(gzip.decompress(base64.b64decode(payload)).decode('utf-8'))
-          PY
+          git fetch origin main
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed"
+          forbidden="$(printf '%s\n' "$changed" | grep -E '^(sitescore-core|sitescore-data|sitescore-providers|sitescore-spatial|sitescore-metrics|sitescore-benchmarks)/' || true)"
+          if [ -n "$forbidden" ]; then
+            echo "Forbidden frozen-package changes detected:"
+            printf '%s\n' "$forbidden"
+            exit 1
+          fi
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev '^(sitescore-pipeline/src/sitescore_pipeline/integration.py|sitescore-pipeline/tests/.*|sitescore-app/src/sitescore_app/gating.py|sitescore-app/tests/.*|docs/AUTHORITY_CORRECTIVE_REOPEN_PIPE_APP.md|\.github/workflows/authority-corrective-validation.yml)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected corrective-scope paths detected:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+          if ! git diff --quiet origin/main...HEAD -- ':(glob)*/pyproject.toml' ':(glob)*/requirements.lock'; then
+            echo "Package/version/dependency metadata changed unexpectedly."
+            exit 1
+          fi
+          echo "CORRECTIVE_SCOPE_AUDIT=PASS"
       - name: Install packages
         run: |
           python -m pip install --upgrade pip
@@ -39,38 +51,41 @@ jobs:
           python -m pip install -e ./sitescore-app
       - name: Test sitescore-app
         working-directory: sitescore-app
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-app PASS"
       - name: Test sitescore-pipeline
         working-directory: sitescore-pipeline
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-pipeline PASS"
       - name: Test sitescore-benchmarks
         working-directory: sitescore-benchmarks
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-benchmarks PASS"
       - name: Test sitescore-metrics
         working-directory: sitescore-metrics
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-metrics PASS"
       - name: Test sitescore-spatial
         working-directory: sitescore-spatial
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-spatial PASS"
       - name: Test sitescore-providers
         working-directory: sitescore-providers
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-providers PASS"
       - name: Test sitescore-data
         working-directory: sitescore-data
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          echo "sitescore-data PASS"
       - name: Test sitescore-core
         working-directory: sitescore-core
-        run: python -m pytest -q
-      - name: Commit validated correction
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sitescore-pipeline/src/sitescore_pipeline/integration.py \
-                  sitescore-pipeline/tests/test_readiness_pipeline.py \
-                  sitescore-app/src/sitescore_app/gating.py
-          if git diff --cached --quiet; then
-            echo "No corrective source changes to commit."
-          else
-            git commit -m "Harden pipeline and app authority bindings"
-            git push origin HEAD:faz4/authority-corrective-reopen
-          fi
+          python -m pytest -q
+          echo "sitescore-core PASS"
