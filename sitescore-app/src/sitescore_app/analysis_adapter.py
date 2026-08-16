@@ -43,14 +43,6 @@ def _semantic_record(value: object) -> object:
     """Deterministic recursive authority record for supported core DTO surfaces."""
     if value is None:
         return ("none",)
-    if isinstance(value, bool):
-        return ("bool", value)
-    if isinstance(value, int):
-        return ("int", value)
-    if isinstance(value, float):
-        return ("float", value.hex())
-    if isinstance(value, str):
-        return ("str", value)
     if isinstance(value, Enum):
         value_type = type(value)
         return (
@@ -59,6 +51,14 @@ def _semantic_record(value: object) -> object:
             value_type.__qualname__,
             _semantic_record(value.value),
         )
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int):
+        return ("int", value)
+    if isinstance(value, float):
+        return ("float", value.hex())
+    if isinstance(value, str):
+        return ("str", value)
     if isinstance(value, dict):
         items = [
             (_semantic_record(key), _semantic_record(item_value))
@@ -142,16 +142,12 @@ def _install_core_analysis_input_factories():
             analysis_record,
         )
 
-    def resolve(
-        value: ApplicationCoreAnalysisInput,
-    ) -> tuple[object, ...]:
+    def resolve(value: ApplicationCoreAnalysisInput) -> tuple[object, ...]:
         if not isinstance(value, ApplicationCoreAnalysisInput):
             raise TypeError("value must be an ApplicationCoreAnalysisInput")
         binding = bindings.get(id(value))
         if binding is None or binding[0]() is not value:
-            raise ValueError(
-                "application core analysis input is not canonical/factory-owned"
-            )
+            raise ValueError("application core analysis input is not canonical/factory-owned")
 
         category_result = binding[1]
         sector = binding[2]
@@ -247,7 +243,6 @@ def _install_core_analysis_input_factories():
         )
         coverage_copy = dict(data_coverage)
         quality_copy = dict(input_qualities)
-
         analysis_input = AnalysisInput(
             sector=sector,
             category_scores=category_scores,
@@ -261,8 +256,6 @@ def _install_core_analysis_input_factories():
             input_qualities=quality_copy,
         )
 
-        # Revalidate the upstream authority after all caller-owned input handling and
-        # core construction, before granting the downstream application capability.
         current_trusted = _resolve_trusted_application_category_authority(category_result)
         if current_trusted != (sector, demand, competition, accessibility, economics):
             raise ValueError("category authority changed during core adapter construction")
