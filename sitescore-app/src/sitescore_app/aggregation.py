@@ -19,12 +19,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class ApplicationCategoryAggregationResult:
-    """Factory-owned authority for the four application category scores.
-
-    This capability is downstream of a canonical ``ApplicationScoringInput``.
-    It is not a core ``CategoryScores`` object and it does not mean Location Score
-    analysis has occurred.
-    """
+    """Factory-owned authority for the four application category scores."""
 
     application_scoring_input: ApplicationScoringInput
     sector: Sector
@@ -40,10 +35,7 @@ class ApplicationCategoryAggregationResult:
         )
 
 
-def _metric_score(
-    features: NormalizedLocationFeatures,
-    field_name: str,
-) -> float:
+def _metric_score(features: NormalizedLocationFeatures, field_name: str) -> float:
     metric = getattr(features, field_name)
     if not isinstance(metric, MetricValue):
         raise TypeError(f"{field_name} must be a MetricValue")
@@ -62,8 +54,6 @@ def _metric_score(
 
 
 def _install_category_aggregation_factories():
-    # Capture the exact frozen core authorities in closure state. They remain the
-    # only production source of semantic sector vocabulary and subfeature weights.
     from sitescore.config.sectors import Sector as frozen_sector_enum
     from sitescore.config.subfeature_weights import (
         ACCESSIBILITY_SUBFEATURE_WEIGHTS as frozen_accessibility_weights,
@@ -97,19 +87,10 @@ def _install_category_aggregation_factories():
             raise RuntimeError("canonical application scoring readiness binding corrupted")
         return sector_key, normalized_features, readiness_fingerprint
 
-    def compute_categories(
-        sector,
-        features: NormalizedLocationFeatures,
-    ) -> tuple[float, float, float, float]:
+    def compute_categories(sector, features: NormalizedLocationFeatures) -> tuple[float, float, float, float]:
         walkable_population = _metric_score(features, "walkable_population_score")
-        target_population_density = _metric_score(
-            features,
-            "target_population_density_score",
-        )
-        age_target_concentration = _metric_score(
-            features,
-            "age_target_concentration_score",
-        )
+        target_population_density = _metric_score(features, "target_population_density_score")
+        age_target_concentration = _metric_score(features, "age_target_concentration_score")
         competition = _metric_score(features, "competition_opportunity_score")
         walkable_reach_area = _metric_score(features, "walkable_reach_area_score")
         transit_access = _metric_score(features, "transit_access_score")
@@ -118,32 +99,23 @@ def _install_category_aggregation_factories():
 
         demand_weights = frozen_demand_weights[sector]
         accessibility_weights = frozen_accessibility_weights[sector]
-
         demand = float(
             walkable_population * demand_weights["walkable_population"]
-            + target_population_density
-            * demand_weights["target_population_density"]
-            + age_target_concentration
-            * demand_weights["age_target_concentration"]
+            + target_population_density * demand_weights["target_population_density"]
+            + age_target_concentration * demand_weights["age_target_concentration"]
         )
         accessibility = float(
             walkable_reach_area * accessibility_weights["walkable_reach_area"]
             + transit_access * accessibility_weights["transit_access"]
             + road_parking_access * accessibility_weights["road_parking_access"]
         )
-
         for field_name, value in (
             ("demand", demand),
             ("competition", competition),
             ("accessibility", accessibility),
             ("economics", economics),
         ):
-            require_bounded_number(
-                value,
-                low=0.0,
-                high=100.0,
-                field_name=field_name,
-            )
+            require_bounded_number(value, low=0.0, high=100.0, field_name=field_name)
         return demand, competition, accessibility, economics
 
     def register_category_binding(
@@ -174,39 +146,24 @@ def _install_category_aggregation_factories():
             economics,
         )
 
-    def aggregate(
-        application_scoring_input: ApplicationScoringInput,
-    ) -> ApplicationCategoryAggregationResult:
-        sector_key, normalized_features, readiness_fingerprint = (
-            current_scoring_authority(application_scoring_input)
+    def aggregate(application_scoring_input: ApplicationScoringInput) -> ApplicationCategoryAggregationResult:
+        sector_key, normalized_features, readiness_fingerprint = current_scoring_authority(
+            application_scoring_input
         )
         sector = resolve_frozen_sector(sector_key)
-        demand, competition, accessibility, economics = compute_categories(
-            sector,
-            normalized_features,
-        )
-
-        # Revalidate the nested capability after computation before granting a new
-        # downstream authority object. No caller-visible mutable reference is trusted
-        # across the authority transition without this second integrity check.
-        current_sector_key, current_features, current_fingerprint = (
-            current_scoring_authority(application_scoring_input)
+        demand, competition, accessibility, economics = compute_categories(sector, normalized_features)
+        current_sector_key, current_features, current_fingerprint = current_scoring_authority(
+            application_scoring_input
         )
         if (
             current_sector_key is not sector_key
             or current_features is not normalized_features
             or current_fingerprint != readiness_fingerprint
         ):
-            raise ValueError(
-                "application scoring authority changed during category aggregation"
-            )
+            raise ValueError("application scoring authority changed during category aggregation")
 
         value = object.__new__(ApplicationCategoryAggregationResult)
-        object.__setattr__(
-            value,
-            "application_scoring_input",
-            application_scoring_input,
-        )
+        object.__setattr__(value, "application_scoring_input", application_scoring_input)
         object.__setattr__(value, "sector", sector)
         object.__setattr__(value, "demand", demand)
         object.__setattr__(value, "competition", competition)
@@ -225,16 +182,12 @@ def _install_category_aggregation_factories():
         )
         return value
 
-    def resolve_category_binding(
-        value: ApplicationCategoryAggregationResult,
-    ) -> tuple[object, ...]:
+    def resolve_category_binding(value: ApplicationCategoryAggregationResult) -> tuple[object, ...]:
         if not isinstance(value, ApplicationCategoryAggregationResult):
             raise TypeError("value must be an ApplicationCategoryAggregationResult")
         binding = category_bindings.get(id(value))
         if binding is None or binding[0]() is not value:
-            raise ValueError(
-                "application category aggregation result is not canonical/factory-owned"
-            )
+            raise ValueError("application category aggregation result is not canonical/factory-owned")
 
         application_scoring_input = binding[1]
         sector = binding[2]
@@ -256,21 +209,17 @@ def _install_category_aggregation_factories():
             (value.economics, economics),
         ):
             if type(current) is not float or current != expected:
-                raise ValueError(
-                    "application category aggregation result integrity violation"
-                )
+                raise ValueError("application category aggregation result integrity violation")
 
-        current_sector_key, current_features, current_fingerprint = (
-            current_scoring_authority(application_scoring_input)
+        current_sector_key, current_features, current_fingerprint = current_scoring_authority(
+            application_scoring_input
         )
         if (
             current_features is not normalized_features
             or current_fingerprint != readiness_fingerprint
             or resolve_frozen_sector(current_sector_key) is not sector
         ):
-            raise ValueError(
-                "application category aggregation result nested authority integrity violation"
-            )
+            raise ValueError("application category aggregation result nested authority integrity violation")
         return binding
 
     def require_category_result(
@@ -279,12 +228,30 @@ def _install_category_aggregation_factories():
         resolve_category_binding(value)
         return value
 
-    return aggregate, require_category_result
+    def resolve_trusted_category_authority(
+        value: ApplicationCategoryAggregationResult,
+    ) -> tuple[object, float, float, float, float]:
+        """Internal downstream bridge to construction-time category authority.
+
+        It validates current public and nested integrity first, then returns only
+        closure-bound construction-time values. It is deliberately not exported.
+        """
+        binding = resolve_category_binding(value)
+        return (
+            binding[2],
+            binding[5],
+            binding[6],
+            binding[7],
+            binding[8],
+        )
+
+    return aggregate, require_category_result, resolve_trusted_category_authority
 
 
 (
     aggregate_application_category_scores,
     require_canonical_application_category_aggregation_result,
+    _resolve_trusted_application_category_authority,
 ) = _install_category_aggregation_factories()
 del _install_category_aggregation_factories
 
