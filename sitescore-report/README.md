@@ -15,13 +15,15 @@ FAZ 5.3 adds only:
 ```text
 canonical ReportDomainModel
 -> ApprovedNarrativeContext
--> untrusted OpenAI Responses API draft OR deterministic fallback draft
+-> active code-owned NarrativeClaimId contract
+-> untrusted OpenAI Responses API claim selection OR deterministic fallback selection
 -> strict schema validation
--> deterministic semantic validation
+-> exact claim/state/evidence compatibility validation
+-> code-owned versioned text templates
 -> ValidatedReportNarrative
 ```
 
-The LLM is a narrator/language layer only. It is not a scoring engine, financial calculator, decision authority, confidence authority, benchmark authority, or readiness authority.
+The LLM is a selector/narrator only. It is not a scoring engine, financial calculator, decision authority, confidence authority, benchmark authority, readiness authority, or source of new business facts.
 
 ## Provider boundary
 
@@ -32,17 +34,50 @@ openai==3.2.0
 pydantic==2.13.4
 ```
 
-The model ID is deployment configuration (`SITESCORE_NARRATIVE_MODEL_ID`) and is generation provenance only. API credentials remain OpenAI client/environment concerns and are never copied into report facts, narrative context, narrative provenance, or prompt payloads. The request supplies no tools.
+The model ID is deployment configuration (`SITESCORE_NARRATIVE_MODEL_ID`) and generation provenance only. API credentials remain OpenAI client/environment concerns and are never copied into report facts, narrative context, narrative provenance, or prompt payloads. The request supplies no tools.
 
 Provider output is always untrusted until deterministic local validation succeeds.
 
-## Local semantic guardrails
+## Closed semantic claim authority
 
-The validator requires exact echo of canonical decision/structural/financial/confidence/stress/fingerprint anchors; every insight/recommendation must bind to an available approved evidence key. Unknown or missing evidence is rejected.
+`NarrativeDraft` contains **no provider-authored prose field**. Every section, including executive summary and caveats, is represented only by closed claim selections:
 
-The narrative layer rejects obvious contradictions against canonical decision, financial, stress, rent-burden, confidence, and missingness facts. Free-form provider prose may not introduce numeric/currency/percentage literals and may not claim empirical validation, guaranteed outcomes, certain profitability, or risk-free operation.
+```text
+claim_id: NarrativeClaimId
+evidence_keys: exact code-owned list
+```
 
-Provider/schema/semantic failure activates a deterministic versioned fallback built only from exact canonical categorical/status facts. Invalid canonical report-domain authority is a hard failure and is never converted into fallback success.
+`ApprovedNarrativeContext` exposes only claim IDs whose exact canonical source-state predicate is currently true. Each active claim carries a code-owned section and exact evidence-key tuple. Validation requires:
+
+```text
+claim_id is active for this canonical ReportDomainModel
+section matches the claim contract
+provider evidence_keys exactly equal the code-owned evidence tuple
+all required evidence is present
+canonical anchors match exactly
+```
+
+An unrelated but existing evidence key therefore cannot authorize a claim. A claim valid in another source state cannot be selected. Provider-created claim IDs are impossible because the schema uses a closed enum.
+
+Customer-facing narrative text is rendered **after** validation from deterministic code-owned templates. The provider cannot add a second assertion, synonym bypass, empirical claim, guarantee, certainty upgrade, unsupported transit/location statement, numeric invention, or arbitrary caveat because there is no free-form text surface in the provider schema.
+
+## Deterministic fallback
+
+Provider/model unconfigured state, provider exception, incomplete/refused output, schema-invalid output, anchor mismatch, inactive claim, section mismatch, claim/evidence mismatch, or unavailable evidence activates a deterministic versioned fallback.
+
+Fallback uses the same active closed-claim contract and the same code-owned templates. It does not calculate scores, thresholds, financial outcomes, confidence, readiness, or new business meaning.
+
+Invalid canonical report-domain authority remains a hard failure and is never converted into fallback success.
+
+## Versioned narrative contract
+
+```text
+prompt version:   sitescore-narrative-prompt-v2
+schema version:   sitescore-narrative-v2
+fallback version: sitescore-narrative-fallback-v2
+```
+
+The v2 change is the NARR53-H001 hardening: free-form provider prose was removed from all final-authority sections and replaced with a closed machine-checkable claim/state/evidence contract.
 
 ## Current locked product limitation
 
