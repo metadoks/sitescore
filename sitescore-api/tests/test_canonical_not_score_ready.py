@@ -247,7 +247,7 @@ def _evidence() -> ExecutionEvidence:
         formatted_address="123 Main St, Austin, TX",
         country_code="US",
         geography_refs=(geography,),
-        source_refs=("source.api-geocoder",),
+        source_refs=("source.api-geocoder", "source.api-geography"),
         resolution_method_version="api-geocoder/1",
         generated_at=NOW,
     )
