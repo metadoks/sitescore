@@ -51,9 +51,9 @@ fallback: sitescore-narrative-fallback-v2
 
 This structurally closes unrelated evidence, unsupported executive/caveat assertions, empirical/guarantee synonyms, arbitrary provider assertions, claim/evidence mismatch and source-state mismatch. Tests cover all Reviewer-required adversarial cases and valid strong/weak/low-confidence/risk cases.
 
-Fresh exact-SHA validation `ba03c99b...` succeeded: report 16, API 88, frozen 1375, combined 1479. PostgreSQL migration and real Celery/Redis transport were also re-proved.
+Fresh exact-SHA validation `ba03c99bfae8d1d47365d10a22305139c00ac183` succeeded: report 16, API 88, frozen 1375, combined 1479. PostgreSQL migration and real Celery/Redis transport were re-proved.
 
-Final candidate `fe937664...`; validated-to-final is exactly one commit/one file, solely temporary validation workflow deletion. Locked-base merge-base remains exact `8b856aaf...`, behind 0, and final product diff is 10 files, all `sitescore-report/**`.
+Final candidate `fe937664a781a04e29a09e574bba46e371e26b90`; validated-to-final is exactly one commit/one file, solely temporary validation workflow deletion. Locked-base merge-base remains exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind 0, final product diff is 10 files, all `sitescore-report/**`.
 
 `NARR53-H001` is resolved by Implementer evidence only. Reviewer must independently re-review exact new HEAD before formally clearing it or issuing READY_TO_LOCK. No merge, no LOCK, no FAZ 5.4 start.
 
