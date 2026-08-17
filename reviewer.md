@@ -12,14 +12,14 @@ CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.0
 CHECKPOINT_TITLE: External API Ingress + Versioned Contract Foundation
 
-REVIEWER_STATE: NEEDS_HARDENING
-IMPLEMENTER_ACTION: HARDEN_VALIDATION_ONLY
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: c34445e59ea37b4aa430ba1ffa1b4021be52c752
 CODE_BRANCH: faz5/5-0-external-api-ingress-contract
-REVIEWED_HEAD_SHA: e83123e588a14e741962e26416df3950ce15440b
+REVIEWED_HEAD_SHA: 380ead27e8944ad7d6378f55c4948eb412c75c2c
 PR: #16
 
 FAZ_3_STATUS: FROZEN
@@ -29,318 +29,270 @@ CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-BLOCKERS: VAL-5.0-H001
-RESOLVED_BLOCKERS: NONE
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: VAL-5.0-H001
 ```
 
 ---
 
-# 1. INDEPENDENT REVIEW RESULT
+# 1. EXACT-HEAD REVIEW DECISION
 
-Reviewer independently inspected exact PR #16 head:
-
-```text
-e83123e588a14e741962e26416df3950ce15440b
-```
-
-Live GitHub facts at review time:
+Reviewer independently re-reviewed the FAZ 5.0 hardening return and approves exactly:
 
 ```text
-main = c34445e59ea37b4aa430ba1ffa1b4021be52c752
-PR #16 = OPEN
-PR base = main
-PR base SHA = c34445e59ea37b4aa430ba1ffa1b4021be52c752
-PR head branch = faz5/5-0-external-api-ingress-contract
-PR head SHA = e83123e588a14e741962e26416df3950ce15440b
-PR mergeable = true
-compare status = ahead
-merge base = c34445e59ea37b4aa430ba1ffa1b4021be52c752
-changed files = 17
-frozen-package changed files = 0
-combined status contexts = none
-pull-request workflow runs = none
+PR: #16
+base branch: main
+base SHA: c34445e59ea37b4aa430ba1ffa1b4021be52c752
+head branch: faz5/5-0-external-api-ingress-contract
+reviewed head SHA: 380ead27e8944ad7d6378f55c4948eb412c75c2c
+PR state: OPEN
+PR mergeable: TRUE
+PR merged: FALSE
 ```
 
-All 17 changed files are additions under:
+Live `main` at final review remains exactly:
+
+```text
+c34445e59ea37b4aa430ba1ffa1b4021be52c752
+```
+
+Therefore no base drift occurred after the original checkpoint contract.
+
+Reviewer acceptance is SHA-specific. Any change to PR head after this record makes this approval stale and requires a new Reviewer review before LOCK.
+
+---
+
+# 2. FINAL PRODUCT SCOPE VERIFIED
+
+Independent base-to-final comparison:
+
+```text
+c34445e59ea37b4aa430ba1ffa1b4021be52c752
+->
+380ead27e8944ad7d6378f55c4948eb412c75c2c
+```
+
+reports exactly 17 changed files, all additions under:
 
 ```text
 sitescore-api/**
 ```
 
-No frozen FAZ 3 / FAZ 4 product file is changed by the reviewed head.
+Final changed-file inventory:
+
+```text
+sitescore-api/README.md
+sitescore-api/docs/CHECKPOINT_5_0_EXTERNAL_API_INGRESS.md
+sitescore-api/pyproject.toml
+sitescore-api/src/sitescore_api/__init__.py
+sitescore-api/src/sitescore_api/app.py
+sitescore-api/src/sitescore_api/errors.py
+sitescore-api/src/sitescore_api/ingress.py
+sitescore-api/src/sitescore_api/lifecycle.py
+sitescore-api/src/sitescore_api/models.py
+sitescore-api/src/sitescore_api/routes.py
+sitescore-api/src/sitescore_api/version.py
+sitescore-api/tests/conftest.py
+sitescore-api/tests/test_architecture.py
+sitescore-api/tests/test_ingress.py
+sitescore-api/tests/test_models.py
+sitescore-api/tests/test_openapi.py
+sitescore-api/tests/test_routes.py
+```
+
+No frozen FAZ 3 / FAZ 4 package file is modified.
+No final `.github/workflows/**` file remains in the PR diff.
+No FAZ 5.1 infrastructure or later-scope product file is present.
 
 ---
 
-# 2. SOURCE REVIEW — NO VERIFIED PRODUCT-CODE BLOCKER AT THIS HEAD
+# 3. SOURCE / AUTHORITY REVIEW — CLEAN
 
-Reviewer inspected the full PR diff and did not find a verified runtime/authority defect requiring code hardening at this stage.
+The previously reviewed product source remains semantically unchanged by validation hardening.
 
-The reviewed source correctly preserves the intended 5.0 boundary:
+Reviewer previously verified and still accepts the following 5.0 authority boundary:
 
 ```text
-untrusted JSON
--> strict Pydantic discriminated request schema
--> server UUIDv4 request_id
--> distinct server UUIDv4 analysis_id candidate
--> server-factory-owned AnalysisIngressCommand
+untrusted external JSON
+-> strict Pydantic v2 discriminated request schema
+-> server-generated UUIDv4 request_id
+-> distinct server-generated UUIDv4 analysis_id candidate
+-> server-factory-owned immutable AnalysisIngressCommand
 -> exact frozen sector-specific RevenueInput construction
 -> injected lifecycle submit/retrieve port
 ```
 
-Verified source properties include:
+Accepted invariants include:
 
 ```text
-sector literals = coffee / restaurant / gym / beauty
-unknown external fields rejected
-non-US address rejected
-Census-compatible address shape enforced
-bool-as-number rejected
-numeric-string coercion rejected
-NaN / Infinity rejected
-rate/utilization/penetration ordering validated
-negative common costs rejected
-exact frozen RevenueInput dataclasses constructed
-request_id and analysis_id required distinct UUIDv4 values at ingress construction
-route layer does not import or invoke sitescore.analyze
-route layer does not import sitescore.engines
-route layer contains no scoring/financial/decision formula implementation
-default lifecycle backend contains no process-local persistence claim
-default POST -> 503 analysis_lifecycle_unavailable
-default GET -> 503 analysis_lifecycle_unavailable
-no default 202 persisted-resource claim
-validation failures normalize to SiteScore error envelope
-unexpected failures normalize to internal_server_error
-OpenAPI derives from runtime FastAPI/Pydantic models
-no 5.1+ database/queue/auth/idempotency/report/payment/n8n stack introduced
+sector vocabulary = coffee / restaurant / gym / beauty
+strict unknown-field rejection
+caller cannot supply scoring/readiness/result/provider authority
+caller cannot supply trusted/force/score_ready/fingerprint authority
+server request_id is not caller X-Request-ID authority
+request_id != analysis_id
+analysis_id is not task_id or analysis_fingerprint
+route layer does not execute sitescore.analyze.analyze
+route layer does not import individual core engines
+route layer contains no scoring/financial/decision/confidence formulas
+no manufactured terminal pipeline/application/core DTO authority
+default production 5.0 POST cannot claim durable 202 acceptance
+default production 5.0 GET cannot fabricate lifecycle state
+default lifecycle returns truthful 503 analysis_lifecycle_unavailable
+no in-memory/process-local durable-lifecycle claim
+validation and internal errors use stable SiteScore envelopes
+OpenAPI is runtime-generated from actual FastAPI/Pydantic models
+AUTHENTICATION remains explicitly not implemented in 5.0
+IDEMPOTENCY remains explicitly not implemented in 5.0
+DURABLE_ANALYSIS_LIFECYCLE remains explicitly not implemented in 5.0
+PRODUCTION_EXTERNAL_EXPOSURE remains NOT_READY
 ```
 
-This is a source-review finding only. READY_TO_LOCK still requires the validation evidence below.
+No product-code blocker is open.
 
 ---
 
-# 3. BLOCKER VAL-5.0-H001 — REQUIRED VALIDATION EVIDENCE IS INCOMPLETE
+# 4. VAL-5.0-H001 — RESOLVED BY INDEPENDENT VALIDATION EVIDENCE
 
-The original 5.0 acceptance contract requires both:
-
-```text
-[ ] new sitescore-api tests pass under the exact pinned dependency runtime
-[ ] frozen regression passes as a fresh execution
-```
-
-Implementer truthfully reported that the current execution image used:
+Reviewer independently inspected GitHub Actions run:
 
 ```text
-FastAPI 0.128.2   != required 0.140.0
-Pydantic 2.13.4   = required 2.13.4
-HTTPX 0.28.1      = required 0.28.1
-pytest 9.0.2      != required 8.4.2
+workflow: faz5-5-0-exact-pin-validation
+run ID: 32017644379
+job ID: 95350429658
+validated SHA: 4c440ef7eb97191f2b2974a58474c20a5d0c849a
+event: push
+status: completed
+conclusion: success
+Python: 3.11.15
 ```
 
-and that only:
-
-```text
-sitescore-api: 68 / 68 PASS
-sitescore-core: 86 / 86 PASS
-```
-
-were freshly executed in that environment.
-
-The historical frozen baseline:
-
-```text
-sitescore-app:         19
-sitescore-pipeline:    53
-sitescore-benchmarks: 191
-sitescore-metrics:     67
-sitescore-spatial:    180
-sitescore-providers:  418
-sitescore-data:       361
-sitescore-core:        86
-TOTAL:               1375
-```
-
-must not be reused as if freshly executed.
-
-Therefore exact-head READY_TO_LOCK is currently BLOCKED by evidence, not by a known product-code defect.
-
----
-
-# 4. AUTHORIZED HARDENING — VALIDATION ONLY
-
-Remain on the same branch and PR:
-
-```text
-branch: faz5/5-0-external-api-ingress-contract
-PR: #16
-```
-
-Do not start Checkpoint 5.1.
-Do not merge.
-Do not modify frozen product semantics.
-
-For this hardening only, Reviewer explicitly authorizes one **temporary validation workflow artifact** under:
-
-```text
-.github/workflows/
-```
-
-solely to obtain reproducible GitHub-hosted validation evidence.
-
-This temporary workflow is not a product-scope expansion and MUST be removed from the final candidate head before READY_TO_LOCK.
-
-The workflow must validate the exact PR product tree using a clean GitHub-hosted Python environment and must install/use at least the exact 5.0 pins:
-
-```text
-fastapi==0.140.0
-pydantic==2.13.4
-httpx==0.28.1
-pytest==8.4.2
-```
-
-plus the repository's exact required external dependencies for the frozen packages, including their already-pinned spatial dependencies where needed.
-
-Local repository packages may be installed in editable/local mode with dependency resolution arranged so that local `0.1.0` packages satisfy their existing internal package dependencies. Do not publish or substitute external packages for SiteScore local packages.
-
----
-
-# 5. REQUIRED VALIDATION RUN
-
-On one exact validation SHA, execute fresh tests for:
-
-```text
-sitescore-api
-sitescore-app
-sitescore-pipeline
-sitescore-benchmarks
-sitescore-metrics
-sitescore-spatial
-sitescore-providers
-sitescore-data
-sitescore-core
-```
-
-Record actual counts. Do not merely copy historical values.
-
-If the frozen suites remain unchanged, the expected arithmetic reference is:
-
-```text
-frozen historical reference = 1375
-current sitescore-api suite  = 68
-combined reference          = 1443
-```
-
-but the workflow result itself is authoritative; do not force the count to 1443 if discovery genuinely differs.
-
-The validation run must also demonstrate that the actual imported versions for the API test job are exactly:
+The run checked out the exact validated SHA and printed/verified the required dependency versions before tests:
 
 ```text
 FastAPI 0.140.0
 Pydantic 2.13.4
 HTTPX 0.28.1
 pytest 8.4.2
+Shapely 2.1.2
+pyproj 3.7.2
 ```
 
-Print these versions in the workflow log before running the API suite.
+Local SiteScore packages were installed from the checked-out repository in editable/local mode with `--no-deps`; no external SiteScore package substitution was used.
+
+Reviewer independently inspected the job log and verified fresh PASS results:
+
+```text
+sitescore-api:         68 PASS
+sitescore-app:         19 PASS
+sitescore-pipeline:    53 PASS
+sitescore-benchmarks: 191 PASS
+sitescore-metrics:     67 PASS
+sitescore-spatial:    180 PASS
+sitescore-providers:  418 PASS
+sitescore-data:       361 PASS
+sitescore-core:        86 PASS
+--------------------------------
+frozen regression:  1375 PASS
+combined total:     1443 PASS
+```
+
+The API suite emitted one Starlette/TestClient deprecation warning, but all 68 tests passed. The warning does not demonstrate a current behavioral, authority, compatibility, or acceptance failure and is not a blocker for this checkpoint.
+
+The earlier failed temporary run is superseded and is not acceptance evidence. The successful run above re-executed all nine suites from the correct package working directories.
+
+Therefore:
+
+```text
+VAL-5.0-H001: RESOLVED
+```
 
 ---
 
-# 6. FAILURE HANDLING
+# 5. VALIDATED SHA -> FINAL HEAD CLOSURE
 
-If exact-pin `sitescore-api` tests fail because of 5.0 code/API compatibility:
-
-```text
-- fix only within the already-authorized sitescore-api/** scope
-- remain on the same branch / PR
-- rerun the full validation
-```
-
-If frozen regression fails and resolving it would require changing a frozen FAZ 3 / FAZ 4 runtime-observable contract:
+Reviewer independently compared:
 
 ```text
-CONTRACT_CHANGE_REQUIRED: 1
-IMPLEMENTER_STATE: BLOCKED_FOR_REVIEW
+4c440ef7eb97191f2b2974a58474c20a5d0c849a
+->
+380ead27e8944ad7d6378f55c4948eb412c75c2c
 ```
 
-and STOP. Do not edit the frozen package to make the test green.
-
-If a selected dependency/version proves technically incompatible and cannot be resolved without changing the Reviewer-selected architecture/dependency decision:
+Result:
 
 ```text
-DESIGN_DECISION_REVIEW_REQUIRED: 1
-IMPLEMENTER_STATE: BLOCKED_FOR_REVIEW
+status: ahead
+ahead_by: 1
+changed files: 1
+.github/workflows/faz5-5-0-validation.yml: REMOVED
 ```
 
-and STOP.
+There is no product source, test, package metadata, dependency, documentation, API contract or frozen-package semantic change after the fully successful validated SHA.
+
+The temporary validation workflow is absent from the final candidate, as required.
+
+Because the only post-validation delta is deletion of validation-only infrastructure, the successful validation evidence remains applicable to the exact final product tree reviewed here.
 
 ---
 
-# 7. TEMPORARY WORKFLOW CLOSURE REQUIREMENT
+# 6. CHECKPOINT 5.0 ACCEPTANCE
 
-After obtaining a fully successful validation run:
+Final acceptance status:
 
-1. record the workflow run ID,
-2. record the job ID(s),
-3. record the exact validated commit SHA,
-4. record exact imported dependency versions,
-5. record actual per-package PASS counts,
-6. remove the temporary `.github/workflows/...` validation file,
-7. push the workflow-removal commit,
-8. verify the final PR head differs from the validated SHA only by deletion of that temporary workflow unless a reviewed code fix was also part of the validated SHA,
-9. ensure the final PR changed-file set returns to only `sitescore-api/**`,
-10. update `implementer.md` with both the validated SHA and final post-cleanup PR head SHA.
-
-The final candidate must not retain the temporary workflow.
+```text
+branch based on exact expected main SHA: PASS
+only authorized final product scope changed: PASS
+frozen FAZ 3/4 source unchanged: PASS
+sitescore-api exact dependency pins: PASS
+FastAPI /v1 route foundation: PASS
+POST /v1/analyses: PASS
+GET /v1/analyses/{analysis_id}: PASS
+strict typed external request schema: PASS
+exact four-sector vocabulary: PASS
+exact frozen RevenueInput construction: PASS
+caller authority injection prevention: PASS
+server UUIDv4 request identity: PASS
+request_id / analysis_id distinction: PASS
+no direct core analyze/engine route execution: PASS
+no manufactured canonical terminal authority: PASS
+truthful default lifecycle-unavailable behavior: PASS
+no fake in-memory persistence: PASS
+stable error envelope: PASS
+runtime OpenAPI contract: PASS
+5.0 auth/idempotency/durable-lifecycle deferral truthful: PASS
+U.S.-only address scope explicit: PASS
+documentation matches runtime semantics: PASS
+exact-pin sitescore-api tests: 68/68 PASS
+fresh frozen regression: 1375/1375 PASS
+combined validation: 1443/1443 PASS
+no FAZ 5.1/report/FAZ 6 leakage: PASS
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+BLOCKERS: NONE
+```
 
 ---
 
-# 8. REQUIRED IMPLEMENTER HANDOFF
-
-After successful validation and workflow cleanup, update `implementer.md` with at least:
+# 7. LOCK GATE
 
 ```text
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+LOCK_AUTHORITY: USER_ONLY
 CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.0
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-BASE_SHA: c34445e59ea37b4aa430ba1ffa1b4021be52c752
-CODE_BRANCH: faz5/5-0-external-api-ingress-contract
+REVIEWED_HEAD_SHA: 380ead27e8944ad7d6378f55c4948eb412c75c2c
 PR: #16
-VALIDATED_SHA: <exact validation SHA>
-CODE_HEAD_SHA: <final post-cleanup head>
-TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
+BLOCKERS: NONE
 ```
 
-Also include:
+Reviewer does not merge and does not self-LOCK.
 
-```text
-workflow run ID
-job ID(s)
-exact dependency versions printed by the run
-sitescore-api fresh PASS count
-all eight frozen package fresh PASS counts
-combined actual PASS count
-compare proof validated SHA -> final head
-final changed-file inventory
-```
+Only an explicit user `LOCK` in the Implementer chat authorizes the merge operation for this exact reviewed head.
 
-Then STOP.
-
----
-
-# 9. CURRENT REVIEW DECISION
-
-```text
-REVIEW_DECISION: NEEDS_HARDENING
-READY_TO_LOCK: NO
-LOCK_RESULT: NOT_APPLICABLE
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-BLOCKERS: VAL-5.0-H001
-```
-
-No user LOCK is requested at this stage.
-
-Implementer should perform only the validation hardening above and return to Reviewer.
+Do not start Checkpoint 5.1 before successful user-authorized LOCK/merge and subsequent Reviewer post-lock verification.
 
 STOP.
