@@ -8,13 +8,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .errors import (
-    AnalysisLifecycleUnavailable,
     ErrorBody,
     ErrorResponse,
     IngressCommandValidationError,
+    SiteScoreApiError,
 )
-from .lifecycle import AnalysisLifecycleBackend, UnavailableAnalysisLifecycleBackend
 from .routes import create_v1_router
+from .runtime import Runtime, build_runtime
 from .version import __version__
 
 
@@ -34,42 +34,57 @@ def _error_response(
     code: str,
     message: str,
     details: list[dict[str, Any]] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     request_id = _request_id(request)
     body = ErrorResponse(
         request_id=str(request_id),
         error=ErrorBody(code=code, message=message, details=details),
     )
+    response_headers = {"X-Request-ID": str(request_id)}
+    if headers:
+        response_headers.update(headers)
     return JSONResponse(
         status_code=status_code,
         content=body.model_dump(exclude_none=True),
-        headers={"X-Request-ID": str(request_id)},
+        headers=response_headers,
     )
 
 
 def _safe_validation_details(exc: RequestValidationError) -> list[dict[str, Any]]:
-    details: list[dict[str, Any]] = []
-    for item in exc.errors():
-        details.append(
-            {
-                "location": [str(part) for part in item.get("loc", ())],
-                "message": str(item.get("msg", "invalid request")),
-                "type": str(item.get("type", "validation_error")),
-            }
-        )
-    return details
+    return [
+        {
+            "location": [str(part) for part in item.get("loc", ())],
+            "message": str(item.get("msg", "invalid request")),
+            "type": str(item.get("type", "validation_error")),
+        }
+        for item in exc.errors()
+    ]
 
 
-def create_app(lifecycle_backend: AnalysisLifecycleBackend | None = None) -> FastAPI:
-    backend = lifecycle_backend or UnavailableAnalysisLifecycleBackend()
+def create_app(
+    runtime: Runtime | None = None,
+    *,
+    load_environment: bool = False,
+) -> FastAPI:
+    if runtime is None and load_environment:
+        try:
+            runtime = build_runtime()
+        except ValueError:
+            # Missing/invalid deployment configuration fails closed at request time.
+            runtime = None
+
     app = FastAPI(
         title="SiteScore API",
         version=__version__,
         description=(
-            "FAZ 5.0 external ingress foundation. The default backend does not "
-            "provide a durable analysis lifecycle."
+            "FAZ 5.1 machine-consumer API. PostgreSQL is durable lifecycle truth; "
+            "Redis/Celery are execution transport only. Current locked COMB-005 "
+            "authority is not approved, so the real canonical production path is "
+            "expected to terminate as not_score_ready. V1 cancellation and callbacks/webhooks are not supported."
         ),
     )
+    app.state.sitescore_runtime = runtime
 
     @app.middleware("http")
     async def server_request_id(request: Request, call_next):
@@ -98,13 +113,14 @@ def create_app(lifecycle_backend: AnalysisLifecycleBackend | None = None) -> Fas
             message="request validation failed",
         )
 
-    @app.exception_handler(AnalysisLifecycleUnavailable)
-    async def lifecycle_unavailable(request: Request, exc: AnalysisLifecycleUnavailable):
+    @app.exception_handler(SiteScoreApiError)
+    async def sitescore_api_error(request: Request, exc: SiteScoreApiError):
         return _error_response(
             request,
-            status_code=503,
-            code="analysis_lifecycle_unavailable",
-            message="analysis lifecycle is unavailable",
+            status_code=exc.status_code,
+            code=exc.code,
+            message=exc.public_message,
+            headers=exc.headers,
         )
 
     @app.exception_handler(404)
@@ -134,8 +150,14 @@ def create_app(lifecycle_backend: AnalysisLifecycleBackend | None = None) -> Fas
             message="an unexpected internal error occurred",
         )
 
-    app.include_router(create_v1_router(backend))
+    app.include_router(
+        create_v1_router(
+            runtime.lifecycle if runtime is not None else None,
+            database=runtime.database if runtime is not None else None,
+            settings=runtime.settings if runtime is not None else None,
+        )
+    )
     return app
 
 
-app = create_app()
+app = create_app(load_environment=True)
