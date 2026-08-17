@@ -39,33 +39,41 @@ class AnalysisWorkerService:
                 ).scalar_one()
             )
             if not locked:
+                session.rollback()
                 return "busy"
+            # The advisory lock is session-level and survives COMMIT. Close the
+            # implicit transaction opened by the lock SELECT before state work.
+            session.commit()
             try:
-                with session.begin():
-                    row = session.scalar(
-                        select(AnalysisModel)
-                        .where(AnalysisModel.analysis_id == analysis_id)
-                        .with_for_update()
-                    )
-                    if row is None:
-                        return "missing"
-                    now = self._now()
-                    if row.state in TERMINAL_STATES:
-                        return row.state
-                    if now >= row.deadline_at:
-                        row.state = "timed_out"
-                        row.updated_at = now
-                        row.finished_at = now
-                        row.failure_code = "analysis_deadline_exceeded"
-                        row.failure_message = "analysis exceeded its server-owned deadline"
-                        return "timed_out"
-                    if row.started_at is None:
-                        row.started_at = now
-                    row.state = "running"
+                row = session.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == analysis_id)
+                    .with_for_update()
+                )
+                if row is None:
+                    session.rollback()
+                    return "missing"
+                now = self._now()
+                if row.state in TERMINAL_STATES:
+                    state = row.state
+                    session.rollback()
+                    return state
+                if now >= row.deadline_at:
+                    row.state = "timed_out"
                     row.updated_at = now
-                    payload = dict(row.request_payload)
-                    creation_request_id = row.creation_request_id
-                    durable_analysis_id = row.analysis_id
+                    row.finished_at = now
+                    row.failure_code = "analysis_deadline_exceeded"
+                    row.failure_message = "analysis exceeded its server-owned deadline"
+                    session.commit()
+                    return "timed_out"
+                if row.started_at is None:
+                    row.started_at = now
+                row.state = "running"
+                row.updated_at = now
+                payload = dict(row.request_payload)
+                creation_request_id = row.creation_request_id
+                durable_analysis_id = row.analysis_id
+                session.commit()
 
                 request_model = _REQUEST_ADAPTER.validate_python(payload)
                 command = build_analysis_ingress_command(
@@ -75,42 +83,44 @@ class AnalysisWorkerService:
                 )
                 outcome = self.executor.execute(command, now=self._now())
 
-                with session.begin():
-                    row = session.scalar(
-                        select(AnalysisModel)
-                        .where(AnalysisModel.analysis_id == analysis_id)
-                        .with_for_update()
-                    )
-                    if row is None:
-                        return "missing"
-                    now = self._now()
-                    if outcome.not_score_ready is not None:
-                        persist_not_score_ready(session, row, outcome.not_score_ready, now=now)
-                        return row.state
+                row = session.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == analysis_id)
+                    .with_for_update()
+                )
+                if row is None:
+                    session.rollback()
+                    return "missing"
+                now = self._now()
+                if outcome.not_score_ready is not None:
+                    persist_not_score_ready(session, row, outcome.not_score_ready, now=now)
+                else:
                     assert outcome.completed is not None
                     persist_completed(session, row, outcome.completed, now=now)
-                    return row.state
+                state = row.state
+                session.commit()
+                return state
             except Exception:
                 session.rollback()
-                with session.begin():
-                    row = session.scalar(
-                        select(AnalysisModel)
-                        .where(AnalysisModel.analysis_id == analysis_id)
-                        .with_for_update()
-                    )
-                    if row is not None and row.state not in TERMINAL_STATES:
-                        now = self._now()
-                        if now >= row.deadline_at:
-                            row.state = "timed_out"
-                            row.failure_code = "analysis_deadline_exceeded"
-                            row.failure_message = "analysis exceeded its server-owned deadline"
-                        else:
-                            row.state = "failed"
-                            row.failure_code = "analysis_execution_failed"
-                            row.failure_message = "analysis execution failed"
-                        row.finished_at = now
-                        row.updated_at = now
-                return "failed"
+                row = session.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == analysis_id)
+                    .with_for_update()
+                )
+                if row is not None and row.state not in TERMINAL_STATES:
+                    now = self._now()
+                    if now >= row.deadline_at:
+                        row.state = "timed_out"
+                        row.failure_code = "analysis_deadline_exceeded"
+                        row.failure_message = "analysis exceeded its server-owned deadline"
+                    else:
+                        row.state = "failed"
+                        row.failure_code = "analysis_execution_failed"
+                        row.failure_message = "analysis execution failed"
+                    row.finished_at = now
+                    row.updated_at = now
+                session.commit()
+                return row.state if row is not None else "failed"
             finally:
                 try:
                     session.execute(
