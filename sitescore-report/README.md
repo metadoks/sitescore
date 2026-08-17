@@ -1,8 +1,8 @@
 # sitescore-report
 
-`sitescore-report==0.1.0` is the FAZ 5.2 canonical report-fact and report-domain package for SiteScore AI.
+`sitescore-report==0.2.0` extends the locked FAZ 5.2 canonical report domain with a truth-preserving narrative authority boundary.
 
-It is intentionally a **truth-preserving domain projection only**.
+Locked analytical authority remains:
 
 ```text
 factory-owned ApplicationAnalysisResult
@@ -10,32 +10,57 @@ factory-owned ApplicationAnalysisResult
 -> ReportDomainModel
 ```
 
-Production report authority begins only from the exact frozen application result and calls `require_canonical_application_analysis_result(...)` before projection. A `CanonicalAnalysisResult` by itself, `to_dict()` JSON, an analysis fingerprint, detached input pieces, or caller-provided category/financial/decision/confidence values cannot grant report authority.
+FAZ 5.3 adds only:
 
-The package preserves, without reweighting or presentation conversion:
+```text
+canonical ReportDomainModel
+-> ApprovedNarrativeContext
+-> untrusted OpenAI Responses API draft OR deterministic fallback draft
+-> strict schema validation
+-> deterministic semantic validation
+-> ValidatedReportNarrative
+```
 
-- report/schema/projection provenance and exact core model versions;
-- source `analysis_fingerprint` as provenance metadata only;
-- sector and exact category scores;
-- common financial assumptions and all four sector-specific revenue-input variants;
-- canonical location result;
-- canonical financial result;
-- canonical decision and ordered risk flags;
-- canonical confidence result;
-- geographic level, data age, partial data-coverage mapping, and partial input-quality mapping.
+The LLM is a narrator/language layer only. It is not a scoring engine, financial calculator, decision authority, confidence authority, benchmark authority, or readiness authority.
 
-`None` remains `None`; missing mapping keys remain missing; floats are not presentation-rounded; rates are not rescaled; strings are not customer-friendly relabeled. `to_dict()` returns a deep-owned JSON-safe view and is not authority.
+## Provider boundary
+
+The primary production adapter uses the OpenAI Responses API with strict Pydantic structured output. Runtime package pins are:
+
+```text
+openai==3.2.0
+pydantic==2.13.4
+```
+
+The model ID is deployment configuration (`SITESCORE_NARRATIVE_MODEL_ID`) and is generation provenance only. API credentials remain OpenAI client/environment concerns and are never copied into report facts, narrative context, narrative provenance, or prompt payloads. The request supplies no tools.
+
+Provider output is always untrusted until deterministic local validation succeeds.
+
+## Local semantic guardrails
+
+The validator requires exact echo of canonical decision/structural/financial/confidence/stress/fingerprint anchors; every insight/recommendation must bind to an available approved evidence key. Unknown or missing evidence is rejected.
+
+The narrative layer rejects obvious contradictions against canonical decision, financial, stress, rent-burden, confidence, and missingness facts. Free-form provider prose may not introduce numeric/currency/percentage literals and may not claim empirical validation, guaranteed outcomes, certain profitability, or risk-free operation.
+
+Provider/schema/semantic failure activates a deterministic versioned fallback built only from exact canonical categorical/status facts. Invalid canonical report-domain authority is a hard failure and is never converted into fallback success.
 
 ## Current locked product limitation
 
-FAZ 5.1 remains authoritative: frozen COMB-005 is not approved, so the current real production acquisition/lifecycle path terminates `not_score_ready`. FAZ 5.2 does not reinterpret that state as a scored report and does not manufacture a `completed` result. `CanonicalReportFacts` exists only for a genuine scored, factory-owned `ApplicationAnalysisResult`.
+Frozen COMB-005 remains not approved, so the real production analysis lifecycle remains:
 
-## Explicitly out of scope
+```text
+queued -> running -> not_score_ready
+```
 
-FAZ 5.2 does not implement narrative generation, recommendations, HTML, charts, PDF rendering, report persistence, report IDs, report API routes, database migrations, S3/object storage, payments, n8n, email, or FAZ 6 behavior.
+FAZ 5.3 does not manufacture a scored report or narrative from that path. Positive scored narrative fixtures exist only in tests through the same upstream SCORE_READY test boundary used by the locked FAZ 5.2 tests.
 
-The durable server `analysis_id <-> report/artifact` association belongs to the later report-resource/artifact checkpoint; 5.2 therefore does not accept or emit `analysis_id` or `report_id` as report-fact authority.
+## Still out of scope
 
-See `docs/CHECKPOINT_5_2_CANONICAL_REPORT_DOMAIN.md` for the complete checkpoint contract.
+No HTML/CSS template, chart, PDF rendering, object storage, report resource, `report_id`, `analysis_id <-> report` binding, API route, database migration, payment, n8n, or email behavior is introduced here.
+
+See:
+
+- `docs/CHECKPOINT_5_2_CANONICAL_REPORT_DOMAIN.md`
+- `docs/CHECKPOINT_5_3_NARRATIVE_INSIGHT_AUTHORITY.md`
 
 > Mathematically validated scoring engine; empirical validation pending.
