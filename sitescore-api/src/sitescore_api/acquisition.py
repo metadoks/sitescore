@@ -386,6 +386,14 @@ def _select_acs_geography(location: ResolvedLocation, manifest: ACSDatasetManife
     raise CanonicalAcquisitionError("resolved Census geography is not compatible with the configured ACS manifest")
 
 
+def _select_pedestrian_catchment(pedestrian_result, config: PedestrianAcquisitionConfig):
+    aligned = tuple(zip(config.budget_policy.scales, pedestrian_result.catchments, strict=True))
+    for scale, catchment in aligned:
+        if scale.scale_id == config.analysis_scale_id:
+            return catchment
+    raise CanonicalAcquisitionError("analysis_scale_id is not aligned with the frozen pedestrian result")
+
+
 class CanonicalProviderEvidenceSource:
     """Server-owned provider orchestration. No caller-supplied frozen evidence enters here."""
 
@@ -403,10 +411,9 @@ class CanonicalProviderEvidenceSource:
         location, census_sources = self._acquire_location(command, now=now)
         demographics, acs_sources, geography_ref = self._acquire_demographics(location, now=now)
         pedestrian_result, pedestrian_sources = self._acquire_pedestrian(location, now=now)
-        selected_catchment = next(
-            catchment
-            for catchment in pedestrian_result.catchments
-            if catchment.scale_id == self._deployment.pedestrian.analysis_scale_id
+        selected_catchment = _select_pedestrian_catchment(
+            pedestrian_result,
+            self._deployment.pedestrian,
         )
         isochrone = next(
             snapshot
@@ -775,10 +782,9 @@ class CanonicalProviderEvidenceSource:
             policy=cfg.persistence_policy,
             source_reference=cfg.source_reference,
         )
-        selected_catchment = next(
-            catchment
-            for catchment in pedestrian_result.catchments
-            if catchment.scale_id == self._deployment.pedestrian.analysis_scale_id
+        selected_catchment = _select_pedestrian_catchment(
+            pedestrian_result,
+            self._deployment.pedestrian,
         )
         reachability_input = self._deployment.artifact_loader.load_transit_reachability(
             resolved_location=location,
