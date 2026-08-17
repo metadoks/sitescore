@@ -60,6 +60,26 @@ def test_worker_payload_and_execution_lock_are_internal_and_postgresql_backed():
     assert "redis" not in worker.lower()
 
 
+def test_production_runtime_cannot_load_post_provider_execution_evidence_plugin():
+    runtime = (SRC_ROOT / "runtime.py").read_text(encoding="utf-8")
+    acquisition = (SRC_ROOT / "acquisition.py").read_text(encoding="utf-8")
+    assert "SITESCORE_EVIDENCE_SOURCE_FACTORY" not in runtime
+    assert "SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY" in runtime
+    assert "type(deployment) is not CanonicalAcquisitionDeployment" in runtime
+    assert "CanonicalProviderEvidenceSource(deployment)" in runtime
+    for required in (
+        "CensusGeocoderClient",
+        "ACSClient",
+        "PedestrianIsochroneClient",
+        "parse_overture_partition",
+        "parse_gtfs_zip",
+        "BenchmarkArtifactLoader",
+    ):
+        assert required in acquisition
+    assert "AnalysisRequest" not in acquisition
+    assert "request_payload" not in acquisition
+
+
 def test_dependency_contract_is_exact():
     data = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert data["project"]["version"] == "0.2.0"
@@ -73,6 +93,7 @@ def test_dependency_contract_is_exact():
         "redis==7.4.1",
         "sitescore-core==0.1.0",
         "sitescore-data==0.1.0",
+        "sitescore-providers==0.1.0",
         "sitescore-metrics==0.1.0",
         "sitescore-benchmarks==0.1.0",
         "sitescore-pipeline==0.1.0",
