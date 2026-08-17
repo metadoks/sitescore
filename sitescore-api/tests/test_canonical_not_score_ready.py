@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import TypeAdapter
 from shapely.geometry import Polygon
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 import sitescore_api.execution as execution_module
 from sitescore.config.quality_levels import CoverageLevel, GeographicLevel, InputQuality
@@ -35,7 +35,6 @@ from sitescore_data.enums import (
     GeographyType,
     PipelineStatus,
     ScoreEligibility,
-    ScoringReadinessReason,
     ValidityState,
 )
 from sitescore_data.schemas.common import MetricValue
@@ -43,6 +42,7 @@ from sitescore_data.schemas.competition import CompetitionSnapshot
 from sitescore_data.schemas.demographics import AgeCohortPopulation, DemographicSnapshot
 from sitescore_data.schemas.geography import GeographyRef, ResolvedLocation
 from sitescore_data.schemas.pedestrian import IsochroneSnapshot
+from sitescore_data.schemas.readiness import ScoringReadinessReason
 from sitescore_data.schemas.transit import TransitObservation, TransitServiceWindow, TransitSnapshot
 from sitescore_spatial import (
     GeographyIdentity,
@@ -69,17 +69,16 @@ DATABASE_URL = os.getenv("SITESCORE_DATABASE_URL")
 
 def _available(value: float, unit: str, source_ref: str, method: str) -> MetricValue:
     return MetricValue(
-        value=value,
-        unit=unit,
-        availability=AvailabilityState.AVAILABLE,
-        data_quality=DataQualityState.FULL,
-        score_eligibility=ScoreEligibility.ELIGIBLE,
-        calibration_state=CalibrationState.CALIBRATED,
-        is_estimate=False,
-        is_proxy=False,
-        source_refs=(source_ref,),
-        method_version=method,
-        reason_codes=(),
+        value, unit,
+        AvailabilityState.AVAILABLE,
+        DataQualityState.FULL,
+        ScoreEligibility.ELIGIBLE,
+        CalibrationState.CALIBRATED,
+        False,
+        False,
+        (source_ref,),
+        method,
+        (),
     )
 
 
@@ -116,22 +115,15 @@ def _empty_public_benchmark_frame() -> CommercialFrame:
         generated_at=NOW,
         raw_artifact_ref="artifact:api-test-boundary",
     )
-    projection = EqualAreaProjectionPolicy(
-        "api-test-equal-area",
-        "1.0",
-        "UNRESOLVED",
-        ResolutionState.UNRESOLVED,
-    )
-    resolution = CellResolutionPolicy(
-        "api-test-cell-resolution",
-        "1.0",
-        ResolutionState.UNRESOLVED,
-    )
     lattice = LatticePolicy(
         "api-test-lattice",
         "1.0",
-        projection,
-        resolution,
+        EqualAreaProjectionPolicy(
+            "api-test-equal-area", "1.0", "UNRESOLVED", ResolutionState.UNRESOLVED
+        ),
+        CellResolutionPolicy(
+            "api-test-cell-resolution", "1.0", ResolutionState.UNRESOLVED
+        ),
         CellShape.SQUARE,
         None,
         None,
@@ -142,9 +134,7 @@ def _empty_public_benchmark_frame() -> CommercialFrame:
         engine,
     )
     membership = FrameBoundaryMembershipPolicy(
-        "api-test-membership",
-        "1.0",
-        ResolutionState.UNRESOLVED,
+        "api-test-membership", "1.0", ResolutionState.UNRESOLVED
     )
     evidence_policy = CommercialEvidencePolicy(
         "api-test-commercial-evidence",
@@ -153,9 +143,7 @@ def _empty_public_benchmark_frame() -> CommercialFrame:
         ("authoritative_noncommercial",),
     )
     eligibility = CommercialEligibilityPolicy(
-        "api-test-commercial-eligibility",
-        "1.0",
-        evidence_policy,
+        "api-test-commercial-eligibility", "1.0", evidence_policy
     )
     return CommercialFrame(
         geography,
@@ -172,19 +160,18 @@ def _empty_public_benchmark_frame() -> CommercialFrame:
 
 def _benchmark_distributions():
     frame = _empty_public_benchmark_frame()
-    keys = (
-        "walkable_population",
-        "target_population_density",
-        "competition_pressure",
-        "walkable_reach_area_km2",
-        "transit_service_departure_equivalents_per_hour",
-        "household_income",
-    )
     return {
         key: build_benchmark_distribution(
             build_benchmark_measurement_set(frame, (), metric_key=key)
         )
-        for key in keys
+        for key in (
+            "walkable_population",
+            "target_population_density",
+            "competition_pressure",
+            "walkable_reach_area_km2",
+            "transit_service_departure_equivalents_per_hour",
+            "household_income",
+        )
     }
 
 
@@ -197,10 +184,9 @@ def _evidence() -> ExecutionEvidence:
         "source:api-geography",
         "2025",
     )
-    population = 1000
     demographics = DemographicSnapshot(
         geography,
-        _available(population, "people", "source:api-pop", "api-pop/1"),
+        _available(1000, "people", "source:api-pop", "api-pop/1"),
         (AgeCohortPopulation("age_18_24", 18, 25, 200, 0.2),),
         _available(80000, "usd_per_household", "source:api-income", "api-income/1"),
         ("source:api-income", "source:api-pop"),
@@ -237,13 +223,17 @@ def _evidence() -> ExecutionEvidence:
         "typical-week-v1",
         "gtfs-calendar-v1",
     )
-    observations = tuple(TransitObservation(hour, 2, 0.5, 2.5) for hour in range(168))
     transit = TransitSnapshot(
         "api_transit",
         (),
         window,
-        observations,
-        _available(2.5, "departure_equivalents_per_hour", "source:api-gtfs", "api-transit/1"),
+        tuple(TransitObservation(hour, 2, 0.5, 2.5) for hour in range(168)),
+        _available(
+            2.5,
+            "departure_equivalents_per_hour",
+            "source:api-gtfs",
+            "api-transit/1",
+        ),
         None,
         "api-transit-bundle-v1",
         ("source:api-gtfs",),
@@ -271,18 +261,8 @@ def _evidence() -> ExecutionEvidence:
         source_metadata=(),
         geographic_level=GeographicLevel.BLOCK_GROUP,
         data_age_years=1,
-        data_coverage={
-            "demand": CoverageLevel.FULL,
-            "competition": CoverageLevel.FULL,
-            "accessibility": CoverageLevel.FULL,
-            "economics": CoverageLevel.FULL,
-        },
-        input_qualities={
-            "rent": InputQuality.USER,
-            "price": InputQuality.USER,
-            "capacity": InputQuality.USER,
-            "schedule": InputQuality.USER,
-        },
+        data_coverage={name: CoverageLevel.FULL for name in ("demand", "competition", "accessibility", "economics")},
+        input_qualities={name: InputQuality.USER for name in ("rent", "price", "capacity", "schedule")},
     )
 
 
@@ -299,22 +279,26 @@ class NoopDispatcher:
         return None
 
 
+def _executor_with_core_spy(monkeypatch):
+    calls = {"count": 0}
+
+    def forbidden_core_analyze(_value):
+        calls["count"] += 1
+        raise AssertionError("core analyze must not run for canonical NOT_SCORE_READY")
+
+    monkeypatch.setattr(execution_module, "analyze_application_core_input", forbidden_core_analyze)
+    return CanonicalAnalysisExecutor(StaticEvidenceSource(_evidence())), calls
+
+
 def test_real_frozen_public_chain_propagates_comb005_to_not_score_ready(monkeypatch, valid_payloads):
     road_parking = evaluate_road_parking_composite()
     assert road_parking.state is RoadParkingCompositeState.POLICY_NOT_APPROVED
     assert road_parking.score is None
 
-    analyze_calls = 0
-
-    def forbidden_core_analyze(_value):
-        nonlocal analyze_calls
-        analyze_calls += 1
-        raise AssertionError("core analyze must not run for canonical NOT_SCORE_READY")
-
-    monkeypatch.setattr(execution_module, "analyze_application_core_input", forbidden_core_analyze)
+    executor, calls = _executor_with_core_spy(monkeypatch)
     model = ADAPTER.validate_python(valid_payloads["coffee"])
     command = build_analysis_ingress_command(model, request_id=uuid4(), analysis_id=uuid4())
-    result = CanonicalAnalysisExecutor(StaticEvidenceSource(_evidence())).execute(command, now=NOW)
+    result = executor.execute(command, now=NOW)
 
     assert result.completed is None
     assert result.not_score_ready is not None
@@ -327,7 +311,7 @@ def test_real_frozen_public_chain_propagates_comb005_to_not_score_ready(monkeypa
     assert pipeline.scoring_readiness.is_score_ready is False
     assert ScoringReadinessReason.ROAD_PARKING_COMPOSITE_UNAVAILABLE in pipeline.scoring_readiness.reason_codes
     assert evaluate_application_scoring_gate(pipeline).state is ApplicationScoringGateState.NOT_SCORE_READY
-    assert analyze_calls == 0
+    assert calls["count"] == 0
     assert result.not_score_ready.readiness_projection["is_score_ready"] is False
 
 
@@ -337,16 +321,7 @@ def test_worker_persists_real_canonical_not_score_ready_without_scored_result(mo
     database = Database(DATABASE_URL)
     with database.engine.begin() as conn:
         conn.execute(text("TRUNCATE dispatch_outbox, analyses, service_api_keys, consumers CASCADE"))
-
-    analyze_calls = 0
-
-    def forbidden_core_analyze(_value):
-        nonlocal analyze_calls
-        analyze_calls += 1
-        raise AssertionError("core analyze must not run for canonical NOT_SCORE_READY")
-
-    monkeypatch.setattr(execution_module, "analyze_application_core_input", forbidden_core_analyze)
-    executor = CanonicalAnalysisExecutor(StaticEvidenceSource(_evidence()))
+    executor, calls = _executor_with_core_spy(monkeypatch)
     worker = AnalysisWorkerService(database, executor)
     backend = PostgresAnalysisLifecycleBackend(database, NoopDispatcher(), deadline_seconds=900)
     consumer_id = uuid4()
@@ -363,7 +338,12 @@ def test_worker_persists_real_canonical_not_score_ready_without_scored_result(mo
 
     model = ADAPTER.validate_python(valid_payloads["coffee"])
     command = build_analysis_ingress_command(model, request_id=uuid4(), analysis_id=uuid4())
-    accepted = backend.submit(command, model, consumer_id=consumer_id, idempotency_key="canonical-not-ready")
+    accepted = backend.submit(
+        command,
+        model,
+        consumer_id=consumer_id,
+        idempotency_key="canonical-not-ready",
+    )
     assert accepted.state == "queued"
     assert worker.execute_analysis(accepted.analysis_id) == "not_score_ready"
 
@@ -375,4 +355,4 @@ def test_worker_persists_real_canonical_not_score_ready_without_scored_result(mo
         assert row.readiness_body is not None
         assert row.readiness_body["is_score_ready"] is False
         assert "road_parking_composite_unavailable" in row.readiness_body["readiness_reason_codes"]
-    assert analyze_calls == 0
+    assert calls["count"] == 0
