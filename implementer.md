@@ -9,152 +9,158 @@ COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: IMPLEMENTER CHAT
 
 CURRENT_PHASE: FAZ 5
-CURRENT_CHECKPOINT: 5.0
-CHECKPOINT_TITLE: External API Ingress + Versioned Contract Foundation
+CURRENT_CHECKPOINT: 5.1
+CHECKPOINT_TITLE: API Consumer Reliability + Execution Lifecycle
 
-IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_POST_LOCK_VERIFY
+IMPLEMENTER_STATE: BLOCKED_FOR_REVIEW
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: YES
+USER_LOCK_AUTHORIZED: NO
 
-EXPECTED_PRE_LOCK_MAIN_SHA: c34445e59ea37b4aa430ba1ffa1b4021be52c752
-CODE_BRANCH: faz5/5-0-external-api-ingress-contract
-REVIEWED_HEAD_SHA: 380ead27e8944ad7d6378f55c4948eb412c75c2c
-PR: #16
-PR_STATE: CLOSED
-PR_MERGED: TRUE
-MERGE_COMMIT_SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
-VERIFIED_POST_LOCK_MAIN_SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+EXPECTED_BASE_BRANCH: main
+EXPECTED_BASE_SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+CODE_BRANCH: faz5/5-1-api-consumer-lifecycle
+CODE_HEAD_SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+PR: NONE
 
-REVIEWER_STATE_SEEN: READY_TO_LOCK
-IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
-CONTRACT_CHANGE_REQUIRED: 0
+REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
+IMPLEMENTER_ACTION_SEEN: IMPLEMENT
+CONTRACT_CHANGE_REQUIRED: 1
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-BLOCKERS: NONE
-RESOLVED_BLOCKERS: VAL-5.0-H001
-
-VALIDATED_SHA: 4c440ef7eb97191f2b2974a58474c20a5d0c849a
-VALIDATION_RUN_ID: 32017644379
-VALIDATION_JOB_ID: 95350429658
-VALIDATION_CONCLUSION: SUCCESS
-VALIDATION_TOTAL: 1443 PASS
+BLOCKERS_REPORTED_BY_IMPLEMENTER: F51-CANONICAL-SCORED-PATH-H001
+PRODUCT_CHANGES_MADE: NONE
+BRANCH_DELTA_FROM_EXPECTED_BASE: IDENTICAL
 ```
 
-## 1. LOCK gate verification
+## 1. Blocking source finding
 
-The user issued an explicit literal `LOCK` command in the Implementer chat.
+Implementer began FAZ 5.1 by re-reading the Reviewer contract and the actual frozen public source. Before writing product code, the required production canonical executor path was checked against the locked FAZ 3/4 authority chain.
 
-Immediately before merge, Implementer re-fetched authoritative GitHub state and verified all required gates:
+The frozen road/parking composite contract makes a production score-ready canonical pipeline constructively impossible in the current locked baseline.
+
+Authoritative source facts:
 
 ```text
-REVIEWER_STATE == READY_TO_LOCK: PASS
-IMPLEMENTER_ACTION == LOCK_IF_USER_AUTHORIZED: PASS
-LOCK_AUTHORITY == USER_ONLY: PASS
-REVIEWED_HEAD_SHA == current PR head: PASS
-PR #16 OPEN before merge: PASS
-PR base == main: PASS
-current main == Reviewer expected base: PASS
-CONTRACT_CHANGE_REQUIRED == 0: PASS
-DESIGN_DECISION_REVIEW_REQUIRED == 0: PASS
-BLOCKERS == NONE: PASS
+sitescore-benchmarks/composite.py
+
+RoadParkingComponentArtifact:
+- production caller cannot assert AVAILABLE
+- production caller cannot attach numeric score
+- no canonical approved road/parking component-normalization path exists
+
+RoadParkingCompositePolicy:
+- caller-created APPROVED policy is forbidden
+- current production policy must remain NOT_APPROVED
+- unapproved policy has no weights
+- composition_method remains UNRESOLVED
+
+COMB005_V1_POLICY.approval_state = NOT_APPROVED
+APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1 = ()
+
+RoadParkingCompositeResult.state = POLICY_NOT_APPROVED
+RoadParkingCompositeResult.reason_codes = ("comb005_policy_not_approved",)
+RoadParkingCompositeResult.score = None
+
+evaluate_road_parking_composite()
+-> canonical production POLICY_NOT_APPROVED / score=None
 ```
 
-Authoritative pre-lock values:
+The frozen pipeline then maps any non-AVAILABLE road/parking composite result to a nonnumeric, ineligible `road_parking_access_score`. The canonical assembly marks every normalized feature, including `road_parking_access_score`, required.
+
+The frozen pipeline's own canonical regression test explicitly proves the resulting production truth:
 
 ```text
-Reviewer-approved head: 380ead27e8944ad7d6378f55c4948eb412c75c2c
-Actual PR head:        380ead27e8944ad7d6378f55c4948eb412c75c2c
-Expected main/base:    c34445e59ea37b4aa430ba1ffa1b4021be52c752
-Actual pre-lock main:  c34445e59ea37b4aa430ba1ffa1b4021be52c752
+test_current_canonical_assembly_is_not_score_ready
+
+canonical_readiness.result.is_score_ready is False
+ScoringReadinessReason.ROAD_PARKING_COMPOSITE_UNAVAILABLE
+    in canonical_readiness.result.reason_codes
 ```
 
-No stale-review or base-drift condition existed.
-
-## 2. User-authorized merge
-
-PR #16 was merged using the exact reviewed head guard:
+Therefore the current real canonical chain cannot produce:
 
 ```text
-expected_head_sha: 380ead27e8944ad7d6378f55c4948eb412c75c2c
-merge method: merge
-result: merged=true
-merge SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+canonical ReadinessEvaluation(is_score_ready=True)
+-> canonical SCORE_READY RealDataPipelineResult
+-> ApplicationScoringGateState.ELIGIBLE
+-> factory-owned ApplicationScoringInput
+-> category aggregation
+-> factory-owned ApplicationCoreAnalysisInput
+-> exact frozen core analyze
+-> completed canonical result
 ```
 
-Merge commit message records the user-authorized FAZ 5.0 LOCK, exact reviewed head, resolved `VAL-5.0-H001`, zero contract/design escalation flags, and no blockers.
+without changing frozen runtime semantics or replacing internal canonical authority with a forged/test-only object.
 
-## 3. Post-lock verification
+## 2. Why this blocks the current 5.1 contract
 
-After merge, Implementer independently re-fetched GitHub state.
-
-PR #16:
+Reviewer 5.1 requires all of the following simultaneously:
 
 ```text
-state: CLOSED
-merged: TRUE
-merged_at: 2026-08-17T10:23:24Z
-head_sha: 380ead27e8944ad7d6378f55c4948eb412c75c2c
-merge_commit_sha: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+worker composes the real frozen public authority chain
+no fabricated RealDataPipelineResult / ApplicationScoringInput /
+  ApplicationCoreAnalysisInput / CanonicalAnalysisResult
+external test fakes may exist only at provider/HTTP boundaries
+at least one scored integration path must exercise the exact frozen
+  application/core chain
+eligible path must invoke frozen analysis through frozen application authority
+CONTRACT_CHANGE_REQUIRED must remain 0 for acceptance
 ```
 
-Live `main`:
+These requirements cannot all be satisfied against the locked current source.
+
+A provider/HTTP fake cannot solve the blocker because the road/parking prohibition is downstream canonical benchmark/pipeline authority, not external transport data. A caller or test cannot legally convert the frozen production COMB-005 result into AVAILABLE merely by supplying different provider bytes.
+
+Monkeypatching the frozen terminal factory, constructing a synthetic AVAILABLE `RoadParkingCompositeResult`, forging `ReadinessEvaluation`, or manufacturing a SCORE_READY `RealDataPipelineResult` would violate the Reviewer prohibition on replacing internal canonical application authority with fabricated terminal DTOs.
+
+The frozen app gate also confirms that non-eligible canonical terminal truth cannot grant scoring authority: `build_application_scoring_input()` raises `ApplicationScoringBlocked` unless the canonical application pipeline binding is ELIGIBLE.
+
+## 3. Contract rule triggered
+
+The Reviewer contract explicitly states that if the actual frozen public APIs make correct production orchestration impossible without changing frozen semantics or relying on private unsupported internals, Implementer must set:
 
 ```text
-92d00cda34d337ce5c4e172d5184c9e3f1f55b11
+CONTRACT_CHANGE_REQUIRED: 1
+IMPLEMENTER_STATE: BLOCKED_FOR_REVIEW
 ```
 
-The merge commit parents are exactly:
+and STOP instead of fabricating a successful executor.
+
+That condition is now met.
+
+## 4. Repository state
+
+The requested branch was created exactly from the post-5.0 locked base:
 
 ```text
-parent 1: c34445e59ea37b4aa430ba1ffa1b4021be52c752
-parent 2: 380ead27e8944ad7d6378f55c4948eb412c75c2c
+branch: faz5/5-1-api-consumer-lifecycle
+base/head: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
 ```
 
-Therefore the exact Reviewer-approved FAZ 5.0 candidate was merged on top of the exact expected frozen base.
-
-## 4. Validation evidence retained
-
-Reviewer-approved validation evidence remains:
+GitHub compare reports:
 
 ```text
-GitHub Actions run: 32017644379
-job: 95350429658
-validated SHA: 4c440ef7eb97191f2b2974a58474c20a5d0c849a
-conclusion: SUCCESS
-sitescore-api: 68 PASS
-fresh frozen regression: 1375 PASS
-combined total: 1443 PASS
+status: identical
+ahead_by: 0
+behind_by: 0
+commits: 0
+changed files: 0
 ```
 
-The only validated-SHA -> reviewed-final-head delta was deletion of the temporary validation-only workflow.
+No `sitescore-api` product code was changed.
+No frozen FAZ 3/4 file was changed.
+No migration, dependency, workflow, PR, queue, DB, auth, or lifecycle implementation was created after the blocker was established.
 
-## 5. Locked checkpoint truth
+## 5. Reviewer decision required
 
-FAZ 5.0 is now merged into `main` with the following product scope:
+Reviewer must resolve the contradiction before implementation can continue. The decision must preserve one coherent authority model, for example by choosing whether:
 
-- `sitescore-api==0.1.0`
-- FastAPI/Pydantic `/v1` external ingress boundary
-- `POST /v1/analyses`
-- `GET /v1/analyses/{analysis_id}`
-- strict four-sector external request models
-- server-owned request and analysis identities
-- exact frozen sector-specific `RevenueInput` construction
-- no caller authority injection
-- truthful lifecycle-unavailable behavior until 5.1
-- stable error envelope and runtime OpenAPI
+1. the current 5.1 acceptance contract should permit the real production executor to terminate canonically as `not_score_ready` while the frozen COMB-005 authority remains unapproved, deferring a real `completed` production path until a later approved frozen road/parking authority exists; or
+2. the frozen upstream road/parking/benchmark authority must be formally reopened/reviewed to create an approved canonical production path before 5.1 can require a true scored integration path.
 
-No FAZ 5.1 implementation was started as part of LOCK.
+Implementer does not choose or silently perform either contract change.
 
 Canonical product validity statement remains:
 
 > Mathematically validated scoring engine; empirical validation pending.
 
-## 6. Next authority
-
-Implementer stops after LOCK and post-merge verification.
-
-Reviewer must independently perform post-lock verification on the new `main` SHA before authorizing Checkpoint 5.1.
-
-```text
-NEXT_REQUIRED_ACTION: REVIEWER_POST_LOCK_VERIFY
-DO_NOT_START_5_1_YET: TRUE
-```
+STOP. Do not implement further 5.1 work until Reviewer updates `reviewer.md`.
