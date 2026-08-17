@@ -94,6 +94,8 @@ Stable 5.0 concepts include:
 - `request_validation_failed` -> 422
 - `analysis_lifecycle_unavailable` -> 503
 - `internal_server_error` -> 500
+- `route_not_found` -> 404 for unknown routes
+- `method_not_allowed` -> 405 for unsupported methods
 
 Tracebacks, exception reprs, credentials, secrets, internal paths and raw authority objects are not returned.
 
