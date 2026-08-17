@@ -3,7 +3,7 @@ from __future__ import annotations
 from test_report_projection_authority import _run
 
 
-def test_four_sector_responses_adapter_and_validated_authority():
+def test_four_sector_responses_adapter_uses_closed_claim_selection_only():
     _run(r'''
 import json
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ from sitescore_report import (
     NARRATIVE_INSTRUCTIONS,
     NARRATIVE_PROMPT_VERSION,
     NARRATIVE_SCHEMA_VERSION,
+    NarrativeClaimId,
     NarrativeDraft,
     NarrativeDraftAnchors,
     NarrativePointDraft,
@@ -21,32 +22,47 @@ from sitescore_report import (
     require_validated_report_narrative,
 )
 
+
+def selection(payload, claim_id):
+    approved = payload["approved_claims"][claim_id.value]
+    return NarrativePointDraft(
+        claim_id=claim_id,
+        evidence_keys=list(approved["evidence_keys"]),
+    )
+
+
 class FakeResponses:
     def __init__(self):
         self.calls = []
+
     def parse(self, **kwargs):
         self.calls.append(kwargs)
         payload = json.loads(kwargs["input"])
-        anchors = payload["canonical_anchors"]
-        draft = NarrativeDraft(
-            canonical_anchors=NarrativeDraftAnchors(**anchors),
-            executive_summary="The canonical report supports this narrative without changing the recorded decision.",
-            strengths=[NarrativePointDraft(
-                text="The canonical structural band supports the recorded location assessment.",
-                evidence_keys=["decision.structural_band"],
-            )],
-            risks=[],
-            recommendations=[NarrativePointDraft(
-                text="Review the canonical decision and supporting evidence before acting.",
-                evidence_keys=["decision.decision_class"],
-            )],
-            caveats=["Mathematically validated scoring engine; empirical validation pending."],
+        return SimpleNamespace(
+            status="completed",
+            output_parsed=NarrativeDraft(
+                canonical_anchors=NarrativeDraftAnchors(**payload["canonical_anchors"]),
+                executive_summary=[selection(payload, NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION)],
+                strengths=[],
+                risks=[],
+                recommendations=[selection(payload, NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION)],
+                caveats=[
+                    selection(payload, NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING),
+                    selection(payload, NarrativeClaimId.CAVEAT_LANGUAGE_LAYER),
+                ],
+            ),
         )
-        return SimpleNamespace(status="completed", output_parsed=draft)
+
 
 class FakeClient:
     def __init__(self):
         self.responses = FakeResponses()
+
+
+schema_text = json.dumps(NarrativeDraft.model_json_schema(), sort_keys=True)
+assert '"text"' not in schema_text
+assert "executive_summary" in schema_text
+assert "claim_id" in schema_text
 
 for sector in ("coffee", "restaurant", "gym", "beauty"):
     source = build_scored(sector)
@@ -67,8 +83,9 @@ for sector in ("coffee", "restaurant", "gym", "beauty"):
     assert result.provenance.narrative_schema_version == NARRATIVE_SCHEMA_VERSION
     assert result.provenance.fallback_reason is None
     assert result.approved_context.canonical_anchors.source_analysis_fingerprint == source.core_result.analysis_fingerprint
-    assert result.approved_context.canonical_anchors.decision_class == source.core_result.decision.decision_class
-    assert result.approved_context.canonical_anchors.confidence_label == source.core_result.confidence.label
+    assert result.executive_summary == f"Canonical decision: {source.core_result.decision.headline}."
+    assert result.recommendations[0].claim_id is NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION
+    assert result.recommendations[0].text == "Review the canonical decision and supporting evidence before acting."
 
     assert len(client.responses.calls) == 1
     call = client.responses.calls[0]
@@ -81,7 +98,9 @@ for sector in ("coffee", "restaurant", "gym", "beauty"):
     assert "api_key" not in call["input"].lower()
     payload = json.loads(call["input"])
     assert payload["canonical_anchors"]["decision_class"] == source.core_result.decision.decision_class
-    assert "decision.decision_class" in payload["approved_evidence_keys"]
+    assert NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION.value in payload["approved_claims"]
+    assert NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION.value in payload["approved_claims"]
+    assert all("text" not in claim for claim in payload["approved_claims"].values())
     assert "raw_http" not in repr(payload).lower()
     assert "celery" not in repr(payload).lower()
 
@@ -127,7 +146,7 @@ for copier in (copy.copy, copy.deepcopy):
         raise AssertionError("copied context must not gain authority")
 
 manual = object.__new__(ApprovedNarrativeContext)
-for name in ("_report_domain_model", "canonical_anchors", "facts", "evidence"):
+for name in ("_report_domain_model", "canonical_anchors", "facts", "evidence", "claims"):
     object.__setattr__(manual, name, getattr(context, name))
 try:
     require_approved_narrative_context(manual)
@@ -147,10 +166,18 @@ else:
 object.__setattr__(context, "canonical_anchors", original_anchors)
 assert require_approved_narrative_context(context) is context
 
-result = build_validated_report_narrative(
-    domain,
-    config=NarrativeProviderConfig(model_id=None),
-)
+original_claims = context.claims
+object.__setattr__(context, "claims", dict(original_claims))
+try:
+    require_approved_narrative_context(context)
+except ValueError:
+    pass
+else:
+    raise AssertionError("equal-value claim-contract substitution must fail")
+object.__setattr__(context, "claims", original_claims)
+assert require_approved_narrative_context(context) is context
+
+result = build_validated_report_narrative(domain, config=NarrativeProviderConfig(model_id=None))
 assert require_validated_report_narrative(result) is result
 
 for copier in (copy.copy, copy.deepcopy):
@@ -195,16 +222,18 @@ try:
 except ValueError:
     pass
 else:
-    raise AssertionError("nested semantic mutation must fail")
+    raise AssertionError("final semantic mutation must fail")
 object.__setattr__(result, "executive_summary", original_summary)
 assert require_validated_report_narrative(result) is result
 ''')
 
 
-def test_semantic_anchor_evidence_prohibited_claim_and_numeric_invention_fallbacks():
+def test_reviewer_h001_adversarial_bypasses_cannot_gain_llm_authority():
     _run(r'''
+import json
 from types import SimpleNamespace
 from sitescore_report import (
+    NarrativeClaimId,
     NarrativeDraft,
     NarrativeDraftAnchors,
     NarrativePointDraft,
@@ -214,101 +243,150 @@ from sitescore_report import (
     build_validated_report_narrative,
 )
 
+
 def domain():
     return build_report_domain_model(build_canonical_report_facts(build_scored("coffee")))
 
-def valid_draft(payload, *, summary="The canonical decision remains authoritative.", evidence="decision.decision_class"):
+
+def selection(payload, claim_id, evidence_keys=None):
+    approved = payload["approved_claims"].get(claim_id.value)
+    keys = list(approved["evidence_keys"]) if approved is not None else []
+    if evidence_keys is not None:
+        keys = list(evidence_keys)
+    return NarrativePointDraft(claim_id=claim_id, evidence_keys=keys)
+
+
+def valid(payload):
     return NarrativeDraft(
         canonical_anchors=NarrativeDraftAnchors(**payload["canonical_anchors"]),
-        executive_summary=summary,
+        executive_summary=[selection(payload, NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION)],
         strengths=[],
         risks=[],
-        recommendations=[NarrativePointDraft(text="Review the canonical decision before acting.", evidence_keys=[evidence])],
-        caveats=["Mathematically validated scoring engine; empirical validation pending."],
+        recommendations=[selection(payload, NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION)],
+        caveats=[selection(payload, NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING)],
     )
 
-class FakeResponses:
-    def __init__(self, mode): self.mode = mode
-    def parse(self, **kwargs):
-        import json
-        payload = json.loads(kwargs["input"])
-        draft = valid_draft(payload)
-        if self.mode == "anchor":
-            raw = draft.model_dump()
-            raw["canonical_anchors"]["decision_class"] = "forged_decision"
-            draft = NarrativeDraft.model_validate(raw)
-        elif self.mode == "evidence":
-            draft = valid_draft(payload, evidence="data_quality.data_coverage.absent")
-        elif self.mode == "empirical":
-            draft = valid_draft(payload, summary="This result is empirically validated.")
-        elif self.mode == "guarantee":
-            draft = valid_draft(payload, summary="This is guaranteed success.")
-        elif self.mode == "numeric":
-            draft = valid_draft(payload, summary="This opportunity scores 99 percent.")
-        return SimpleNamespace(status="completed", output_parsed=draft)
-class FakeClient:
-    def __init__(self, mode): self.responses = FakeResponses(mode)
 
-for mode in ("anchor", "evidence", "empirical", "guarantee", "numeric"):
+class FakeResponses:
+    def __init__(self, mode):
+        self.mode = mode
+
+    def parse(self, **kwargs):
+        payload = json.loads(kwargs["input"])
+        if self.mode == "unrelated_evidence":
+            draft = valid(payload)
+            draft.recommendations[0].evidence_keys = ["financial.fixed_costs"]
+            return SimpleNamespace(status="completed", output_parsed=draft)
+        if self.mode == "source_state_mismatch":
+            draft = valid(payload)
+            draft.strengths = [NarrativePointDraft(
+                claim_id=NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE,
+                evidence_keys=["decision.financial_band"],
+            )]
+            return SimpleNamespace(status="completed", output_parsed=draft)
+
+        anchors = NarrativeDraftAnchors(**payload["canonical_anchors"])
+        executive = selection(payload, NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION)
+        recommendation = selection(payload, NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION)
+        caveat = selection(payload, NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING)
+        raw = {
+            "canonical_anchors": anchors,
+            "executive_summary": [executive],
+            "strengths": [],
+            "risks": [],
+            "recommendations": [recommendation],
+            "caveats": [caveat],
+        }
+        if self.mode == "unsupported_executive":
+            raw["executive_summary"] = [{
+                "claim_id": NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION,
+                "evidence_keys": list(executive.evidence_keys),
+                "text": "The area benefits from exceptional transit access.",
+            }]
+        elif self.mode == "unsupported_caveat":
+            raw["caveats"] = [{
+                "claim_id": NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING,
+                "evidence_keys": [],
+                "text": "Local demand will remain resilient through future downturns.",
+            }]
+        elif self.mode == "empirical_synonym":
+            raw["executive_summary"] = [{
+                "claim_id": NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION,
+                "evidence_keys": list(executive.evidence_keys),
+                "text": "The result has been verified against actual marketplace outcomes.",
+            }]
+        elif self.mode == "guarantee_synonym":
+            raw["recommendations"] = [{
+                "claim_id": NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION,
+                "evidence_keys": list(recommendation.evidence_keys),
+                "text": "Success is assured beyond doubt.",
+            }]
+        return SimpleNamespace(status="completed", output_parsed=raw)
+
+
+class FakeClient:
+    def __init__(self, mode):
+        self.responses = FakeResponses(mode)
+
+
+expected_reasons = {
+    "unrelated_evidence": "semantic_invalid",
+    "source_state_mismatch": "semantic_invalid",
+    "unsupported_executive": "schema_invalid",
+    "unsupported_caveat": "schema_invalid",
+    "empirical_synonym": "schema_invalid",
+    "guarantee_synonym": "schema_invalid",
+}
+for mode, expected_reason in expected_reasons.items():
     result = build_validated_report_narrative(
         domain(),
         config=NarrativeProviderConfig(model_id="test-model"),
         client=FakeClient(mode),
     )
     assert result.provenance.generation_mode == "deterministic_fallback", mode
-    assert result.provenance.fallback_reason == "semantic_invalid", (mode, result.provenance)
+    assert result.provenance.fallback_reason == expected_reason, (mode, result.provenance)
     rendered = repr(result.to_dict()).lower()
-    assert "99 percent" not in rendered
-    assert "guaranteed success" not in rendered
-    assert "empirically validated" not in rendered
+    assert "exceptional transit" not in rendered
+    assert "future downturns" not in rendered
+    assert "actual marketplace outcomes" not in rendered
+    assert "assured beyond doubt" not in rendered
 ''')
 
 
-def test_decision_financial_confidence_and_missingness_contradictions_fallback():
+def test_closed_claim_source_state_and_exact_evidence_contract_is_machine_checkable():
     _run(r'''
-from types import SimpleNamespace
 from sitescore_report import (
-    NarrativeDraft,
-    NarrativeDraftAnchors,
-    NarrativePointDraft,
-    NarrativeProviderConfig,
+    NarrativeClaimId,
+    build_approved_narrative_context,
     build_canonical_report_facts,
     build_report_domain_model,
-    build_validated_report_narrative,
 )
 
-class FakeResponses:
-    def __init__(self, summary): self.summary = summary
-    def parse(self, **kwargs):
-        import json
-        payload = json.loads(kwargs["input"])
-        return SimpleNamespace(status="completed", output_parsed=NarrativeDraft(
-            canonical_anchors=NarrativeDraftAnchors(**payload["canonical_anchors"]),
-            executive_summary=self.summary,
-            strengths=[], risks=[],
-            recommendations=[NarrativePointDraft(text="Review the canonical decision before acting.", evidence_keys=["decision.decision_class"])],
-            caveats=["Mathematically validated scoring engine; empirical validation pending."],
-        ))
-class FakeClient:
-    def __init__(self, summary): self.responses = FakeResponses(summary)
+strong_source = build_scored(
+    "coffee",
+    score=95.0,
+    monthly_rent=200.0,
+    fixed_labor=200.0,
+    fixed_overhead=100.0,
+)
+strong = build_approved_narrative_context(build_report_domain_model(build_canonical_report_facts(strong_source)))
+assert NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG.value in strong.claims
+assert strong.claims[NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG.value].evidence_keys == ("decision.structural_band",)
 
-def narrate(source, summary):
-    domain = build_report_domain_model(build_canonical_report_facts(source))
-    return build_validated_report_narrative(
-        domain,
-        config=NarrativeProviderConfig(model_id="test-model"),
-        client=FakeClient(summary),
-    )
+weak_source = build_scored(
+    "restaurant",
+    score=5.0,
+    monthly_rent=500000.0,
+    fixed_labor=500000.0,
+    fixed_overhead=250000.0,
+)
+weak = build_approved_narrative_context(build_report_domain_model(build_canonical_report_facts(weak_source)))
+assert weak_source.core_result.decision.financial_band == "non_viable"
+assert NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE.value in weak.claims
+assert NarrativeClaimId.STRENGTH_FINANCIAL_STRONG.value not in weak.claims
+assert weak.claims[NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE.value].evidence_keys == ("decision.financial_band",)
 
-weak = build_scored("restaurant", score=5.0, monthly_rent=500000.0, fixed_labor=500000.0, fixed_overhead=250000.0)
-assert weak.core_result.decision.financial_band == "non_viable"
-assert weak.core_result.financial.stress_test_failed is True
-for summary in ("The location is a prime opportunity.", "The economics are financially strong.", "The stress test passed."):
-    result = narrate(weak, summary)
-    assert result.provenance.generation_mode == "deterministic_fallback", summary
-    assert result.provenance.fallback_reason == "semantic_invalid"
-
-low = build_scored(
+low_source = build_scored(
     "gym",
     score=72.0,
     geographic_level=GeographicLevel.UNKNOWN,
@@ -316,11 +394,93 @@ low = build_scored(
     data_coverage={"demand": CoverageLevel.DEGRADED},
     input_qualities={"rent": InputQuality.DEFAULT},
 )
-assert low.core_result.confidence.label == "low"
-for summary in ("This conclusion has high confidence.", "The analysis has complete evidence."):
-    result = narrate(low, summary)
-    assert result.provenance.generation_mode == "deterministic_fallback", summary
-    assert result.provenance.fallback_reason == "semantic_invalid"
+low = build_approved_narrative_context(build_report_domain_model(build_canonical_report_facts(low_source)))
+assert low_source.core_result.confidence.label == "low"
+assert NarrativeClaimId.STRENGTH_CONFIDENCE_HIGH.value not in low.claims
+assert NarrativeClaimId.CAVEAT_CONFIDENCE_NOT_HIGH.value in low.claims
+assert NarrativeClaimId.CAVEAT_INCOMPLETE_EVIDENCE.value in low.claims
+''')
+
+
+def test_valid_closed_claims_for_strong_weak_low_confidence_and_risk_states_remain_llm_accepted():
+    _run(r'''
+import json
+from types import SimpleNamespace
+from sitescore_report import (
+    NarrativeClaimId,
+    NarrativeDraft,
+    NarrativeDraftAnchors,
+    NarrativePointDraft,
+    NarrativeProviderConfig,
+    build_canonical_report_facts,
+    build_report_domain_model,
+    build_validated_report_narrative,
+)
+
+
+def draft_from_all_active(payload):
+    sections = {name: [] for name in ("executive_summary", "strength", "risk", "recommendation", "caveat")}
+    for claim_id_text, spec in sorted(payload["approved_claims"].items()):
+        sections[spec["section"]].append(NarrativePointDraft(
+            claim_id=NarrativeClaimId(claim_id_text),
+            evidence_keys=list(spec["evidence_keys"]),
+        ))
+    return NarrativeDraft(
+        canonical_anchors=NarrativeDraftAnchors(**payload["canonical_anchors"]),
+        executive_summary=sections["executive_summary"],
+        strengths=sections["strength"],
+        risks=sections["risk"],
+        recommendations=sections["recommendation"],
+        caveats=sections["caveat"],
+    )
+
+
+class FakeResponses:
+    def parse(self, **kwargs):
+        payload = json.loads(kwargs["input"])
+        return SimpleNamespace(status="completed", output_parsed=draft_from_all_active(payload))
+
+
+class FakeClient:
+    responses = FakeResponses()
+
+
+sources = [
+    build_scored("coffee", score=95.0, monthly_rent=200.0, fixed_labor=200.0, fixed_overhead=100.0),
+    build_scored("restaurant", score=5.0, monthly_rent=500000.0, fixed_labor=500000.0, fixed_overhead=250000.0),
+    build_scored(
+        "gym",
+        score=72.0,
+        geographic_level=GeographicLevel.UNKNOWN,
+        data_age_years=None,
+        data_coverage={"demand": CoverageLevel.DEGRADED},
+        input_qualities={"rent": InputQuality.DEFAULT},
+    ),
+]
+for source in sources:
+    domain = build_report_domain_model(build_canonical_report_facts(source))
+    first = build_validated_report_narrative(
+        domain,
+        config=NarrativeProviderConfig(model_id="test-model"),
+        client=FakeClient(),
+    )
+    second = build_validated_report_narrative(
+        domain,
+        config=NarrativeProviderConfig(model_id="test-model"),
+        client=FakeClient(),
+    )
+    assert first.provenance.generation_mode == "llm"
+    assert first.provenance.fallback_reason is None
+    assert first.to_dict() == second.to_dict()
+    approved = set(first.approved_context.claims)
+    emitted = {
+        point.claim_id.value
+        for group in (first.strengths, first.risks, first.recommendations)
+        for point in group
+    }
+    assert emitted <= approved
+    assert first.executive_summary.startswith("Canonical decision:")
+    assert "Mathematically validated scoring engine; empirical validation pending." in first.caveats
 ''')
 
 
@@ -390,7 +550,7 @@ for result in (provider_error, incomplete, empty, schema):
     assert result.provenance.generation_mode == "deterministic_fallback"
     assert result.provenance.provider == "openai"
     assert result.provenance.model_id == "test-model"
-    assert result.to_dict()["provenance"]["fallback_version"] == "sitescore-narrative-fallback-v1"
+    assert result.to_dict()["provenance"]["fallback_version"] == "sitescore-narrative-fallback-v2"
 ''')
 
 
@@ -410,9 +570,12 @@ forged = object.__new__(ReportDomainModel)
 for name in ("_canonical_facts", "provenance", "analysis", "category_scores", "business_assumptions", "location", "financial", "decision", "confidence", "data_quality"):
     object.__setattr__(forged, name, getattr(domain, name))
 try:
-    build_validated_report_narrative(forged, config=NarrativeProviderConfig(model_id=None))
+    build_validated_report_narrative(
+        forged,
+        config=NarrativeProviderConfig(model_id=None),
+    )
 except ValueError:
     pass
 else:
-    raise AssertionError("forged report-domain authority must hard fail rather than fallback")
+    raise AssertionError("invalid canonical report domain must fail hard, not fall back")
 ''')
