@@ -1,0 +1,89 @@
+name: faz5-5-0-exact-pin-validation
+
+on:
+  push:
+    branches:
+      - faz5/5-0-external-api-ingress-contract
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install exact external validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            fastapi==0.140.0 \
+            pydantic==2.13.4 \
+            httpx==0.28.1 \
+            pytest==8.4.2 \
+            shapely==2.1.2 \
+            pyproj==3.7.2
+
+      - name: Install local SiteScore packages without external substitution
+        run: |
+          python -m pip install --no-deps -e ./sitescore-core
+          python -m pip install --no-deps -e ./sitescore-data
+          python -m pip install --no-deps -e ./sitescore-providers
+          python -m pip install --no-deps -e ./sitescore-spatial
+          python -m pip install --no-deps -e ./sitescore-metrics
+          python -m pip install --no-deps -e ./sitescore-benchmarks
+          python -m pip install --no-deps -e ./sitescore-pipeline
+          python -m pip install --no-deps -e ./sitescore-app
+          python -m pip install --no-deps -e ./sitescore-api
+
+      - name: Print exact API validation dependency versions
+        run: |
+          python - <<'PY'
+          import fastapi, pydantic, httpx, pytest
+          expected = {
+              'FastAPI': ('0.140.0', fastapi.__version__),
+              'Pydantic': ('2.13.4', pydantic.__version__),
+              'HTTPX': ('0.28.1', httpx.__version__),
+              'pytest': ('8.4.2', pytest.__version__),
+          }
+          for name, (want, got) in expected.items():
+              print(f'{name} {got}')
+              if got != want:
+                  raise SystemExit(f'{name} version mismatch: expected {want}, got {got}')
+          PY
+
+      - name: Test sitescore-api
+        run: python -m pytest sitescore-api/tests -q
+
+      - name: Test frozen sitescore-app
+        run: python -m pytest sitescore-app/tests -q
+
+      - name: Test frozen sitescore-pipeline
+        run: python -m pytest sitescore-pipeline/tests -q
+
+      - name: Test frozen sitescore-benchmarks
+        run: python -m pytest sitescore-benchmarks/tests -q
+
+      - name: Test frozen sitescore-metrics
+        run: python -m pytest sitescore-metrics/tests -q
+
+      - name: Test frozen sitescore-spatial
+        run: python -m pytest sitescore-spatial/tests -q
+
+      - name: Test frozen sitescore-providers
+        run: python -m pytest sitescore-providers/tests -q
+
+      - name: Test frozen sitescore-data
+        run: python -m pytest sitescore-data/tests -q
+
+      - name: Test frozen sitescore-core
+        run: python -m pytest sitescore-core/tests -q
