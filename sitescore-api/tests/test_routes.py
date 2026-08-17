@@ -130,6 +130,8 @@ def test_backend_identity_mismatch_fails_closed(valid_payloads):
     body = response.json()
     assert body["error"]["code"] == "internal_server_error"
     assert "mismatch" not in body["error"]["message"].lower()
+    assert response.headers["x-request-id"] == body["request_id"]
+    _assert_uuid4(body["request_id"])
 
 
 def test_validation_detail_does_not_echo_input_value(default_client, valid_payloads):
