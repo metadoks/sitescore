@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import importlib
 import os
 
+from .acquisition import CanonicalAcquisitionDeployment, CanonicalProviderEvidenceSource
 from .celery_app import build_celery
 from .db import Database
 from .dispatcher import CeleryOutboxDispatcher
@@ -13,18 +14,22 @@ from .settings import Settings
 from .worker import AnalysisWorkerService
 
 
-def _load_evidence_source() -> ExecutionEvidenceSource:
-    spec = os.getenv("SITESCORE_EVIDENCE_SOURCE_FACTORY")
+def _load_production_evidence_source() -> ExecutionEvidenceSource:
+    """Load only server-owned deployment boundaries, never assembled execution evidence."""
+
+    spec = os.getenv("SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY")
     if not spec:
         return MissingExecutionEvidenceSource()
     module_name, sep, attr = spec.partition(":")
     if not sep or not module_name or not attr:
-        raise ValueError("SITESCORE_EVIDENCE_SOURCE_FACTORY must use module:callable")
+        raise ValueError("SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY must use module:callable")
     factory = getattr(importlib.import_module(module_name), attr)
-    source = factory()
-    if not hasattr(source, "acquire"):
-        raise TypeError("evidence source factory must return an acquire-capable object")
-    return source
+    deployment = factory()
+    if type(deployment) is not CanonicalAcquisitionDeployment:
+        raise TypeError(
+            "acquisition deployment factory must return exact CanonicalAcquisitionDeployment"
+        )
+    return CanonicalProviderEvidenceSource(deployment)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +47,8 @@ def build_runtime(
     *,
     evidence_source: ExecutionEvidenceSource | None = None,
 ) -> Runtime:
+    """Build production runtime; evidence_source is an explicit in-process test seam only."""
+
     settings = settings or Settings.from_env()
     database = Database(settings.database_url)
     celery_app = build_celery(settings)
@@ -51,6 +58,6 @@ def build_runtime(
         dispatcher,
         deadline_seconds=settings.analysis_deadline_seconds,
     )
-    executor = CanonicalAnalysisExecutor(evidence_source or _load_evidence_source())
+    executor = CanonicalAnalysisExecutor(evidence_source or _load_production_evidence_source())
     worker = AnalysisWorkerService(database, executor)
     return Runtime(settings, database, celery_app, dispatcher, lifecycle, worker)
