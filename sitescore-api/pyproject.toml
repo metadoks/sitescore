@@ -17,6 +17,7 @@ dependencies = [
     "redis==7.4.1",
     "sitescore-core==0.1.0",
     "sitescore-data==0.1.0",
+    "sitescore-providers==0.1.0",
     "sitescore-metrics==0.1.0",
     "sitescore-benchmarks==0.1.0",
     "sitescore-pipeline==0.1.0",
