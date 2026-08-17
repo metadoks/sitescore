@@ -163,30 +163,6 @@ validated SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 conclusion: SUCCESS
 ```
 
-Exact environment included:
-
-```text
-Python 3.11.15
-OpenAI 3.2.0
-Pydantic 2.13.4
-FastAPI 0.140.0
-SQLAlchemy 2.0.51
-Alembic 1.18.5
-psycopg 3.3.4
-Celery 5.6.3
-redis-py 7.4.1
-HTTPX 0.28.1
-pytest 8.4.2
-Shapely 2.1.2
-pyproj 3.7.2
-sitescore-core 0.1.0
-sitescore-app 0.1.0
-sitescore-api 0.2.0
-sitescore-report 0.2.0
-PostgreSQL server 16.15
-Redis server 7.4.10
-```
-
 Fresh exact-SHA test results:
 
 ```text
