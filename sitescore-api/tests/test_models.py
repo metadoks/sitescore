@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import get_args
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -116,7 +115,7 @@ def test_negative_common_cost_rejected(valid_payloads):
 def test_invalid_us_address_shape_rejected(valid_payloads, location):
     payload = deepcopy(valid_payloads["coffee"])
     payload["location"] = location
-    with pytest.raises((ValidationError, TypeError)):
+    with pytest.raises(ValidationError):
         ADAPTER.validate_python(payload)
 
 
@@ -143,3 +142,17 @@ def test_strings_are_trimmed(valid_payloads):
     payload["location"]["street"] = "  123 Main St  "
     parsed = ADAPTER.validate_python(payload)
     assert parsed.location.street == "123 Main St"
+
+
+def test_country_code_is_explicitly_required(valid_payloads):
+    payload = deepcopy(valid_payloads["coffee"])
+    del payload["location"]["country_code"]
+    with pytest.raises(ValidationError):
+        ADAPTER.validate_python(payload)
+
+
+def test_huge_integer_is_rejected_as_non_finite_validation_error(valid_payloads):
+    payload = deepcopy(valid_payloads["coffee"])
+    payload["business_inputs"]["target_population"] = 10 ** 10000
+    with pytest.raises(ValidationError):
+        ADAPTER.validate_python(payload)
