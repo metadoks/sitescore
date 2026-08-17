@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Literal
 from weakref import ref
@@ -18,55 +18,126 @@ from .domain import (
     require_canonical_report_domain_model,
 )
 
-NARRATIVE_PROMPT_VERSION = "sitescore-narrative-prompt-v1"
-NARRATIVE_SCHEMA_VERSION = "sitescore-narrative-v1"
-NARRATIVE_FALLBACK_VERSION = "sitescore-narrative-fallback-v1"
+NARRATIVE_PROMPT_VERSION = "sitescore-narrative-prompt-v2"
+NARRATIVE_SCHEMA_VERSION = "sitescore-narrative-v2"
+NARRATIVE_FALLBACK_VERSION = "sitescore-narrative-fallback-v2"
 NARRATIVE_PROVIDER = "openai"
 NARRATIVE_MODEL_ENV = "SITESCORE_NARRATIVE_MODEL_ID"
 
-NARRATIVE_INSTRUCTIONS = """SiteScore narrative contract.
-Use only the supplied canonical report facts and approved evidence keys.
-Never calculate or infer a new score, financial outcome, decision, confidence, benchmark, or readiness state.
-Never invent missing evidence or silently replace unknown values with defaults.
-Never claim empirical validation, proven market performance, calibration against real-world outcomes, guaranteed success, guaranteed profitability, financial guarantees, certainty, or risk-free outcomes.
-Never output HTML or CSS.
-Never introduce numeric, currency, or percentage literals in free-form prose.
-Return only the strict structured schema requested by the API.
-Every strength, risk, and recommendation must cite one or more supplied approved evidence keys.
+NARRATIVE_INSTRUCTIONS = """SiteScore narrative selection contract.
+Use only the supplied canonical report facts, approved claim IDs, and the exact evidence-key list attached to each approved claim.
+Do not write prose. The structured schema contains claim selections only; customer-facing text is rendered later from code-owned versioned templates.
+Never calculate or infer a new score, financial outcome, decision, confidence, benchmark, readiness state, empirical conclusion, guarantee, certainty upgrade, or business fact.
+Never invent a claim ID, evidence key, missing evidence, or alternate evidence binding.
+Select only claim IDs present in approved_claims and echo each claim's evidence_keys exactly and in the supplied order.
 Canonical anchors must be echoed exactly from the supplied context.
-Recommendations are advisory prose only and must not assert a new canonical outcome.
+The model may choose emphasis and ordering among approved claims only.
+Return only the strict structured schema requested by the API.
 """
 
-_NUMERIC_LITERAL = re.compile(r"(?:[$€£]\s*)?\d")
-_PROHIBITED_CLAIMS = (
-    "empirically validated",
-    "proven in market",
-    "proven in the market",
-    "calibrated against real-world outcomes",
-    "calibrated against real world outcomes",
-    "financial guarantee",
-    "guaranteed success",
-    "guaranteed profitability",
-    "guaranteed profit",
-    "certain profitability",
-    "risk-free",
-    "risk free",
-)
-_HIGH_CERTAINTY_CLAIMS = (
-    "high confidence",
-    "highly certain",
-    "near certain",
-    "near-certain",
-    "virtually certain",
-)
-_COMPLETE_EVIDENCE_CLAIMS = (
-    "complete evidence",
-    "complete data",
-    "all evidence is complete",
-    "all inputs are complete",
-)
 _EXPECTED_COVERAGE_KEYS = frozenset({"demand", "competition", "accessibility", "economics"})
 _EXPECTED_INPUT_QUALITY_KEYS = frozenset({"rent", "price", "capacity", "schedule"})
+
+NarrativeSection = Literal[
+    "executive_summary",
+    "strength",
+    "risk",
+    "recommendation",
+    "caveat",
+]
+
+
+class NarrativeClaimId(str, Enum):
+    """Closed semantic vocabulary. Provider prose is never authoritative."""
+
+    EXECUTIVE_CANONICAL_DECISION = "executive.canonical_decision"
+
+    STRENGTH_STRUCTURAL_STRONG = "strength.structural_strong"
+    STRENGTH_FINANCIAL_STRONG = "strength.financial_strong"
+    STRENGTH_CONFIDENCE_HIGH = "strength.confidence_high"
+
+    RISK_STRUCTURAL_WEAK = "risk.structural_weak"
+    RISK_FINANCIAL_NON_VIABLE = "risk.financial_non_viable"
+    RISK_HIGH_RENT_BURDEN = "risk.high_rent_burden"
+    RISK_SEVERE_RENT_BURDEN = "risk.severe_rent_burden"
+    RISK_STRESS_TEST_FAILED = "risk.stress_test_failed"
+    RISK_NEGATIVE_BASE_MARGIN = "risk.negative_base_margin"
+
+    RECOMMEND_REVIEW_RENT = "recommendation.review_rent"
+    RECOMMEND_REVIEW_DOWNSIDE = "recommendation.review_downside"
+    RECOMMEND_REVIEW_COST_REVENUE = "recommendation.review_cost_revenue"
+    RECOMMEND_STRUCTURAL_CONSTRAINT = "recommendation.structural_constraint"
+    RECOMMEND_REVIEW_CANONICAL_DECISION = "recommendation.review_canonical_decision"
+
+    CAVEAT_EMPIRICAL_VALIDATION_PENDING = "caveat.empirical_validation_pending"
+    CAVEAT_LANGUAGE_LAYER = "caveat.language_layer"
+    CAVEAT_CONFIDENCE_NOT_HIGH = "caveat.confidence_not_high"
+    CAVEAT_INCOMPLETE_EVIDENCE = "caveat.incomplete_evidence"
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimContract:
+    section: NarrativeSection
+    evidence_keys: tuple[str, ...]
+
+
+_CLAIM_CONTRACT: Mapping[NarrativeClaimId, _ClaimContract] = MappingProxyType(
+    {
+        NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION: _ClaimContract(
+            "executive_summary", ("decision.headline", "decision.decision_class")
+        ),
+        NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG: _ClaimContract(
+            "strength", ("decision.structural_band",)
+        ),
+        NarrativeClaimId.STRENGTH_FINANCIAL_STRONG: _ClaimContract(
+            "strength", ("decision.financial_band",)
+        ),
+        NarrativeClaimId.STRENGTH_CONFIDENCE_HIGH: _ClaimContract(
+            "strength", ("confidence.label",)
+        ),
+        NarrativeClaimId.RISK_STRUCTURAL_WEAK: _ClaimContract(
+            "risk", ("decision.structural_band",)
+        ),
+        NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE: _ClaimContract(
+            "risk", ("decision.financial_band",)
+        ),
+        NarrativeClaimId.RISK_HIGH_RENT_BURDEN: _ClaimContract(
+            "risk", ("decision.risk_flags",)
+        ),
+        NarrativeClaimId.RISK_SEVERE_RENT_BURDEN: _ClaimContract(
+            "risk", ("decision.risk_flags",)
+        ),
+        NarrativeClaimId.RISK_STRESS_TEST_FAILED: _ClaimContract(
+            "risk", ("financial.stress_test_failed",)
+        ),
+        NarrativeClaimId.RISK_NEGATIVE_BASE_MARGIN: _ClaimContract(
+            "risk", ("decision.risk_flags",)
+        ),
+        NarrativeClaimId.RECOMMEND_REVIEW_RENT: _ClaimContract(
+            "recommendation", ("decision.risk_flags",)
+        ),
+        NarrativeClaimId.RECOMMEND_REVIEW_DOWNSIDE: _ClaimContract(
+            "recommendation", ("financial.stress_test_failed",)
+        ),
+        NarrativeClaimId.RECOMMEND_REVIEW_COST_REVENUE: _ClaimContract(
+            "recommendation", ("decision.risk_flags",)
+        ),
+        NarrativeClaimId.RECOMMEND_STRUCTURAL_CONSTRAINT: _ClaimContract(
+            "recommendation", ("decision.decision_class", "decision.structural_band")
+        ),
+        NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION: _ClaimContract(
+            "recommendation", ("decision.decision_class",)
+        ),
+        NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING: _ClaimContract(
+            "caveat", ()
+        ),
+        NarrativeClaimId.CAVEAT_LANGUAGE_LAYER: _ClaimContract("caveat", ()),
+        NarrativeClaimId.CAVEAT_CONFIDENCE_NOT_HIGH: _ClaimContract(
+            "caveat", ("confidence.label",)
+        ),
+        NarrativeClaimId.CAVEAT_INCOMPLETE_EVIDENCE: _ClaimContract("caveat", ()),
+    }
+)
 
 
 class NarrativeDraftAnchors(BaseModel):
@@ -81,10 +152,12 @@ class NarrativeDraftAnchors(BaseModel):
 
 
 class NarrativePointDraft(BaseModel):
+    """Untrusted provider selection from the closed code-owned claim vocabulary."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    text: str = Field(min_length=1, max_length=1200)
-    evidence_keys: list[str] = Field(min_length=1, max_length=12)
+    claim_id: NarrativeClaimId
+    evidence_keys: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("evidence_keys")
     @classmethod
@@ -95,24 +168,16 @@ class NarrativePointDraft(BaseModel):
 
 
 class NarrativeDraft(BaseModel):
-    """Strict but still-untrusted structured provider output."""
+    """Strict untrusted provider output containing no free-form prose fields."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
     canonical_anchors: NarrativeDraftAnchors
-    executive_summary: str = Field(min_length=1, max_length=2400)
+    executive_summary: list[NarrativePointDraft] = Field(min_length=1, max_length=4)
     strengths: list[NarrativePointDraft] = Field(max_length=12)
     risks: list[NarrativePointDraft] = Field(max_length=12)
     recommendations: list[NarrativePointDraft] = Field(max_length=12)
-    caveats: list[str] = Field(max_length=12)
-
-    @field_validator("caveats")
-    @classmethod
-    def _non_empty_caveats(cls, value: list[str]) -> list[str]:
-        for item in value:
-            if not item.strip():
-                raise ValueError("caveats may not contain empty text")
-        return value
+    caveats: list[NarrativePointDraft] = Field(min_length=1, max_length=12)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,14 +190,22 @@ class NarrativeCanonicalAnchors:
     source_analysis_fingerprint: str
 
 
+@dataclass(frozen=True, slots=True)
+class NarrativeApprovedClaim:
+    claim_id: NarrativeClaimId
+    section: NarrativeSection
+    evidence_keys: tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class ApprovedNarrativeContext:
-    """Factory-owned bounded context derived only from a canonical report domain."""
+    """Factory-owned bounded context with only currently valid closed claims exposed."""
 
     _report_domain_model: ReportDomainModel
     canonical_anchors: NarrativeCanonicalAnchors
     facts: Mapping[str, object]
     evidence: Mapping[str, object]
+    claims: Mapping[str, NarrativeApprovedClaim]
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         raise TypeError(
@@ -151,6 +224,10 @@ class ApprovedNarrativeContext:
             "facts": _json_safe(self.facts),
             "approved_evidence": _json_safe(self.evidence),
             "approved_evidence_keys": sorted(self.evidence),
+            "approved_claims": {
+                claim_id: _json_safe(claim)
+                for claim_id, claim in sorted(self.claims.items())
+            },
             "prompt_version": NARRATIVE_PROMPT_VERSION,
             "narrative_schema_version": NARRATIVE_SCHEMA_VERSION,
         }
@@ -158,6 +235,7 @@ class ApprovedNarrativeContext:
 
 @dataclass(frozen=True, slots=True)
 class NarrativePoint:
+    claim_id: NarrativeClaimId
     text: str
     evidence_keys: tuple[str, ...]
 
@@ -175,7 +253,7 @@ class NarrativeProvenance:
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class ValidatedReportNarrative:
-    """Factory-owned narrative authority after deterministic semantic validation."""
+    """Factory-owned authority rendered only from validated code-owned claim templates."""
 
     _approved_context: ApprovedNarrativeContext
     provenance: NarrativeProvenance
@@ -248,6 +326,20 @@ def _present(value: object) -> bool:
     return True
 
 
+def _quality_is_incomplete(domain: ReportDomainModel) -> bool:
+    coverage = domain.data_quality.data_coverage
+    inputs = domain.data_quality.input_qualities
+    if set(coverage) != _EXPECTED_COVERAGE_KEYS:
+        return True
+    if set(inputs) != _EXPECTED_INPUT_QUALITY_KEYS:
+        return True
+    for value in tuple(coverage.values()) + tuple(inputs.values()):
+        raw = getattr(value, "value", value)
+        if str(raw).casefold() in {"missing", "unknown", "degraded"}:
+            return True
+    return domain.data_quality.data_age_years is None
+
+
 def _build_evidence(domain: ReportDomainModel) -> Mapping[str, object]:
     evidence: dict[str, object] = {
         "analysis.sector": domain.analysis.sector,
@@ -302,11 +394,113 @@ def _build_evidence(domain: ReportDomainModel) -> Mapping[str, object]:
     return MappingProxyType(evidence)
 
 
+def _claim_is_active(claim_id: NarrativeClaimId, domain: ReportDomainModel) -> bool:
+    if claim_id is NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION:
+        return True
+    if claim_id is NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG:
+        return domain.decision.structural_band == "strong"
+    if claim_id is NarrativeClaimId.STRENGTH_FINANCIAL_STRONG:
+        return domain.decision.financial_band == "strong"
+    if claim_id is NarrativeClaimId.STRENGTH_CONFIDENCE_HIGH:
+        return domain.confidence.label == "high"
+    if claim_id is NarrativeClaimId.RISK_STRUCTURAL_WEAK:
+        return domain.decision.structural_band == "weak"
+    if claim_id is NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE:
+        return domain.decision.financial_band == "non_viable"
+    if claim_id is NarrativeClaimId.RISK_HIGH_RENT_BURDEN:
+        return "HIGH_RENT_BURDEN" in domain.decision.risk_flags
+    if claim_id is NarrativeClaimId.RISK_SEVERE_RENT_BURDEN:
+        return "SEVERE_RENT_BURDEN" in domain.decision.risk_flags
+    if claim_id is NarrativeClaimId.RISK_STRESS_TEST_FAILED:
+        return domain.financial.stress_test_failed is True
+    if claim_id is NarrativeClaimId.RISK_NEGATIVE_BASE_MARGIN:
+        return "NEGATIVE_BASE_OPERATING_MARGIN" in domain.decision.risk_flags
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_RENT:
+        return bool({"HIGH_RENT_BURDEN", "SEVERE_RENT_BURDEN"} & set(domain.decision.risk_flags))
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_DOWNSIDE:
+        return domain.financial.stress_test_failed is True
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_COST_REVENUE:
+        return "NEGATIVE_BASE_OPERATING_MARGIN" in domain.decision.risk_flags
+    if claim_id is NarrativeClaimId.RECOMMEND_STRUCTURAL_CONSTRAINT:
+        return domain.decision.structural_band == "weak" or domain.decision.decision_class == "structural_risk"
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION:
+        return True
+    if claim_id in {
+        NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING,
+        NarrativeClaimId.CAVEAT_LANGUAGE_LAYER,
+    }:
+        return True
+    if claim_id is NarrativeClaimId.CAVEAT_CONFIDENCE_NOT_HIGH:
+        return domain.confidence.label != "high"
+    if claim_id is NarrativeClaimId.CAVEAT_INCOMPLETE_EVIDENCE:
+        return _quality_is_incomplete(domain)
+    raise AssertionError(f"unhandled narrative claim: {claim_id}")
+
+
+def _render_claim(claim_id: NarrativeClaimId, domain: ReportDomainModel) -> str:
+    if claim_id is NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION:
+        return f"Canonical decision: {domain.decision.headline}."
+    if claim_id is NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG:
+        return "The canonical structural band is strong."
+    if claim_id is NarrativeClaimId.STRENGTH_FINANCIAL_STRONG:
+        return "The canonical financial band is strong."
+    if claim_id is NarrativeClaimId.STRENGTH_CONFIDENCE_HIGH:
+        return "Canonical confidence is high."
+    if claim_id is NarrativeClaimId.RISK_STRUCTURAL_WEAK:
+        return "The canonical structural band is weak."
+    if claim_id is NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE:
+        return "The canonical financial band is non viable."
+    if claim_id is NarrativeClaimId.RISK_HIGH_RENT_BURDEN:
+        return "Canonical risk flags identify elevated rent burden."
+    if claim_id is NarrativeClaimId.RISK_SEVERE_RENT_BURDEN:
+        return "Canonical risk flags identify severe rent burden."
+    if claim_id is NarrativeClaimId.RISK_STRESS_TEST_FAILED:
+        return "The canonical stress-test status indicates failure."
+    if claim_id is NarrativeClaimId.RISK_NEGATIVE_BASE_MARGIN:
+        return "Canonical risk flags identify a negative base operating margin."
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_RENT:
+        return "Review rent assumptions and lease terms before acting."
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_DOWNSIDE:
+        return "Review downside operating assumptions before acting."
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_COST_REVENUE:
+        return "Review cost and revenue assumptions before acting."
+    if claim_id is NarrativeClaimId.RECOMMEND_STRUCTURAL_CONSTRAINT:
+        return "Treat the canonical structural condition as a decision constraint."
+    if claim_id is NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION:
+        return "Review the canonical decision and supporting evidence before acting."
+    if claim_id is NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING:
+        return "Mathematically validated scoring engine; empirical validation pending."
+    if claim_id is NarrativeClaimId.CAVEAT_LANGUAGE_LAYER:
+        return "This narrative is a language layer and does not replace canonical report facts."
+    if claim_id is NarrativeClaimId.CAVEAT_CONFIDENCE_NOT_HIGH:
+        return f"Canonical confidence is {domain.confidence.label}; interpret the narrative conservatively."
+    if claim_id is NarrativeClaimId.CAVEAT_INCOMPLETE_EVIDENCE:
+        return "Some canonical evidence is unavailable or incomplete."
+    raise AssertionError(f"unhandled narrative claim: {claim_id}")
+
+
+def _build_claims(domain: ReportDomainModel) -> Mapping[str, NarrativeApprovedClaim]:
+    claims: dict[str, NarrativeApprovedClaim] = {}
+    for claim_id, contract in _CLAIM_CONTRACT.items():
+        if not _claim_is_active(claim_id, domain):
+            continue
+        for key in contract.evidence_keys:
+            if key not in _build_evidence(domain):
+                raise ValueError(f"active narrative claim lacks required evidence: {claim_id.value}:{key}")
+        claims[claim_id.value] = NarrativeApprovedClaim(
+            claim_id=claim_id,
+            section=contract.section,
+            evidence_keys=contract.evidence_keys,
+        )
+    return MappingProxyType(claims)
+
+
 def _context_semantics(value: ApprovedNarrativeContext) -> object:
     return (
         _semantic_record(value.canonical_anchors),
         _semantic_record(value.facts),
         _semantic_record(value.evidence),
+        _semantic_record(value.claims),
     )
 
 
@@ -337,6 +531,7 @@ def _install_narrative_factories():
             value.canonical_anchors,
             value.facts,
             value.evidence,
+            value.claims,
             _context_semantics(value),
         )
 
@@ -352,9 +547,9 @@ def _install_narrative_factories():
             raise ValueError("narrative context report-domain binding integrity violation")
         if value.canonical_anchors is not binding[2]:
             raise ValueError("narrative context anchor identity integrity violation")
-        if value.facts is not binding[3] or value.evidence is not binding[4]:
-            raise ValueError("narrative context fact/evidence identity integrity violation")
-        if _context_semantics(value) != binding[5]:
+        if value.facts is not binding[3] or value.evidence is not binding[4] or value.claims is not binding[5]:
+            raise ValueError("narrative context fact/evidence/claim identity integrity violation")
+        if _context_semantics(value) != binding[6]:
             raise ValueError("narrative context semantic integrity violation")
         return value
 
@@ -370,12 +565,14 @@ def _install_narrative_factories():
         )
         facts = _freeze(domain.to_dict())
         evidence = _build_evidence(domain)
+        claims = _build_claims(domain)
         require_canonical_report_domain_model(domain)
         value = object.__new__(ApprovedNarrativeContext)
         object.__setattr__(value, "_report_domain_model", domain)
         object.__setattr__(value, "canonical_anchors", anchors)
         object.__setattr__(value, "facts", facts)
         object.__setattr__(value, "evidence", evidence)
+        object.__setattr__(value, "claims", claims)
         register_context(value, domain)
         return value
 
@@ -429,26 +626,34 @@ def _install_narrative_factories():
     ) -> ValidatedReportNarrative:
         approved = require_context(context)
         validate_narrative_draft(approved, draft)
+        domain = approved.report_domain_model
+
+        def point(item: NarrativePointDraft) -> NarrativePoint:
+            spec = approved.claims[item.claim_id.value]
+            return NarrativePoint(
+                claim_id=item.claim_id,
+                text=_render_claim(item.claim_id, domain),
+                evidence_keys=spec.evidence_keys,
+            )
+
         value = object.__new__(ValidatedReportNarrative)
         object.__setattr__(value, "_approved_context", approved)
         object.__setattr__(value, "provenance", provenance)
-        object.__setattr__(value, "executive_summary", draft.executive_summary)
         object.__setattr__(
             value,
-            "strengths",
-            tuple(NarrativePoint(item.text, tuple(item.evidence_keys)) for item in draft.strengths),
+            "executive_summary",
+            " ".join(_render_claim(item.claim_id, domain) for item in draft.executive_summary),
+        )
+        object.__setattr__(value, "strengths", tuple(point(item) for item in draft.strengths))
+        object.__setattr__(value, "risks", tuple(point(item) for item in draft.risks))
+        object.__setattr__(
+            value, "recommendations", tuple(point(item) for item in draft.recommendations)
         )
         object.__setattr__(
             value,
-            "risks",
-            tuple(NarrativePoint(item.text, tuple(item.evidence_keys)) for item in draft.risks),
+            "caveats",
+            tuple(_render_claim(item.claim_id, domain) for item in draft.caveats),
         )
-        object.__setattr__(
-            value,
-            "recommendations",
-            tuple(NarrativePoint(item.text, tuple(item.evidence_keys)) for item in draft.recommendations),
-        )
-        object.__setattr__(value, "caveats", tuple(draft.caveats))
         register_narrative(value, approved)
         return value
 
@@ -464,33 +669,34 @@ def _install_narrative_factories():
 del _install_narrative_factories
 
 
-def _all_prose(draft: NarrativeDraft) -> tuple[str, ...]:
-    return (
-        draft.executive_summary,
-        *(item.text for item in draft.strengths),
-        *(item.text for item in draft.risks),
-        *(item.text for item in draft.recommendations),
-        *draft.caveats,
-    )
-
-
-def _quality_is_incomplete(domain: ReportDomainModel) -> bool:
-    coverage = domain.data_quality.data_coverage
-    inputs = domain.data_quality.input_qualities
-    if set(coverage) != _EXPECTED_COVERAGE_KEYS:
-        return True
-    if set(inputs) != _EXPECTED_INPUT_QUALITY_KEYS:
-        return True
-    for value in tuple(coverage.values()) + tuple(inputs.values()):
-        raw = getattr(value, "value", value)
-        if str(raw).casefold() in {"missing", "unknown", "degraded"}:
-            return True
-    return domain.data_quality.data_age_years is None
-
-
-def _contains(text: str, phrases: tuple[str, ...]) -> bool:
-    lowered = text.casefold()
-    return any(phrase in lowered for phrase in phrases)
+def _validate_section(
+    approved: ApprovedNarrativeContext,
+    items: list[NarrativePointDraft],
+    section: NarrativeSection,
+) -> None:
+    seen: set[NarrativeClaimId] = set()
+    for item in items:
+        if item.claim_id in seen:
+            raise NarrativeSemanticError(f"duplicate narrative claim: {item.claim_id.value}")
+        seen.add(item.claim_id)
+        spec = approved.claims.get(item.claim_id.value)
+        if spec is None:
+            raise NarrativeSemanticError(
+                f"claim is not authorized by canonical source state: {item.claim_id.value}"
+            )
+        if spec.section != section:
+            raise NarrativeSemanticError(
+                f"claim is not authorized for section {section}: {item.claim_id.value}"
+            )
+        if tuple(item.evidence_keys) != spec.evidence_keys:
+            raise NarrativeSemanticError(
+                f"claim/evidence binding mismatch: {item.claim_id.value}"
+            )
+        for key in spec.evidence_keys:
+            if key not in approved.evidence or not _present(approved.evidence[key]):
+                raise NarrativeSemanticError(
+                    f"claim evidence is unavailable: {item.claim_id.value}:{key}"
+                )
 
 
 def validate_narrative_draft(
@@ -514,73 +720,16 @@ def validate_narrative_draft(
         if getattr(anchors, name) != getattr(expected, name):
             raise NarrativeSemanticError(f"canonical anchor mismatch: {name}")
 
-    for item in (*draft.strengths, *draft.risks, *draft.recommendations):
-        for key in item.evidence_keys:
-            if key not in approved.evidence:
-                raise NarrativeSemanticError(f"unknown or unavailable evidence key: {key}")
-            if not _present(approved.evidence[key]):
-                raise NarrativeSemanticError(f"evidence key is not present: {key}")
-
-    prose = _all_prose(draft)
-    for text in prose:
-        if _NUMERIC_LITERAL.search(text):
-            raise NarrativeSemanticError("provider prose introduced a numeric/currency/percentage literal")
-        lowered = text.casefold()
-        if any(claim in lowered for claim in _PROHIBITED_CLAIMS):
-            raise NarrativeSemanticError("provider prose contains a prohibited empirical/guarantee claim")
-
-    combined = "\n".join(prose).casefold()
-    domain = approved.report_domain_model
-    decision = domain.decision
-    financial = domain.financial
-    confidence_label = domain.confidence.label.casefold()
-
-    if decision.decision_class == "dead_end" and _contains(
-        combined,
-        ("prime opportunity", "strong opportunity", "strong location", "strong economics"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical dead_end decision")
-    if decision.decision_class == "tourist_trap" and _contains(
-        combined,
-        ("strong economics", "financially strong", "healthy economics", "financially viable"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical tourist_trap decision")
-    if decision.decision_class == "structural_risk" and _contains(
-        combined,
-        ("structurally strong", "strong location"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical structural_risk decision")
-    if decision.financial_band == "non_viable" and _contains(
-        combined,
-        ("financially strong", "strong economics", "financially viable", "healthy economics"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical non_viable financial band")
-    if financial.stress_test_failed and _contains(
-        combined,
-        ("stress test passed", "passes the stress test", "stress resilient", "stress-resilient"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical stress-test status")
-    if financial.operating_margin_pct < 0 and _contains(
-        combined,
-        ("positive base operating margin", "positive operating margin"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical operating-margin sign")
-    if "SEVERE_RENT_BURDEN" in decision.risk_flags and _contains(
-        combined,
-        ("rent burden is low", "low rent burden", "rent burden is healthy"),
-    ):
-        raise NarrativeSemanticError("narrative contradicts canonical rent-burden risk")
-
-    if confidence_label != "high" and _contains(combined, _HIGH_CERTAINTY_CLAIMS):
-        raise NarrativeSemanticError("narrative upgrades canonical confidence")
-    if _quality_is_incomplete(domain) and _contains(combined, _COMPLETE_EVIDENCE_CLAIMS):
-        raise NarrativeSemanticError("narrative claims complete evidence despite canonical missingness")
-
+    _validate_section(approved, draft.executive_summary, "executive_summary")
+    _validate_section(approved, draft.strengths, "strength")
+    _validate_section(approved, draft.risks, "risk")
+    _validate_section(approved, draft.recommendations, "recommendation")
+    _validate_section(approved, draft.caveats, "caveat")
     return draft
 
 
 class OpenAIResponsesNarrativeProvider:
-    """Responses API adapter. Provider output remains untrusted until local validation."""
+    """Responses API adapter. Provider selections remain untrusted until local validation."""
 
     def __init__(self, client: object | None = None) -> None:
         self._client = client
@@ -649,106 +798,74 @@ def _draft_anchors(context: ApprovedNarrativeContext) -> NarrativeDraftAnchors:
     )
 
 
+def _selection(
+    context: ApprovedNarrativeContext,
+    claim_id: NarrativeClaimId,
+) -> NarrativePointDraft:
+    spec = context.claims.get(claim_id.value)
+    if spec is None:
+        raise ValueError(f"fallback attempted inactive narrative claim: {claim_id.value}")
+    return NarrativePointDraft(claim_id=claim_id, evidence_keys=list(spec.evidence_keys))
+
+
 def build_deterministic_fallback_draft(
     context: ApprovedNarrativeContext,
 ) -> NarrativeDraft:
     approved = require_approved_narrative_context(context)
-    domain = approved.report_domain_model
-    strengths: list[NarrativePointDraft] = []
-    risks: list[NarrativePointDraft] = []
-    recommendations: list[NarrativePointDraft] = []
 
-    if domain.decision.structural_band == "strong":
-        strengths.append(
-            NarrativePointDraft(
-                text="The canonical structural band is strong.",
-                evidence_keys=["decision.structural_band"],
-            )
+    strengths = [
+        _selection(approved, claim_id)
+        for claim_id in (
+            NarrativeClaimId.STRENGTH_STRUCTURAL_STRONG,
+            NarrativeClaimId.STRENGTH_FINANCIAL_STRONG,
+            NarrativeClaimId.STRENGTH_CONFIDENCE_HIGH,
         )
-    if domain.decision.financial_band == "strong":
-        strengths.append(
-            NarrativePointDraft(
-                text="The canonical financial band is strong.",
-                evidence_keys=["decision.financial_band"],
-            )
-        )
-
-    risk_flag_text = {
-        "HIGH_RENT_BURDEN": "Canonical risk flags identify elevated rent burden.",
-        "SEVERE_RENT_BURDEN": "Canonical risk flags identify severe rent burden.",
-        "STRESS_TEST_FAILED": "The canonical stress-test status indicates failure.",
-        "NEGATIVE_BASE_OPERATING_MARGIN": "Canonical results identify a negative base operating margin.",
-    }
-    if domain.decision.risk_flags:
-        for flag in domain.decision.risk_flags:
-            text = risk_flag_text.get(flag, "A canonical risk flag remains active.")
-            risks.append(NarrativePointDraft(text=text, evidence_keys=["decision.risk_flags"]))
-
-    if domain.decision.financial_band == "non_viable":
-        risks.append(
-            NarrativePointDraft(
-                text="The canonical financial band is non viable.",
-                evidence_keys=["decision.financial_band"],
-            )
-        )
-    if domain.decision.structural_band == "weak":
-        risks.append(
-            NarrativePointDraft(
-                text="The canonical structural band is weak.",
-                evidence_keys=["decision.structural_band"],
-            )
-        )
-
-    if "SEVERE_RENT_BURDEN" in domain.decision.risk_flags or "HIGH_RENT_BURDEN" in domain.decision.risk_flags:
-        recommendations.append(
-            NarrativePointDraft(
-                text="Review rent assumptions and lease terms before acting.",
-                evidence_keys=["decision.risk_flags"],
-            )
-        )
-    if "STRESS_TEST_FAILED" in domain.decision.risk_flags:
-        recommendations.append(
-            NarrativePointDraft(
-                text="Review downside operating assumptions before acting.",
-                evidence_keys=["decision.risk_flags"],
-            )
-        )
-    if "NEGATIVE_BASE_OPERATING_MARGIN" in domain.decision.risk_flags:
-        recommendations.append(
-            NarrativePointDraft(
-                text="Review cost and revenue assumptions before acting.",
-                evidence_keys=["decision.risk_flags"],
-            )
-        )
-    if domain.decision.decision_class == "structural_risk" or domain.decision.structural_band == "weak":
-        recommendations.append(
-            NarrativePointDraft(
-                text="Treat the canonical structural condition as a decision constraint.",
-                evidence_keys=["decision.decision_class", "decision.structural_band"],
-            )
-        )
-    if not recommendations:
-        recommendations.append(
-            NarrativePointDraft(
-                text="Review the canonical decision and supporting evidence before acting.",
-                evidence_keys=["decision.decision_class"],
-            )
-        )
-
-    caveats = [
-        "Mathematically validated scoring engine; empirical validation pending.",
-        "This narrative is a language layer and does not replace canonical report facts.",
+        if claim_id.value in approved.claims
     ]
-    if domain.confidence.label != "high":
-        caveats.append(
-            f"Interpret the narrative conservatively because canonical confidence is {domain.confidence.label}."
+    risks = [
+        _selection(approved, claim_id)
+        for claim_id in (
+            NarrativeClaimId.RISK_STRUCTURAL_WEAK,
+            NarrativeClaimId.RISK_FINANCIAL_NON_VIABLE,
+            NarrativeClaimId.RISK_HIGH_RENT_BURDEN,
+            NarrativeClaimId.RISK_SEVERE_RENT_BURDEN,
+            NarrativeClaimId.RISK_STRESS_TEST_FAILED,
+            NarrativeClaimId.RISK_NEGATIVE_BASE_MARGIN,
         )
-    if _quality_is_incomplete(domain):
-        caveats.append("Some canonical evidence is unavailable or incomplete.")
+        if claim_id.value in approved.claims
+    ]
+    recommendations = [
+        _selection(approved, claim_id)
+        for claim_id in (
+            NarrativeClaimId.RECOMMEND_REVIEW_RENT,
+            NarrativeClaimId.RECOMMEND_REVIEW_DOWNSIDE,
+            NarrativeClaimId.RECOMMEND_REVIEW_COST_REVENUE,
+            NarrativeClaimId.RECOMMEND_STRUCTURAL_CONSTRAINT,
+        )
+        if claim_id.value in approved.claims
+    ]
+    if not recommendations:
+        recommendations = [
+            _selection(approved, NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION)
+        ]
+
+    caveat_ids = [
+        NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING,
+        NarrativeClaimId.CAVEAT_LANGUAGE_LAYER,
+        NarrativeClaimId.CAVEAT_CONFIDENCE_NOT_HIGH,
+        NarrativeClaimId.CAVEAT_INCOMPLETE_EVIDENCE,
+    ]
+    caveats = [
+        _selection(approved, claim_id)
+        for claim_id in caveat_ids
+        if claim_id.value in approved.claims
+    ]
 
     return NarrativeDraft(
         canonical_anchors=_draft_anchors(approved),
-        executive_summary=f"{domain.decision.headline}. This summary preserves the canonical decision.",
+        executive_summary=[
+            _selection(approved, NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION)
+        ],
         strengths=strengths,
         risks=risks,
         recommendations=recommendations,
@@ -836,10 +953,12 @@ __all__ = [
     "NARRATIVE_PROVIDER",
     "NARRATIVE_MODEL_ENV",
     "NARRATIVE_INSTRUCTIONS",
+    "NarrativeClaimId",
     "NarrativeDraftAnchors",
     "NarrativePointDraft",
     "NarrativeDraft",
     "NarrativeCanonicalAnchors",
+    "NarrativeApprovedClaim",
     "ApprovedNarrativeContext",
     "NarrativePoint",
     "NarrativeProvenance",
