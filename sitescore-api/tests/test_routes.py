@@ -139,3 +139,25 @@ def test_validation_detail_does_not_echo_input_value(default_client, valid_paylo
     response = default_client.post("/v1/analyses", json=payload)
     assert response.status_code == 422
     assert secretish not in response.text
+
+
+def test_unknown_v1_route_uses_stable_error_envelope(default_client):
+    response = default_client.get("/v1/does-not-exist")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["api_version"] == "v1"
+    assert body["error"]["code"] == "route_not_found"
+    assert "detail" not in body
+    assert response.headers["x-request-id"] == body["request_id"]
+    _assert_uuid4(body["request_id"])
+
+
+def test_wrong_method_uses_stable_error_envelope(default_client):
+    response = default_client.delete("/v1/analyses")
+    assert response.status_code == 405
+    body = response.json()
+    assert body["api_version"] == "v1"
+    assert body["error"]["code"] == "method_not_allowed"
+    assert "detail" not in body
+    assert response.headers["x-request-id"] == body["request_id"]
+    _assert_uuid4(body["request_id"])
