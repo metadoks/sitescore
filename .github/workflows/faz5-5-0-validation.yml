@@ -62,28 +62,37 @@ jobs:
           PY
 
       - name: Test sitescore-api
-        run: python -m pytest sitescore-api/tests -q
+        working-directory: sitescore-api
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-app
-        run: python -m pytest sitescore-app/tests -q
+        working-directory: sitescore-app
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-pipeline
-        run: python -m pytest sitescore-pipeline/tests -q
+        working-directory: sitescore-pipeline
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-benchmarks
-        run: python -m pytest sitescore-benchmarks/tests -q
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-metrics
-        run: python -m pytest sitescore-metrics/tests -q
+        working-directory: sitescore-metrics
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-spatial
-        run: python -m pytest sitescore-spatial/tests -q
+        working-directory: sitescore-spatial
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-providers
-        run: python -m pytest sitescore-providers/tests -q
+        working-directory: sitescore-providers
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-data
-        run: python -m pytest sitescore-data/tests -q
+        working-directory: sitescore-data
+        run: python -m pytest -o addopts='' -q
 
       - name: Test frozen sitescore-core
-        run: python -m pytest sitescore-core/tests -q
+        working-directory: sitescore-core
+        run: python -m pytest -o addopts='' -q
