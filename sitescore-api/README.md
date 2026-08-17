@@ -12,9 +12,29 @@
 
 PostgreSQL is the sole durable analysis/lifecycle/idempotency/auth metadata truth. Redis is broker transport only; Celery result state is not a public resource authority.
 
-The currently frozen COMB-005 road/parking authority is not approved. Therefore the real locked canonical production path is expected to terminate `not_score_ready`; this package does not manufacture a score or a `completed` result. `completed` remains a guarded lifecycle state that can be persisted only from a canonical frozen application analysis result.
+## Canonical provider acquisition
 
-Deployment configuration is mandatory: PostgreSQL URL, Redis broker URL, API-key pepper, deadline settings, and a server-owned canonical execution evidence source. Missing production configuration fails closed.
+Production execution does **not** accept a plugin that returns assembled `ExecutionEvidence` or frozen snapshots. The former `SITESCORE_EVIDENCE_SOURCE_FACTORY` seam is removed.
+
+When execution is enabled, `SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY` must return the exact server-owned `CanonicalAcquisitionDeployment`. That deployment supplies only true external boundaries and pinned server configuration: HTTP/Valhalla transports, artifact/reader boundaries, benchmark artifact authority, credentials, manifests, policies, and quality configuration.
+
+`sitescore-api` itself then performs the frozen public authority chain:
+
+```text
+external AddressIntent
+-> Census address + geography acquisition / parsing / lineage
+-> ResolvedLocation
+-> ACS acquisition / statistical evidence / DemographicSnapshot
+-> Valhalla acquisition / parsing / pedestrian frozen result
+-> Overture partition lineage / CompetitionSnapshot
+-> GTFS acquisition / parsing / TransitSnapshot
+-> server-owned BenchmarkDistributionArtifact loading
+-> metrics / normalization / readiness / application gate
+```
+
+Caller JSON cannot supply trusted coordinates, provider manifests/policies, snapshots, benchmark distributions, source metadata, coverage authority, or input-quality authority. Missing deployment configuration fails closed.
+
+The currently frozen COMB-005 road/parking authority is not approved. Therefore the real locked canonical production path is expected to terminate `not_score_ready`; this package does not manufacture a score or a `completed` result. `completed` remains a guarded lifecycle state that can be persisted only from a canonical frozen application analysis result.
 
 See `docs/CHECKPOINT_5_1_API_CONSUMER_LIFECYCLE.md` for the complete consumer and operational contract.
 
