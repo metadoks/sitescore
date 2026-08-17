@@ -99,8 +99,15 @@ class AnalysisModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    result_body: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    readiness_body: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    # PostgreSQL JSONB normally serializes Python None as JSON literal `null`.
+    # Lifecycle state checks use SQL NULL semantics, so nullable terminal payload
+    # columns must explicitly persist Python None as SQL NULL.
+    result_body: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    readiness_body: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     failure_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
