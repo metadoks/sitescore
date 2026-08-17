@@ -13,6 +13,7 @@ def valid_payloads():
             "street": "123 Main St",
             "city": "Austin",
             "state": "TX",
+            "zip_code": "78701",
         },
         "costs": {
             "monthly_rent": 5000,

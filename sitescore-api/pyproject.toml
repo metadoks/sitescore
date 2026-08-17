@@ -4,13 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sitescore-api"
-version = "0.1.0"
-description = "Versioned external API ingress foundation for SiteScore AI"
+version = "0.2.0"
+description = "Durable machine-consumer API lifecycle for SiteScore AI"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.140.0",
     "pydantic==2.13.4",
+    "SQLAlchemy==2.0.51",
+    "alembic==1.18.5",
+    "psycopg[binary]==3.3.4",
+    "celery==5.6.3",
+    "redis==7.4.1",
     "sitescore-core==0.1.0",
+    "sitescore-data==0.1.0",
+    "sitescore-providers==0.1.0",
+    "sitescore-metrics==0.1.0",
+    "sitescore-benchmarks==0.1.0",
+    "sitescore-pipeline==0.1.0",
+    "sitescore-app==0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +29,9 @@ dev = [
     "httpx==0.28.1",
     "pytest==8.4.2",
 ]
+
+[project.scripts]
+sitescore-provision-service-key = "sitescore_api.provision:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
