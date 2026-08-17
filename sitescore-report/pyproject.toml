@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitescore-report"
+version = "0.1.0"
+description = "Canonical report facts and report-domain projection for SiteScore AI"
+requires-python = ">=3.11"
+dependencies = [
+    "sitescore-app==0.1.0",
+    "sitescore-core==0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
