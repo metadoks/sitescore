@@ -1,9 +1,21 @@
 # sitescore-api
 
-FAZ 5.0 external API ingress foundation for SiteScore AI.
+`sitescore-api==0.2.0` is the FAZ 5.1 machine-consumer boundary for SiteScore AI.
 
-This package provides strict Pydantic request schemas, server-owned request/analysis identity creation, an injected analysis lifecycle port, stable SiteScore error envelopes, and versioned FastAPI routes under `/v1`.
+## V1 resource model
 
-The production/default FAZ 5.0 lifecycle backend is intentionally unavailable. It does not persist analyses and therefore returns `503 analysis_lifecycle_unavailable` for valid POST/GET analysis-resource requests. Durable lifecycle, authentication, idempotency, PostgreSQL, Celery and Redis belong to FAZ 5.1.
+- `POST /v1/analyses` — Bearer scope `analysis:write`, required `Idempotency-Key`, durable `202` acceptance.
+- `GET /v1/analyses/{analysis_id}` — Bearer scope `analysis:read`, consumer-owned polling resource.
+- Public states: `queued`, `running`, `completed`, `not_score_ready`, `failed`, `timed_out`.
+- Cancellation: **NOT_SUPPORTED**.
+- Callback/webhook delivery: **NONE**. V1 uses polling.
 
-See `docs/CHECKPOINT_5_0_EXTERNAL_API_INGRESS.md` for the exact checkpoint contract.
+PostgreSQL is the sole durable analysis/lifecycle/idempotency/auth metadata truth. Redis is broker transport only; Celery result state is not a public resource authority.
+
+The currently frozen COMB-005 road/parking authority is not approved. Therefore the real locked canonical production path is expected to terminate `not_score_ready`; this package does not manufacture a score or a `completed` result. `completed` remains a guarded lifecycle state that can be persisted only from a canonical frozen application analysis result.
+
+Deployment configuration is mandatory: PostgreSQL URL, Redis broker URL, API-key pepper, deadline settings, and a server-owned canonical execution evidence source. Missing production configuration fails closed.
+
+See `docs/CHECKPOINT_5_1_API_CONSUMER_LIFECYCLE.md` for the complete consumer and operational contract.
+
+> Mathematically validated scoring engine; empirical validation pending.
