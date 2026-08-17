@@ -46,24 +46,7 @@ COMBINED_TESTS: 1479 PASS
 
 ## NARR53-H001 — Implementer resolution evidence
 
-Reviewer found that v1 could verify evidence-key membership but not entailment of arbitrary provider prose, with executive-summary and caveat free text as additional escape routes.
-
-The same PR #19 now uses a v2 closed semantic claim authority chain:
-
-```text
-canonical ReportDomainModel
--> ApprovedNarrativeContext
--> canonical-state-active closed NarrativeClaimId values
--> untrusted OpenAI claim selection OR deterministic fallback selection
--> strict schema validation
--> exact claim / section / evidence compatibility validation
--> code-owned versioned text rendering
--> ValidatedReportNarrative
-```
-
-Provider structured output contains no free-form prose field. A point carries only a closed `claim_id` and the exact evidence-key list. Each claim has code-owned section, exact evidence tuple, canonical categorical/status compatibility predicate, and final render template. Only claims compatible with the exact canonical source state are exposed. The validator requires exact active claim, exact section, exact evidence tuple, present evidence, and exact canonical anchors.
-
-Narrative contract versions:
+The prior free-form narrative authority gap is structurally removed. Provider structured output has no prose field; it can select only code-owned `NarrativeClaimId` values with exact code-owned evidence-key tuples. Each active claim is gated by an exact canonical categorical/status predicate and section. Local validation requires the claim to be active for the exact canonical source state, in the exact section, with the exact evidence tuple and exact anchors. Final customer-facing text is rendered only from deterministic code-owned versioned templates.
 
 ```text
 prompt: sitescore-narrative-prompt-v2
@@ -71,42 +54,33 @@ schema: sitescore-narrative-v2
 fallback: sitescore-narrative-fallback-v2
 ```
 
-This structurally closes unrelated evidence, unsupported executive/caveat assertions, empirical/guarantee synonym injection, arbitrary numeric/business assertions, claim/evidence mismatch, and source-state mismatch. Final customer text comes only from code-owned templates after validation.
-
-Fresh tests cover all Reviewer-required adversarial cases plus valid strong, weak, low-confidence and risk states. A focused test proves that a `risk.structural_weak` claim is rejected on canonical `structural_band == strong` even when the provider submits the otherwise correct `decision.structural_band` evidence key.
+Fresh adversarial tests cover unrelated evidence, unsupported executive/caveat free text, empirical/guarantee synonym injection, claim/evidence mismatch and inactive source-state claims. Valid strong, weak, low-confidence and risk states remain accepted/deterministic.
 
 ## Fresh authoritative validation
 
 ```text
-workflow: faz5-5-3-exact-validation
 run: 32073646926
 job: 95522037839
 validated SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 conclusion: SUCCESS
-```
-
-```text
 sitescore-report: 16 PASS
 sitescore-api: 88 PASS
-frozen total: 1375 PASS
-API + frozen: 1463 PASS
+frozen regression: 1375 PASS
 combined: 1479 PASS
 ```
 
-The same exact run re-proved PostgreSQL migration and a real Celery 5.6.3 worker over Redis with disabled result backend; `sitescore_api.reconcile_timeouts` was received and succeeded.
+The same exact run re-proved PostgreSQL migration and a real Celery worker over Redis with disabled result backend; `sitescore_api.reconcile_timeouts` was received and succeeded.
 
-## Validation closure / final candidate
+## Final candidate closure
 
 ```text
 validated SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 final HEAD: fe937664a781a04e29a09e574bba46e371e26b90
 ```
 
-Validated-to-final compare is exactly one commit and one changed file: deletion of temporary `.github/workflows/faz5-5-3-validation.yml`. No product source/test/dependency/doc changed after validation.
+Validated-to-final is exactly one commit / one file: temporary validation-workflow deletion. Locked-base merge-base remains exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind 0. Final product diff is 10 files, all under `sitescore-report/**`.
 
-Locked-base-to-final merge-base is exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind-by 0. Final changed files = 10, all under `sitescore-report/**`. No frozen/locked upstream package or 5.4+ scope changed.
-
-`NARR53-H001` is resolved **by Implementer evidence only**. Reviewer must independently re-review exact new HEAD `fe937664a781a04e29a09e574bba46e371e26b90` before formally clearing it or issuing READY_TO_LOCK.
+`NARR53-H001` is resolved **by Implementer evidence only**. Reviewer must independently re-review exact new HEAD before formally clearing the blocker or issuing READY_TO_LOCK.
 
 No merge occurred. No LOCK is authorized. FAZ 5.4 has not started.
 
