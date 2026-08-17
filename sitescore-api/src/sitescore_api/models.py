@@ -18,7 +18,10 @@ def _non_empty_trimmed(value: object) -> str:
 def _strict_finite_number(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("value must be a JSON number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ValueError("value must be finite") from exc
     if not math.isfinite(number):
         raise ValueError("value must be finite")
     return number
@@ -37,7 +40,7 @@ class StrictRequestModel(BaseModel):
 
 
 class AddressRequest(StrictRequestModel):
-    country_code: Literal["US"] = "US"
+    country_code: Literal["US"]
     street: NonEmptyString
     city: NonEmptyString | None = None
     state: NonEmptyString | None = None
