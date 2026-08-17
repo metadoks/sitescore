@@ -88,14 +88,6 @@ conclusion: SUCCESS
 ```text
 sitescore-report: 16 PASS
 sitescore-api: 88 PASS
-frozen app: 19 PASS
-frozen pipeline: 53 PASS
-frozen benchmarks: 191 PASS
-frozen metrics: 67 PASS
-frozen spatial: 180 PASS
-frozen providers: 418 PASS
-frozen data: 361 PASS
-frozen core: 86 PASS
 frozen total: 1375 PASS
 API + frozen: 1463 PASS
 combined: 1479 PASS
