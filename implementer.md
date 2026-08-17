@@ -1,7 +1,5 @@
 # SiteScore AI — Implementer → Reviewer Handoff
 
-## CONTROL HEADER
-
 ```text
 HANDOFF_PROTOCOL_VERSION: 1.0
 AUTHORITATIVE_REPO: metadoks/sitescore
@@ -44,9 +42,9 @@ LOCKED_API_PLUS_FROZEN_TESTS: 1463 PASS
 COMBINED_TESTS: 1479 PASS
 ```
 
-## NARR53-H001 — Implementer resolution evidence
+## NARR53-H001 resolution evidence
 
-The prior free-form narrative authority gap is structurally removed. Provider structured output has no prose field; it can select only code-owned `NarrativeClaimId` values with exact code-owned evidence-key tuples. Each active claim is gated by an exact canonical categorical/status predicate and section. Local validation requires the claim to be active for the exact canonical source state, in the exact section, with the exact evidence tuple and exact anchors. Final customer-facing text is rendered only from deterministic code-owned versioned templates.
+The v1 free-form semantic authority gap is structurally removed. The v2 provider schema has no prose field. OpenAI can select only code-owned closed `NarrativeClaimId` values and must echo each claim's exact code-owned evidence-key tuple. Every claim has a code-owned section, canonical categorical/status compatibility predicate, exact evidence contract and final text template. Only claims active for the exact canonical `ReportDomainModel` state are exposed. Local validation requires exact active claim, exact section, exact evidence tuple, present evidence and exact canonical anchors.
 
 ```text
 prompt: sitescore-narrative-prompt-v2
@@ -54,9 +52,11 @@ schema: sitescore-narrative-v2
 fallback: sitescore-narrative-fallback-v2
 ```
 
-Fresh adversarial tests cover unrelated evidence, unsupported executive/caveat free text, empirical/guarantee synonym injection, claim/evidence mismatch and inactive source-state claims. Valid strong, weak, low-confidence and risk states remain accepted/deterministic.
+Final customer text is rendered only after validation from deterministic code-owned templates. This closes unrelated-evidence binding, unsupported executive/caveat assertions, empirical/guarantee synonym injection, arbitrary provider facts/numbers, claim/evidence mismatch and incompatible source-state claims.
 
-## Fresh authoritative validation
+Fresh adversarial tests include all Reviewer-required bypass cases. A focused test proves that `risk.structural_weak` is rejected on canonical `structural_band == strong` even with the otherwise-correct `decision.structural_band` evidence key. Valid strong, weak, low-confidence and risk states remain accepted and deterministic.
+
+## Fresh validation
 
 ```text
 run: 32073646926
@@ -69,18 +69,18 @@ frozen regression: 1375 PASS
 combined: 1479 PASS
 ```
 
-The same exact run re-proved PostgreSQL migration and a real Celery worker over Redis with disabled result backend; `sitescore_api.reconcile_timeouts` was received and succeeded.
+The same run re-proved PostgreSQL migration and real Celery/Redis transport with disabled result backend; `sitescore_api.reconcile_timeouts` was received and succeeded.
 
-## Final candidate closure
+## Closure
 
 ```text
 validated SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 final HEAD: fe937664a781a04e29a09e574bba46e371e26b90
 ```
 
-Validated-to-final is exactly one commit / one file: temporary validation-workflow deletion. Locked-base merge-base remains exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind 0. Final product diff is 10 files, all under `sitescore-report/**`.
+Validated-to-final = exactly one commit / one file, solely temporary workflow deletion. Locked-base merge-base remains exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind 0. Final product diff = 10 files, all `sitescore-report/**`.
 
-`NARR53-H001` is resolved **by Implementer evidence only**. Reviewer must independently re-review exact new HEAD before formally clearing the blocker or issuing READY_TO_LOCK.
+`NARR53-H001` is resolved by Implementer evidence only. Reviewer must independently re-review exact new HEAD before formally clearing the blocker or issuing READY_TO_LOCK.
 
 No merge occurred. No LOCK is authorized. FAZ 5.4 has not started.
 
