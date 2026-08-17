@@ -12,14 +12,14 @@ CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.1
 CHECKPOINT_TITLE: API Consumer Reliability + Execution Lifecycle
 
-REVIEWER_STATE: NEEDS_HARDENING
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
 CODE_BRANCH: faz5/5-1-api-consumer-lifecycle
-REVIEWED_HEAD_SHA: 7e2399cdb4bbc7d43f24625427bf7eb88534a922
+REVIEWED_HEAD_SHA: 2cebddd79b292c18babb2ea0258a15f6123a539a
 PR: #17
 
 FAZ_3_STATUS: FROZEN
@@ -28,15 +28,17 @@ FAZ_5_0_STATUS: LOCKED
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-BLOCKERS: LIFE51-H001
-RESOLVED_BLOCKERS: F51-CANONICAL-SCORED-PATH-H001
+ADDITIONAL_REOPEN_REQUIRED: 0
+
+BLOCKERS: NONE
+RESOLVED_BLOCKERS: F51-CANONICAL-SCORED-PATH-H001, LIFE51-H001
 ```
 
 ---
 
-# 1. EXACT-HEAD REVIEW RESULT
+# 1. EXACT-HEAD REVIEW DECISION
 
-Reviewer independently reviewed current PR #17 candidate:
+Reviewer independently reviewed current PR #17 exact candidate:
 
 ```text
 PR: #17
@@ -46,61 +48,273 @@ mergeable: TRUE
 base branch: main
 base SHA: 92d00cda34d337ce5c4e172d5184c9e3f1f55b11
 head branch: faz5/5-1-api-consumer-lifecycle
-head SHA: 7e2399cdb4bbc7d43f24625427bf7eb88534a922
-changed files: 37
+head SHA: 2cebddd79b292c18babb2ea0258a15f6123a539a
+changed files: 40
 ```
 
-The implementation is materially strong and the following checkpoint areas passed source review:
+Current `main` was independently read from GitHub and remains exactly:
 
 ```text
-sitescore-api==0.2.0 exact dependency contract
-scoped Bearer service API-key model
-HMAC-SHA256 secret verification with server-owned pepper
-constant-time digest comparison
-revoked/inactive key and consumer checks
-consumer-owned analysis lookup / foreign-existence hiding
-required Idempotency-Key validation
-validated-request canonical SHA-256 hashing
-PostgreSQL UNIQUE consumer/idempotency boundary
-same-payload replay -> same analysis_id
-same-key/different-payload -> 409
-transactional analysis + outbox creation
-persisted task_id reuse for redispatch
-PostgreSQL as lifecycle truth
-Redis as broker only
-Celery result backend disabled for product truth
-queued/running/completed/not_score_ready/failed/timed_out state vocabulary
-server-owned durable deadlines
-GET timeout reconciliation
-PostgreSQL advisory-lock execution claim
-terminal-state immutability guard
-canonical completed-outcome capability guard
-canonical NOT_SCORE_READY outcome capability guard
-Alembic production schema authority
-runtime-generated OpenAPI
-no report/payment/n8n/5.2 scope leakage
+92d00cda34d337ce5c4e172d5184c9e3f1f55b11
 ```
 
-The corrected COMB-005 expectation is implemented correctly downstream: current frozen canonical road/parking truth reaches canonical `NOT_SCORE_READY`, and core analysis is not invoked on that path.
+The base-to-head compare has merge-base exactly equal to that locked main SHA, is ahead by 57 commits and behind by 0. Every changed product file is under:
 
-There is one remaining checkpoint blocker below.
+```text
+sitescore-api/**
+```
+
+No frozen FAZ 3 / FAZ 4 package file is modified. No FAZ 5.2/report/narrative/PDF/S3/payment/n8n/FAZ 6 product scope is introduced.
+
+Decision:
+
+```text
+REVIEW_DECISION: READY_TO_LOCK
+READY_TO_LOCK: YES
+LOCK_RESULT: PENDING_USER_AUTHORIZATION
+```
 
 ---
 
-# 2. VALIDATION EVIDENCE — ACCEPTED
+# 2. LIFE51-H001 — RESOLVED
 
-Reviewer independently inspected GitHub Actions run:
+The previously blocked production authority seam has been materially corrected.
+
+Superseded design:
+
+```text
+SITESCORE_EVIDENCE_SOURCE_FACTORY=<module:callable>
+-> arbitrary acquire()
+-> already assembled ExecutionEvidence
+```
+
+That design allowed a deployment plugin to sit after frozen provider authority and supply detached provider-domain DTOs.
+
+Current production design uses:
+
+```text
+SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY=<module:callable>
+-> exact CanonicalAcquisitionDeployment
+-> runtime-owned CanonicalProviderEvidenceSource
+-> frozen provider acquisition/parsing/lineage
+-> ExecutionEvidence
+```
+
+`runtime.py` requires the factory result to be the exact `CanonicalAcquisitionDeployment` type and then constructs `CanonicalProviderEvidenceSource` itself. Production environment configuration can no longer directly install an `ExecutionEvidenceSource` that returns assembled post-provider evidence.
+
+The remaining configurable seams are deployment/external boundaries and pinned server configuration: provider-neutral HTTP transport, Valhalla transport, artifact storage/reader inputs, exact provider manifests/policies/credentials, precomputed boundaries explicitly permitted by the frozen provider contracts, and server-owned benchmark artifacts/quality configuration.
+
+The explicit Python `build_runtime(..., evidence_source=...)` argument remains an in-process injection seam; it is not selected from production environment configuration and is not a network/API authority surface.
+
+---
+
+# 3. FROZEN PROVIDER AUTHORITY COMPOSITION — ACCEPTED
+
+The new production `sitescore-api/src/sitescore_api/acquisition.py` composes the frozen public provider contracts rather than accepting detached provider snapshots.
+
+## Census
+
+Validated external address intent is converted into frozen `CensusAddressRequest` with server-owned manifest/policies and passed through:
+
+```text
+CensusGeocoderClient.acquire_geocode
+-> raw acquisition artifact / request fingerprint
+-> canonical parser
+-> GeocodeAcceptancePolicy
+-> provider-derived coordinates
+-> Census geography acquisition
+-> canonical geography parser
+-> SourceMetadata
+-> build_resolved_location
+```
+
+Caller JSON cannot provide trusted coordinates, Census manifests or canonical `ResolvedLocation` authority.
+
+## ACS
+
+Resolved Census geography is passed through:
+
+```text
+build_acs_query_plan
+-> ACSClient.acquire
+-> frozen statistical parsing
+-> source metadata
+-> evidence bundle
+-> build_demographic_snapshot
+```
+
+## Pedestrian / Valhalla
+
+Provider-built location authority is passed through:
+
+```text
+PedestrianRoutingOrigin.from_resolved_location
+-> PedestrianIsochroneClient
+-> frozen Valhalla parsing / request lineage
+-> pinned network-content hash verification
+-> PedestrianAreaEvidence tied to exact contour geometry identity + server-owned area policy
+-> build_pedestrian_frozen_result
+```
+
+Reviewer checked the frozen 3.3-5 record: precomputed/caller area evidence is an intentional frozen upstream boundary; no geodesic/equal-area production computation backend was selected in that checkpoint. The new server-owned deployment artifact seam therefore does not recreate the prior post-provider DTO bypass.
+
+## Overture competition
+
+Pinned partition bytes/descriptors are hash-verified and then passed through:
+
+```text
+build_partition_raw_artifact
+-> parse_overture_partition
+-> frozen competition builder
+```
+
+Reviewer also checked the frozen 3.3-4 contract. Decoded row reading and precomputed catchment membership are intentional provider boundaries, while empirical coverage sufficiency policy remains deferred. The current implementation conservatively supplies `CoverageState.UNKNOWN`, so the frozen builder returns UNKNOWN/non-AVAILABLE competition rather than manufacturing a zero competitor count.
+
+This is safe under the current locked model and is not a LOCK blocker: no AVAILABLE competition claim or false zero is created.
+
+## GTFS / transit
+
+Raw GTFS ZIP bytes are bound to exact frozen source identity and passed through:
+
+```text
+acquire_gtfs_zip_bytes
+-> parse_gtfs_zip
+-> server-owned precomputed reachability boundary
+-> ReachableTransitStopSet bound to exact transit bundle + pedestrian derivation/walking-budget identities
+-> build_transit_snapshot
+```
+
+Reviewer checked frozen 3.3-6: precomputed pedestrian-reachable stop membership is explicitly the frozen provider design.
+
+## Benchmarks
+
+Server-owned benchmark loader must return exactly the six required direct-feature keys, and every value must be an exact `BenchmarkDistributionArtifact`.
+
+No caller request field can provide benchmark artifacts, readiness, scores, confidence, provider snapshots or result authority.
+
+---
+
+# 4. CURRENT CANONICAL PRODUCT TRUTH PRESERVED
+
+The corrected 5.1 contract remains intact:
+
+```text
+COMB005_V1_POLICY = NOT_APPROVED
+APPROVED_ROAD_PARKING_COMPOSITE_POLICIES_V1 = ()
+road/parking composite = POLICY_NOT_APPROVED
+road_parking_access_score = no numeric value
+canonical readiness = NOT_SCORE_READY
+```
+
+Current real production lifecycle target remains:
+
+```text
+queued -> running -> not_score_ready
+```
+
+The new provider-boundary integration starts from a valid external request, traverses frozen Census/ACS/Valhalla/Overture/GTFS provider APIs and the frozen downstream metrics/benchmark/readiness/application chain, and proves:
+
+```text
+completed = None
+not_score_ready != None
+is_score_ready = False
+core analyze invocation count = 0
+```
+
+No fake approved COMB-005 state, neutral fill, zero score, forged readiness, fabricated `CategoryScores`, detached `CanonicalAnalysisResult` or caller-provided successful result is used.
+
+`completed` remains modeled for a future genuinely ELIGIBLE frozen authority state, but this checkpoint does not claim current reachability.
+
+---
+
+# 5. DURABLE API / RELIABILITY REVIEW — ACCEPTED
+
+The previously reviewed 5.1 reliability architecture remains intact after hardening:
+
+```text
+scoped Bearer analysis:write / analysis:read
+HMAC-SHA256 API-key verifier with server-owned pepper
+constant-time verification
+raw API secret not persisted
+revoked/inactive key and consumer checks
+consumer-owned analysis resource isolation
+foreign UUID and missing UUID -> same 404 analysis_not_found semantics
+mandatory Idempotency-Key
+canonical SHA-256 request-intent hash
+PostgreSQL UNIQUE (consumer_id, idempotency_key)
+same key + same payload -> same logical analysis_id
+same key + different payload -> 409 idempotency_conflict
+transactional analysis + dispatch-outbox creation
+persisted task_id reuse for redispatch
+PostgreSQL = durable lifecycle truth
+Redis = broker transport only
+Celery result backend = disabled
+queued/running/completed/not_score_ready/failed/timed_out exact public state set
+server-owned durable deadline
+GET timeout reconciliation
+PostgreSQL advisory execution lock
+physical DB connection pinned for advisory-lock lifetime
+terminal-state immutability
+canonical completed-outcome capability guard
+canonical NOT_SCORE_READY capability guard
+Alembic = production schema authority
+runtime-generated OpenAPI
+V1 callback/webhook = NONE
+V1 consumer integration = polling
+```
+
+No reopening of frozen FAZ 3 / FAZ 4 contracts is required.
+
+---
+
+# 6. EXACT DEPENDENCY CONTRACT — VERIFIED
+
+Final `sitescore-api==0.2.0` directly pins:
+
+```text
+fastapi==0.140.0
+pydantic==2.13.4
+SQLAlchemy==2.0.51
+alembic==1.18.5
+psycopg[binary]==3.3.4
+celery==5.6.3
+redis==7.4.1
+sitescore-core==0.1.0
+sitescore-data==0.1.0
+sitescore-providers==0.1.0
+sitescore-metrics==0.1.0
+sitescore-benchmarks==0.1.0
+sitescore-pipeline==0.1.0
+sitescore-app==0.1.0
+```
+
+Dev/test:
+
+```text
+httpx==0.28.1
+pytest==8.4.2
+```
+
+No OpenAI/Jinja2/WeasyPrint/Matplotlib/S3/payment dependency enters 5.1.
+
+---
+
+# 7. FRESH HARDENING VALIDATION — INDEPENDENTLY VERIFIED
+
+Authoritative hardening run:
 
 ```text
 workflow: faz5-5-1-exact-integration-validation
-run ID: 32032263495
-job ID: 95394699756
-validated SHA: c34fd71648141a66b83b1ac275b6ea4fdb606090
+run ID: 32042847147
+job ID: 95425120484
+validated SHA: 758ad1fbcb7dab9667e0d0dd0c65136d281d8262
 status: completed
 conclusion: SUCCESS
 ```
 
-The log proves the exact validation candidate was checked out and used:
+Reviewer independently inspected the run metadata, job steps and full job log. The workflow checked out the exact validated SHA.
+
+Exact runtime evidence:
 
 ```text
 Python 3.11.15
@@ -117,12 +331,15 @@ HTTPX 0.28.1
 pytest 8.4.2
 Shapely 2.1.2
 pyproj 3.7.2
+sitescore-providers 0.1.0
 ```
 
-Fresh successful counts:
+The run used real PostgreSQL and Redis service containers, upgraded the Alembic schema, started a real Celery worker, proved `results: disabled://`, received `sitescore_api.reconcile_timeouts`, and completed the task successfully.
+
+Fresh exact-SHA test counts:
 
 ```text
-sitescore-api:         86 PASS
+sitescore-api:         88 PASS
 sitescore-app:         19 PASS
 sitescore-pipeline:    53 PASS
 sitescore-benchmarks: 191 PASS
@@ -133,205 +350,98 @@ sitescore-data:       361 PASS
 sitescore-core:        86 PASS
 --------------------------------
 frozen regression:  1375 PASS
-combined total:     1461 PASS
+combined total:     1463 PASS
 ```
 
-The same run started a real Celery worker against Redis, proved the result backend is disabled, received `sitescore_api.reconcile_timeouts`, and completed that task successfully.
-
-The API suite emitted one Starlette/TestClient deprecation warning; no test failed.
+One Starlette/TestClient deprecation warning remains. It is non-blocking for the exact selected/pinned 5.1 dependency contract; no test failed.
 
 ---
 
-# 3. VALIDATED SHA -> FINAL HEAD CLEANUP — VERIFIED
+# 8. VALIDATED SHA -> FINAL HEAD CLOSURE — VERIFIED
 
-The GitHub compare endpoint was not available to this Reviewer integration for this PR, so Reviewer used repository-tree/blob identity instead of relying on Implementer prose.
-
-At validated SHA:
+Reviewer independently compared:
 
 ```text
-c34fd71648141a66b83b1ac275b6ea4fdb606090
+758ad1fbcb7dab9667e0d0dd0c65136d281d8262
+->
+2cebddd79b292c18babb2ea0258a15f6123a539a
 ```
 
-and final reviewed head:
+GitHub reports:
 
 ```text
-7e2399cdb4bbc7d43f24625427bf7eb88534a922
+status: ahead
+ahead_by: 1
+behind_by: 0
+total_commits: 1
+changed files: 1
 ```
 
-all top-level `sitescore-api` product subtree identities are identical:
-
-```text
-README.md    912637116dd402ebcf11318027c957814e58d62e
-alembic.ini  d8b262087383840210acdab106d3646857a14410
-alembic/     7b088ead01213cffe435ea6094de1d502212bf06
-docs/        d8039ff344c04f709acf9a27f7361bd8ff096f08
-pyproject    4866f4ef3daffb56671b8d5fc523cbcd512e3fd9
-src/         13312c418a485e8be34774f4b0450d1012c1b277
-tests/       e5e3c9a25c887ef95ed85a1c22ee46232408bfc9
-```
-
-The temporary validation workflow exists at the validated SHA:
+The sole changed file is:
 
 ```text
 .github/workflows/faz5-5-1-validation.yml
+status: REMOVED
 ```
 
-and is absent at final head `7e2399...`.
+No source, test, migration, dependency, API contract or documentation semantic changed after successful validation.
 
-Therefore the successful validation evidence remains applicable to the final product subtree currently under review.
+Therefore the fresh validation applies to the exact final product candidate now under review.
 
 ---
 
-# 4. BLOCKER LIFE51-H001 — PRODUCTION EXECUTOR DOES NOT YET COMPOSE FROZEN PROVIDER ACQUISITION AUTHORITY
-
-The corrected 5.1 contract still requires a real production execution-service boundary:
+# 9. ACCEPTANCE CHECKLIST
 
 ```text
-durable validated request intent
--> server-owned provider/deployment configuration
--> frozen provider acquisition / evidence
--> frozen metrics / benchmark normalization
--> frozen canonical normalized-feature assembly
--> frozen canonical readiness
--> frozen pipeline terminal factory
--> frozen application pipeline factory
--> frozen application gate
+[YES] exact base SHA unchanged
+[YES] PR open / mergeable / not merged
+[YES] exact head independently resolved
+[YES] final diff confined to sitescore-api/**
+[YES] frozen FAZ 3 / FAZ 4 packages unchanged
+[YES] scoped Bearer auth / consumer isolation
+[YES] durable PostgreSQL idempotency race authority
+[YES] transactional outbox / broker recovery
+[YES] PostgreSQL lifecycle truth / Redis broker only
+[YES] duplicate-worker concurrency guard
+[YES] durable timeout and terminal-state integrity
+[YES] no arbitrary JSON completed-result authority
+[YES] production post-provider evidence plugin removed
+[YES] external request binds through frozen Census provider acquisition
+[YES] ACS provider acquisition/parsing composed
+[YES] Valhalla provider acquisition/parsing composed
+[YES] Overture pinned partition parser/lineage composed
+[YES] GTFS parser/source/reachability authority composed
+[YES] server-owned benchmark artifact boundary
+[YES] current canonical NOT_SCORE_READY propagated truthfully
+[YES] core analyze remains uncalled for NOT_SCORE_READY
+[YES] exact dependency versions validated
+[YES] fresh API + frozen regression suites passed
+[YES] validated-to-final delta is validation-workflow deletion only
+[YES] no 5.2+ scope leakage
 ```
-
-The current source does not yet satisfy the provider-acquisition segment of that chain.
-
-Current `execution.py` defines an `ExecutionEvidenceSource` whose `acquire()` method returns an already-assembled `ExecutionEvidence` containing, among other authority-bearing objects:
-
-```text
-ResolvedLocation
-DemographicSnapshot
-IsochroneSnapshot
-CompetitionSnapshot
-TransitSnapshot
-BenchmarkDistributionArtifact mappings
-SourceMetadata
-GeographicLevel
-data coverage
-input qualities
-```
-
-Current `runtime.py` loads that source from:
-
-```text
-SITESCORE_EVIDENCE_SOURCE_FACTORY=<arbitrary module:callable>
-```
-
-and validates only that the returned object exposes an `acquire` attribute.
-
-If no factory is configured, production runtime uses `MissingExecutionEvidenceSource`, whose execution path fails with `ExecutionConfigurationError`.
-
-There is no concrete production `sitescore-api` evidence-source implementation in this candidate that invokes the frozen `sitescore-providers` acquisition contracts. In particular, the current production executor does not bind the external address intent to the existing frozen Census provider client/manifest/persistence/parser authority before accepting a `ResolvedLocation`/other evidence surface.
-
-Frozen provider source does expose real acquisition authority. For example `CensusGeocoderClient` requires frozen/provider-neutral `HTTPTransport`, `ArtifactStore`, `CensusAddressRequest`, `CensusGeographyManifest`, persistence policy, provider identity/fingerprint, raw acquisition artifacts and canonical parsing. Those controls are bypassable if a deployment plugin is allowed to hand the executor an already-constructed `ResolvedLocation` directly.
-
-This is not merely dependency injection at the HTTP transport seam. The injection seam currently sits **after provider authority construction** and also supplies benchmark/evaluation inputs that influence later canonical execution.
-
-The successful canonical integration tests likewise use `StaticEvidenceSource` and manually construct the already-typed location/demographic/isochrone/competition/transit/benchmark evidence. That is valid for downstream frozen pipeline/application testing, but it does not prove the required production provider-acquisition chain.
-
-### Why this is a blocker
-
-A deployment-supplied `module:callable` can currently become a new post-provider authority and manufacture typed-but-not-provider-acquired evidence. Type correctness alone is not equivalent to frozen provider lineage/canonical acquisition authority.
-
-This would weaken the intended boundary:
-
-```text
-caller JSON is intent only
-server/deployment owns provider manifests/policies
-frozen provider clients/parsers establish acquisition lineage
-```
-
-into:
-
-```text
-arbitrary deployment plugin may supply post-provider DTO authority
-```
-
-Therefore exact-head READY_TO_LOCK is blocked.
 
 ---
 
-# 5. REQUIRED HARDENING FOR LIFE51-H001
+# 10. LOCK GATE
 
-Remain on the same branch and PR:
-
-```text
-branch: faz5/5-1-api-consumer-lifecycle
-PR: #17
-```
-
-Do not start 5.2.
-Do not merge.
-Do not modify frozen FAZ 3 / FAZ 4 semantics.
-
-Implement a concrete server-owned production evidence/acquisition boundary inside the authorized `sitescore-api/**` scope that composes the frozen provider contracts actually available in the repository.
-
-At minimum:
-
-1. Bind the validated `AddressIntent` to the frozen Census address/geography acquisition path using server-owned manifest/benchmark/vintage/persistence configuration.
-2. Use the frozen provider client/parser/artifact/public factory contracts rather than accepting a detached `ResolvedLocation` from an arbitrary post-provider plugin.
-3. For other evidence needed by the current canonical NOT_SCORE_READY path, compose the available frozen provider/public acquisition contracts and server-owned benchmark artifact loading authority. Do not let external API JSON supply manifests, policies, trusted coordinates, snapshots, benchmark distributions, coverage or input-quality authority.
-4. Any configurable adapter/plugin seam must be narrowed to genuine external transport/storage/provider boundaries (for example HTTP transport, artifact storage, deployment configuration or artifact loader) rather than returning the fully assembled post-provider `ExecutionEvidence` authority surface.
-5. The production runtime must have a concrete canonical acquisition implementation selected by server configuration; `MissingExecutionEvidenceSource` may remain a fail-closed fallback for absent deployment configuration, but an unimplemented external plugin must not be the only path to real execution.
-6. Add an integration test that starts from a valid external analysis request and deterministic fakes at the external provider/HTTP/artifact-storage boundary, then passes through the frozen provider acquisition/parsing/lineage APIs before reaching the already-proven frozen metrics/benchmark/readiness/application `NOT_SCORE_READY` path.
-7. Preserve `core analyze invocation count = 0` for the current COMB-005 NOT_SCORE_READY path.
-8. Preserve completed-result canonical authority guards; do not fabricate a score-ready path.
-
-If the actual frozen public provider APIs cannot compose the required production evidence path without changing frozen runtime semantics or relying on unsupported private internals, do not invent authority. Instead set:
+Acceptance is valid only for exact head:
 
 ```text
-CONTRACT_CHANGE_REQUIRED: 1
-IMPLEMENTER_STATE: BLOCKED_FOR_REVIEW
+2cebddd79b292c18babb2ea0258a15f6123a539a
 ```
 
-and STOP with exact source evidence.
+If PR #17 HEAD changes before merge, this READY_TO_LOCK becomes stale and Reviewer must review the new exact head.
 
----
-
-# 6. REVALIDATION AFTER HARDENING
-
-Because LIFE51-H001 changes production execution code, obtain fresh evidence on the new exact candidate SHA.
-
-Required:
+Reviewer does not merge and does not self-lock.
 
 ```text
-sitescore-api full unit/integration suite
-real PostgreSQL migration/race/lifecycle tests
-real Redis/Celery transport test
-new frozen-provider acquisition -> canonical NOT_SCORE_READY integration test
-all eight frozen regression suites
+USER_LOCK_AUTHORIZED: NO
+LOCK_RESULT: PENDING_USER_AUTHORIZATION
+IMPLEMENTER_NEXT_ACTION: WAIT_FOR_USER_LOCK
 ```
 
-Print and verify the exact dependency/runtime versions again.
+When and only when the user sends literal `LOCK` to the Implementer chat while this exact-head acceptance remains current, Implementer may perform the protocol-authorized merge/lock closure for FAZ 5.1.
 
-A temporary validation workflow remains authorized for this hardening only. Remove it before the final candidate and prove validated-SHA -> final-head product identity again.
-
-Report actual fresh counts; do not reuse run `32032263495` as evidence for code changed by this hardening.
-
----
-
-# 7. CURRENT REVIEW DECISION
-
-```text
-REVIEW_DECISION: NEEDS_HARDENING
-READY_TO_LOCK: NO
-LOCK_RESULT: NOT_APPLICABLE
-CURRENT_PHASE: FAZ 5
-CURRENT_CHECKPOINT: 5.1
-PR: #17
-REVIEWED_HEAD_SHA: 7e2399cdb4bbc7d43f24625427bf7eb88534a922
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-BLOCKERS: LIFE51-H001
-RESOLVED_BLOCKERS: F51-CANONICAL-SCORED-PATH-H001
-```
-
-No user LOCK is requested.
-
-Implementer must perform only the hardening above on the same branch / PR and return for another exact-head review.
+Do not start FAZ 5.2 before successful LOCK closure is recorded and independently verified.
 
 STOP.
