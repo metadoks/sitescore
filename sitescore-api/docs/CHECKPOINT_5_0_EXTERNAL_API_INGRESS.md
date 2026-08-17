@@ -24,13 +24,13 @@ The POST request is a strict discriminated union keyed by the exact frozen `sect
 - `gym`
 - `beauty`
 
-Each sector accepts only its matching `business_inputs` model plus `location` and `costs`. Unknown fields are rejected at every external model boundary. Numeric fields reject booleans, non-numeric coercion, NaN and Infinity.
+Each sector accepts only its matching `business_inputs` model plus `location` and `costs`. Unknown fields are rejected at every external model boundary. Numeric fields reject booleans, non-numeric coercion, NaN, Infinity and values that cannot be represented as a finite float.
 
 ### Location
 
 V1 in this checkpoint accepts a U.S. address only:
 
-- `country_code`: `US` only
+- `country_code`: required and exactly `US`
 - `street`: required, trimmed, non-blank
 - `city`: optional, trimmed, non-blank when supplied
 - `state`: optional, trimmed, non-blank when supplied
