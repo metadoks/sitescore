@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import TypeAdapter
 from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
 from .db import Database
 from .db_models import AnalysisModel, TERMINAL_STATES
@@ -31,105 +32,113 @@ class AnalysisWorkerService:
         return datetime.now(timezone.utc)
 
     def execute_analysis(self, analysis_id: UUID) -> str:
-        with self.database.session() as session:
-            locked = bool(
-                session.execute(
-                    text("SELECT pg_try_advisory_lock(:key)"),
-                    {"key": _advisory_key(analysis_id)},
-                ).scalar_one()
-            )
-            if not locked:
-                session.rollback()
-                return "busy"
-            # The advisory lock is session-level and survives COMMIT. Close the
-            # implicit transaction opened by the lock SELECT before state work.
-            session.commit()
-            try:
-                row = session.scalar(
-                    select(AnalysisModel)
-                    .where(AnalysisModel.analysis_id == analysis_id)
-                    .with_for_update()
+        # Session-level PostgreSQL advisory locks belong to a physical database
+        # connection. Keep that connection pinned for the entire execution; if a
+        # post-lock COMMIT returned it to the pool, a duplicate worker could check
+        # out the same connection and re-enter the lock.
+        with self.database.engine.connect() as connection:
+            with Session(
+                bind=connection,
+                expire_on_commit=False,
+                future=True,
+            ) as session:
+                locked = bool(
+                    session.execute(
+                        text("SELECT pg_try_advisory_lock(:key)"),
+                        {"key": _advisory_key(analysis_id)},
+                    ).scalar_one()
                 )
-                if row is None:
+                if not locked:
                     session.rollback()
-                    return "missing"
-                now = self._now()
-                if row.state in TERMINAL_STATES:
-                    state = row.state
-                    session.rollback()
-                    return state
-                if now >= row.deadline_at:
-                    row.state = "timed_out"
-                    row.updated_at = now
-                    row.finished_at = now
-                    row.failure_code = "analysis_deadline_exceeded"
-                    row.failure_message = "analysis exceeded its server-owned deadline"
-                    session.commit()
-                    return "timed_out"
-                if row.started_at is None:
-                    row.started_at = now
-                row.state = "running"
-                row.updated_at = now
-                payload = dict(row.request_payload)
-                creation_request_id = row.creation_request_id
-                durable_analysis_id = row.analysis_id
+                    return "busy"
+                # Advisory lock is session/connection-level and survives COMMIT.
                 session.commit()
-
-                request_model = _REQUEST_ADAPTER.validate_python(payload)
-                command = build_analysis_ingress_command(
-                    request_model,
-                    request_id=creation_request_id,
-                    analysis_id=durable_analysis_id,
-                )
-                outcome = self.executor.execute(command, now=self._now())
-
-                row = session.scalar(
-                    select(AnalysisModel)
-                    .where(AnalysisModel.analysis_id == analysis_id)
-                    .with_for_update()
-                )
-                if row is None:
-                    session.rollback()
-                    return "missing"
-                now = self._now()
-                if outcome.not_score_ready is not None:
-                    persist_not_score_ready(session, row, outcome.not_score_ready, now=now)
-                else:
-                    assert outcome.completed is not None
-                    persist_completed(session, row, outcome.completed, now=now)
-                state = row.state
-                session.commit()
-                return state
-            except Exception:
-                session.rollback()
-                row = session.scalar(
-                    select(AnalysisModel)
-                    .where(AnalysisModel.analysis_id == analysis_id)
-                    .with_for_update()
-                )
-                if row is not None and row.state not in TERMINAL_STATES:
+                try:
+                    row = session.scalar(
+                        select(AnalysisModel)
+                        .where(AnalysisModel.analysis_id == analysis_id)
+                        .with_for_update()
+                    )
+                    if row is None:
+                        session.rollback()
+                        return "missing"
                     now = self._now()
+                    if row.state in TERMINAL_STATES:
+                        state = row.state
+                        session.rollback()
+                        return state
                     if now >= row.deadline_at:
                         row.state = "timed_out"
+                        row.updated_at = now
+                        row.finished_at = now
                         row.failure_code = "analysis_deadline_exceeded"
                         row.failure_message = "analysis exceeded its server-owned deadline"
-                    else:
-                        row.state = "failed"
-                        row.failure_code = "analysis_execution_failed"
-                        row.failure_message = "analysis execution failed"
-                    row.finished_at = now
+                        session.commit()
+                        return "timed_out"
+                    if row.started_at is None:
+                        row.started_at = now
+                    row.state = "running"
                     row.updated_at = now
-                session.commit()
-                return row.state if row is not None else "failed"
-            finally:
-                try:
-                    session.execute(
-                        text("SELECT pg_advisory_unlock(:key)"),
-                        {"key": _advisory_key(analysis_id)},
-                    )
+                    payload = dict(row.request_payload)
+                    creation_request_id = row.creation_request_id
+                    durable_analysis_id = row.analysis_id
                     session.commit()
+
+                    request_model = _REQUEST_ADAPTER.validate_python(payload)
+                    command = build_analysis_ingress_command(
+                        request_model,
+                        request_id=creation_request_id,
+                        analysis_id=durable_analysis_id,
+                    )
+                    outcome = self.executor.execute(command, now=self._now())
+
+                    row = session.scalar(
+                        select(AnalysisModel)
+                        .where(AnalysisModel.analysis_id == analysis_id)
+                        .with_for_update()
+                    )
+                    if row is None:
+                        session.rollback()
+                        return "missing"
+                    now = self._now()
+                    if outcome.not_score_ready is not None:
+                        persist_not_score_ready(session, row, outcome.not_score_ready, now=now)
+                    else:
+                        assert outcome.completed is not None
+                        persist_completed(session, row, outcome.completed, now=now)
+                    state = row.state
+                    session.commit()
+                    return state
                 except Exception:
                     session.rollback()
+                    row = session.scalar(
+                        select(AnalysisModel)
+                        .where(AnalysisModel.analysis_id == analysis_id)
+                        .with_for_update()
+                    )
+                    if row is not None and row.state not in TERMINAL_STATES:
+                        now = self._now()
+                        if now >= row.deadline_at:
+                            row.state = "timed_out"
+                            row.failure_code = "analysis_deadline_exceeded"
+                            row.failure_message = "analysis exceeded its server-owned deadline"
+                        else:
+                            row.state = "failed"
+                            row.failure_code = "analysis_execution_failed"
+                            row.failure_message = "analysis execution failed"
+                        row.finished_at = now
+                        row.updated_at = now
+                    session.commit()
+                    return row.state if row is not None else "failed"
+                finally:
+                    try:
+                        session.execute(
+                            text("SELECT pg_advisory_unlock(:key)"),
+                            {"key": _advisory_key(analysis_id)},
+                        )
+                        session.commit()
+                    except Exception:
+                        session.rollback()
 
     def reconcile_expired(self, *, limit: int = 100) -> int:
         now = self._now()
