@@ -21,7 +21,12 @@ def test_no_direct_core_analyze_or_engine_imports():
 
 def test_route_layer_contains_no_scoring_formula_logic():
     tree = ast.parse((SRC_ROOT / "routes.py").read_text(encoding="utf-8"))
-    assert not any(isinstance(node, (ast.BinOp, ast.AugAssign)) for node in ast.walk(tree))
+    arithmetic_ops = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp):
+            # PEP 604 type unions (X | None) are AST BinOp/BitOr but are not formulas.
+            assert not isinstance(node.op, arithmetic_ops)
+        assert not isinstance(node, ast.AugAssign)
 
 
 def test_postgresql_is_lifecycle_truth_and_celery_async_result_is_absent():
@@ -51,6 +56,7 @@ def test_worker_payload_and_execution_lock_are_internal_and_postgresql_backed():
     assert "Authorization" not in dispatcher
     assert "api_key" not in dispatcher.lower()
     assert "pg_try_advisory_lock" in worker
+    assert "engine.connect()" in worker
     assert "redis" not in worker.lower()
 
 
