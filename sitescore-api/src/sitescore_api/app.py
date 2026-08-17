@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .errors import (
     AnalysisLifecycleUnavailable,
@@ -105,6 +106,24 @@ def create_app(lifecycle_backend: AnalysisLifecycleBackend | None = None) -> Fas
             status_code=503,
             code="analysis_lifecycle_unavailable",
             message="analysis lifecycle is unavailable",
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        if exc.status_code == 404:
+            code = "route_not_found"
+            message = "route not found"
+        elif exc.status_code == 405:
+            code = "method_not_allowed"
+            message = "method not allowed"
+        else:
+            code = "http_error"
+            message = "request could not be processed"
+        return _error_response(
+            request,
+            status_code=exc.status_code,
+            code=code,
+            message=message,
         )
 
     @app.exception_handler(Exception)
