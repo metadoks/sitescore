@@ -19,417 +19,151 @@ USER_LOCK_AUTHORIZED: NO
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
 CODE_BRANCH: faz5/5-3-narrative-insight-authority
-CODE_HEAD_SHA: 1d0e9fd57bda67cece6f17838f73569170066bf0
+CODE_HEAD_SHA: fe937664a781a04e29a09e574bba46e371e26b90
 PR: #19
 PR_STATE: OPEN
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
 
-REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION_SEEN: IMPLEMENT
+REVIEWER_STATE_SEEN: NEEDS_HARDENING
+IMPLEMENTER_ACTION_SEEN: HARDEN
+REVIEWED_HEAD_SHA_SEEN: 1d0e9fd57bda67cece6f17838f73569170066bf0
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
+BLOCKERS_REPORTED_BY_REVIEWER: NARR53-H001
+RESOLVED_BLOCKERS_BY_IMPLEMENTER: NARR53-H001
 
-VALIDATED_SHA: 90760acd862fbb60a0a0e7865f39a4eefac3805a
+VALIDATED_SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 VALIDATION_WORKFLOW: faz5-5-3-exact-validation
-VALIDATION_RUN_ID: 32070473670
-VALIDATION_JOB_ID: 95512322967
+VALIDATION_RUN_ID: 32073646926
+VALIDATION_JOB_ID: 95522037839
 VALIDATION_CONCLUSION: SUCCESS
 TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz5-5-3-validation.yml REMOVAL
 VALIDATED_TO_FINAL_COMMITS: 1
 
-SITESCORE_REPORT_TESTS: 14 PASS
+SITESCORE_REPORT_TESTS: 16 PASS
 SITESCORE_API_TESTS: 88 PASS
 FROZEN_REGRESSION_TESTS: 1375 PASS
 LOCKED_API_PLUS_FROZEN_TESTS: 1463 PASS
-COMBINED_TESTS: 1477 PASS
+COMBINED_TESTS: 1479 PASS
 ```
 
-## 1. Exact checkpoint branch / base / scope
+## NARR53-H001 hardening result
 
-Reviewer independently verified the FAZ 5.2 LOCK and opened FAZ 5.3 on exact base:
+Reviewer correctly identified that the prior v1 design could prove only that a provider-selected evidence key existed; it could not prove that arbitrary provider prose was semantically entailed by that evidence. Executive-summary and caveat strings were additional grounding escape routes.
 
-```text
-main = 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
-branch = faz5/5-3-narrative-insight-authority
-```
+The same PR #19 was hardened without reopening frozen or locked upstream packages.
 
-The branch was created from that exact SHA.
-
-Final base-to-head compare:
-
-```text
-base: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
-head: 1d0e9fd57bda67cece6f17838f73569170066bf0
-merge-base: exact base
-behind_by: 0
-changed files: 9
-```
-
-Every final changed file is under:
-
-```text
-sitescore-report/**
-```
-
-No frozen FAZ 3/4 package, locked `sitescore-api`, or any other upstream package was modified. No FAZ 5.4+ HTML/PDF/rendering/storage/report-resource/payment/n8n scope was introduced.
-
----
-
-## 2. Package / dependency contract
-
-`sitescore-report` advanced from the locked 5.2 package version to:
-
-```text
-sitescore-report==0.2.0
-```
-
-Exact direct runtime dependencies:
-
-```text
-sitescore-app==0.1.0
-sitescore-core==0.1.0
-openai==3.2.0
-pydantic==2.13.4
-```
-
-Exact dev dependency:
-
-```text
-pytest==8.4.2
-```
-
-The OpenAI SDK exact pin was checked against the official `openai/openai-python` repository package metadata before implementation. The authoritative CI run then independently installed `openai==3.2.0` from the package index and verified `OpenAI=3.2.0` at runtime.
-
-No `sitescore-api`, Jinja, WeasyPrint, Matplotlib, S3/boto, SQLAlchemy, Alembic, Celery, Redis, FastAPI, Stripe, payment, or rendering dependency was added to `sitescore-report`.
-
----
-
-## 3. Locked analytical authority remains unchanged
-
-The locked FAZ 5.2 chain remains:
-
-```text
-factory-owned ApplicationAnalysisResult
--> CanonicalReportFacts
--> ReportDomainModel
-```
-
-The only change inside `domain.py` is the report package provenance version:
-
-```text
-REPORT_PACKAGE_VERSION = "0.2.0"
-```
-
-Canonical projection semantics, factory ownership, source identity binding, semantic integrity checks and truth-preserving fact projection remain unchanged.
-
----
-
-## 4. Narrative authority chain
-
-FAZ 5.3 adds:
+The v2 authority chain is now:
 
 ```text
 canonical ReportDomainModel
--> require_canonical_report_domain_model(...)
--> build_approved_narrative_context(...)
 -> ApprovedNarrativeContext
--> untrusted OpenAI Responses API draft OR deterministic fallback draft
--> strict Pydantic schema validation
--> deterministic semantic validation
--> factory-owned ValidatedReportNarrative
+-> canonical-state activation of closed NarrativeClaimId values
+-> untrusted OpenAI claim selection OR deterministic fallback selection
+-> strict structured schema validation
+-> exact claim / section / evidence compatibility validation
+-> deterministic code-owned versioned text rendering
+-> ValidatedReportNarrative
 ```
 
-`ApprovedNarrativeContext` and `ValidatedReportNarrative` are factory-owned (`init=False`) fail-closed authority objects using identity/weakref registration and deterministic semantic records.
+### Closed claim authority
 
-Rejected as authority:
+Provider output has no free-form prose field. Each provider point contains only:
 
 ```text
-plain dict / JSON
-analysis fingerprint alone
-model-version strings
-caller-provided scores/decision/financial/confidence values
-forged ReportDomainModel shell
-copied ApprovedNarrativeContext
-manual equal-value ApprovedNarrativeContext shell
-nested equal-value anchor substitution
-copied ValidatedReportNarrative
-manual equal-value ValidatedReportNarrative shell
-source-context substitution
-nested final semantic mutation
+claim_id: NarrativeClaimId
+evidence_keys: exact code-owned list
 ```
 
-Invalid canonical report-domain authority is a hard failure and is never converted into fallback success.
-
----
-
-## 5. ApprovedNarrativeContext bounded evidence surface
-
-Provider context is constructed only from a currently canonical `ReportDomainModel`.
-
-It contains a deep-owned report projection plus a code-owned approved evidence map for canonical report-safe facts including:
+Every claim has a code-owned contract containing:
 
 ```text
-sector
-category scores
-business assumptions
-location facts
-financial facts
-canonical decision/headline/risk flags
-confidence facts
-data-quality context
-source analysis fingerprint
-report/model provenance
+section
+exact required evidence-key tuple
+canonical categorical/status compatibility predicate
+code-owned final text template
 ```
 
-Optional evidence is omitted when absent. Partial `data_coverage` and `input_qualities` mappings remain partial; an absent map key cannot be cited as evidence.
+Only claims whose exact predicate is true for the canonical ReportDomainModel are exposed in `ApprovedNarrativeContext.approved_claims`.
 
-The bounded provider context does not contain:
+Local validation requires:
 
 ```text
-raw provider HTTP payloads
-API credentials / OpenAI API key
-database rows
-Celery transport state
-arbitrary external request text
-hidden deployment state
+claim is active for exact canonical source state
+claim belongs to submitted section
+submitted evidence_keys exactly equal code-owned evidence tuple
+all required evidence is present
+canonical anchors exactly match
 ```
 
----
+Therefore an unrelated but existing evidence key cannot authorize a claim, and a globally-known claim cannot be used in an incompatible source state.
 
-## 6. OpenAI Responses API adapter
+### No provider prose authority
 
-Primary production adapter:
+`NarrativeDraft` v2 has no `text` field in executive summary, strengths, risks, recommendations, or caveats. Customer-facing text is produced only after validation from code-owned deterministic templates.
+
+This closes the Reviewer examples structurally rather than through phrase matching:
 
 ```text
-OpenAIResponsesNarrativeProvider
+unsupported executive-summary assertion -> schema invalid / fallback
+unsupported caveat assertion -> schema invalid / fallback
+empirical/proven-real-world synonym -> schema invalid / fallback
+guarantee/certainty synonym -> schema invalid / fallback
+unrelated evidence binding -> semantic invalid / fallback
+source-state mismatch -> semantic invalid / fallback
 ```
 
-It uses the installed official OpenAI Python SDK Responses surface:
-
-```python
-client.responses.parse(
-    model=config.model_id,
-    instructions=NARRATIVE_INSTRUCTIONS,
-    input=canonical_context_json,
-    text_format=NarrativeDraft,
-    tools=[],
-    store=False,
-)
-```
-
-The model ID is deployment configuration from:
+### Narrative contract versions
 
 ```text
-SITESCORE_NARRATIVE_MODEL_ID
+prompt:   sitescore-narrative-prompt-v2
+schema:   sitescore-narrative-v2
+fallback: sitescore-narrative-fallback-v2
 ```
 
-It is generation provenance only and never analytical authority.
-
-The code-owned prompt/schema/fallback identities are:
+OpenAI adapter remains the Responses API:
 
 ```text
-NARRATIVE_PROMPT_VERSION   = sitescore-narrative-prompt-v1
-NARRATIVE_SCHEMA_VERSION   = sitescore-narrative-v1
-NARRATIVE_FALLBACK_VERSION = sitescore-narrative-fallback-v1
+client.responses.parse(..., text_format=NarrativeDraft, tools=[], store=False)
 ```
 
-No web search, file search, MCP or function tools are supplied to the provider. API credentials remain OpenAI client/environment concerns and are not copied to the prompt, context or provenance.
+The provider can choose only emphasis/order among already-active claims. It cannot add score, financial, decision, confidence, readiness, empirical, guarantee, numeric, transit/location, or other arbitrary assertions.
 
-Provider output remains untrusted after strict structured parsing until deterministic local semantic validation passes.
+## Adversarial proof
 
-Tests inject a deterministic fake at the `client.responses.parse` boundary; no paid OpenAI request or secret is required by CI.
-
----
-
-## 7. Strict provider draft schema
-
-Provider draft sections:
+Fresh tests now include:
 
 ```text
-canonical_anchors
-executive_summary
-strengths[]
-risks[]
-recommendations[]
-caveats[]
+unrelated evidence binding
+unsupported executive-summary free text
+unsupported caveat free text
+empirical-validation synonym injection
+guarantee/certainty synonym injection
+claim/evidence mismatch
+inactive claim/source-state mismatch
+equal-value claim-map substitution
+provider schema contains no text field
+valid strong / weak / low-confidence / risk states remain accepted and deterministic
 ```
 
-Canonical anchor echo:
+A focused source-state test proves that on canonical `structural_band == strong`, provider selection of `risk.structural_weak` is rejected even when it supplies the otherwise-correct `decision.structural_band` evidence key.
 
-```text
-decision_class
-structural_band
-financial_band
-confidence_label
-stress_test_failed
-source_analysis_fingerprint
-```
+## Fresh exact-SHA validation
 
-Every strength/risk/recommendation item contains:
-
-```text
-text
-one-or-more evidence_keys
-```
-
-Pydantic models use strict validation and `extra="forbid"`.
-
----
-
-## 8. Deterministic semantic validation
-
-Local validation rejects:
-
-```text
-canonical-anchor mismatch
-unknown or unavailable evidence key
-citation of absent optional/mapping evidence
-obvious decision upgrade/contradiction
-financially-strong claims against canonical non_viable
-stress-test-passed claims against canonical failure
-positive-margin claims against a canonical negative margin sign
-low-rent-burden claims against severe rent-burden risk
-confidence upgrades to high certainty
-complete-evidence claims against partial/missing/degraded canonical context
-empirical-validation / proven-market / real-world-calibration claims
-success/profitability guarantee claims
-risk-free claims
-numeric/currency/percentage literals introduced in free-form provider prose
-```
-
-The validator does not calculate a second score, financial result, decision matrix, confidence formula, benchmark, readiness result, threshold or normalization.
-
-The conservative V1 numeric rule is:
-
-```text
-LLM free-form prose may not introduce numeric/currency/percentage literals.
-```
-
-Canonical numeric facts remain authoritative report facts for later deterministic presentation.
-
----
-
-## 9. Deterministic fallback
-
-Fallback activates for valid canonical context when:
-
-```text
-provider/model unconfigured
-provider/client exception or timeout
-incomplete provider response
-refusal/empty parsed result
-schema-invalid output
-unknown/unavailable evidence
-anchor mismatch
-semantic contradiction
-unsupported empirical/guarantee claim
-numeric invention
-```
-
-Fallback content uses only exact canonical categorical/status facts such as:
-
-```text
-decision headline/class
-structural/financial band
-risk flags
-confidence label
-stress-test status
-data-quality missingness
-```
-
-Fallback computes no score, threshold, BEC, confidence or new business outcome.
-
-Provenance records:
-
-```text
-generation_mode = llm | deterministic_fallback
-provider
-model_id | null
-prompt_version
-narrative_schema_version
-fallback_version | null
-fallback_reason | null
-```
-
-Repeated fallback from the same canonical input is deterministic in tests.
-
----
-
-## 10. Current locked NOT_SCORE_READY truth preserved
-
-Locked production truth remains:
-
-```text
-COMB-005 = NOT_APPROVED
-real production lifecycle = queued -> running -> not_score_ready
-```
-
-FAZ 5.3 adds no production SCORE_READY forcing seam and does not manufacture a scored narrative from the real `not_score_ready` path.
-
-Positive scored narrative fixtures remain test-only through the same upstream SCORE_READY boundary substitution already used by the locked FAZ 5.2 tests; top-level analytical authority is still constructed through the frozen public application factories.
-
-No `analysis_id`, `report_id`, report resource lifecycle, API report route, persistence, artifact binding, HTML/PDF rendering, storage, payment, n8n or email behavior is introduced.
-
----
-
-## 11. Test coverage
-
-Fresh `sitescore-report` suite proves:
-
-```text
-four-sector Responses API fake success
-exact source/anchor provenance
-adapter model/instructions/text_format/tools/store contract
-no API-key prompt leakage
-context copy/deepcopy rejection
-manual context forgery rejection
-equal-value anchor substitution rejection
-final narrative copy/deepcopy rejection
-manual final narrative forgery rejection
-source-context substitution rejection
-final semantic mutation rejection
-anchor mismatch -> fallback
-unknown evidence -> fallback
-empirical claim -> fallback
-guarantee claim -> fallback
-numeric invention -> fallback
-decision contradiction -> fallback
-financial contradiction -> fallback
-stress contradiction -> fallback
-confidence upgrade -> fallback
-complete-evidence contradiction -> fallback
-provider exception -> fallback
-provider incomplete -> fallback
-provider empty/refusal-style -> fallback
-schema-invalid -> fallback
-deterministic unconfigured-provider fallback
-forged canonical ReportDomainModel -> hard failure
-package/dependency direction
-no upstream reverse report import
-no rendering/storage/payment/n8n scope leakage
-locked FAZ 5.2 report authority regression
-```
-
----
-
-## 12. Fresh exact validation
-
-Authoritative successful run:
+Authoritative hardening validation:
 
 ```text
 workflow: faz5-5-3-exact-validation
-run ID: 32070473670
-job ID: 95512322967
-validated SHA: 90760acd862fbb60a0a0e7865f39a4eefac3805a
-status: completed
+run: 32073646926
+job: 95522037839
+validated SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 conclusion: SUCCESS
 ```
 
-Exact versions verified:
+Exact environment included:
 
 ```text
 Python 3.11.15
@@ -453,97 +187,70 @@ PostgreSQL server 16.15
 Redis server 7.4.10
 ```
 
-Fresh exact-SHA counts:
+Fresh exact-SHA test results:
 
 ```text
-sitescore-report:        14 PASS
-sitescore-api:           88 PASS
-sitescore-app:           19 PASS
-sitescore-pipeline:      53 PASS
-sitescore-benchmarks:   191 PASS
-sitescore-metrics:       67 PASS
-sitescore-spatial:      180 PASS
-sitescore-providers:    418 PASS
-sitescore-data:         361 PASS
-sitescore-core:          86 PASS
----------------------------------
-frozen regression:    1375 PASS
-API + frozen:         1463 PASS
-all including report: 1477 PASS
+sitescore-report:     16 PASS
+sitescore-api:        88 PASS
+sitescore-app:        19 PASS
+sitescore-pipeline:   53 PASS
+sitescore-benchmarks: 191 PASS
+sitescore-metrics:    67 PASS
+sitescore-spatial:    180 PASS
+sitescore-providers:  418 PASS
+sitescore-data:       361 PASS
+sitescore-core:       86 PASS
+
+frozen regression total: 1375 PASS
+locked API + frozen:     1463 PASS
+combined including report: 1479 PASS
 ```
 
-The same exact run also proved:
+The same exact run re-proved the locked PostgreSQL migration and a real Celery 5.6.3 worker over Redis with `results: disabled://`; `sitescore_api.reconcile_timeouts` was received and succeeded.
+
+## Validated SHA -> final candidate closure
 
 ```text
-alembic upgrade head on real PostgreSQL: PASS
-locked sitescore-api DB/race/lifecycle regression: PASS
-real Celery 5.6.3 worker -> Redis broker: PASS
-Celery results backend: disabled://
-reconcile_timeouts task received and succeeded: PASS
-```
+validated SHA:
+ba03c99bfae8d1d47365d10a22305139c00ac183
 
-No OpenAI API secret or paid provider call was required. The installed OpenAI SDK Responses adapter was exercised through deterministic fake client tests.
-
----
-
-## 13. Validated SHA -> final candidate closure
-
-Successful validated SHA:
-
-```text
-90760acd862fbb60a0a0e7865f39a4eefac3805a
-```
-
-Final candidate:
-
-```text
-1d0e9fd57bda67cece6f17838f73569170066bf0
+final candidate HEAD:
+fe937664a781a04e29a09e574bba46e371e26b90
 ```
 
 Exact compare:
 
 ```text
-status: ahead
 ahead_by: 1
 behind_by: 0
-total_commits: 1
 changed files: 1
-.github/workflows/faz5-5-3-validation.yml -> REMOVED
+only change: removal of .github/workflows/faz5-5-3-validation.yml
 ```
 
-No product source, tests, dependency contract or documentation changed after successful validation.
+No product source, test, dependency or documentation changed after successful validation.
 
-Final locked-base-to-head compare:
+Locked-base-to-final compare:
 
 ```text
-merge-base: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
+base: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
+merge-base: exact base
 behind_by: 0
-changed files: 9
-all changed files: sitescore-report/**
+final changed files: 10
+all product changes: sitescore-report/**
 ```
 
----
+No frozen FAZ 3/4 package, locked `sitescore-api`, report-resource/rendering/payment/n8n scope, or FAZ 5.4+ work was changed or started.
 
-## 14. Final live state
+## Stop / authority condition
+
+`NARR53-H001` is marked resolved **by Implementer evidence only**. Reviewer must independently inspect the new exact HEAD:
 
 ```text
-PR: #19
-state: OPEN
-merged: FALSE
-mergeable: TRUE
-base: main
-base SHA: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
-head: faz5/5-3-narrative-insight-authority
-head SHA: 1d0e9fd57bda67cece6f17838f73569170066bf0
-changed files: 9
+fe937664a781a04e29a09e574bba46e371e26b90
 ```
 
-Live `main` remains exactly:
+Reviewer authority remains required to formally clear the blocker and issue any `READY_TO_LOCK` decision.
 
-```text
-8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
-```
-
-No merge or LOCK has been performed. FAZ 5.4 has not been started.
+No merge has occurred. No LOCK is authorized by this handoff. FAZ 5.4 has not been started.
 
 > Mathematically validated scoring engine; empirical validation pending.
