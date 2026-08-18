@@ -109,6 +109,78 @@ class AnalysisWorkerService:
         except Exception:
             pass
 
+    @staticmethod
+    def _timeout_row(row: AnalysisModel, *, now: datetime) -> None:
+        row.state = "timed_out"
+        row.updated_at = now
+        row.finished_at = now
+        row.failure_code = "analysis_deadline_exceeded"
+        row.failure_message = "analysis exceeded its server-owned deadline"
+
+    def _record_canonical_success_boundary(
+        self,
+        session: Session,
+        row: AnalysisModel,
+        *,
+        success_at: datetime,
+    ) -> str:
+        """Durably protect a genuine pre-deadline canonical success during report work.
+
+        The marker is coordination evidence only. It is never used as report/scoring
+        authority; retries still rerun canonical execution to recover the live object.
+        """
+
+        if row.canonical_success_at is not None:
+            if row.canonical_success_at >= row.deadline_at:
+                raise ValueError("canonical success marker must precede the analysis deadline")
+            if row.state not in {"queued", "running"}:
+                state = row.state
+                session.rollback()
+                return state
+            row.state = "running"
+            row.finished_at = None
+            row.failure_code = None
+            row.failure_message = None
+            session.commit()
+            return "protected"
+
+        if success_at >= row.deadline_at:
+            if row.state not in TERMINAL_STATES:
+                self._timeout_row(row, now=success_at)
+            state = row.state
+            session.commit()
+            return state
+
+        if row.state == "timed_out":
+            # A timeout writer may have won the row lock after the canonical result
+            # was already achieved before the deadline but before this marker commit.
+            # The live outcome timestamp is authoritative for that narrow race.
+            if (
+                row.failure_code != "analysis_deadline_exceeded"
+                or row.result_body is not None
+                or row.readiness_body is not None
+            ):
+                state = row.state
+                session.rollback()
+                return state
+            row.state = "running"
+            row.finished_at = None
+            row.failure_code = None
+            row.failure_message = None
+        elif row.state not in {"queued", "running"}:
+            state = row.state
+            session.rollback()
+            return state
+
+        row.canonical_success_at = success_at
+        row.state = "running"
+        row.updated_at = success_at
+        row.finished_at = None
+        row.failure_code = None
+        row.failure_message = None
+        session.commit()
+        return "protected"
+
     def _commit_report_metadata(self, session: Session) -> None:
         """Single terminal-pair commit seam used by deterministic ACK-loss tests."""
 
@@ -636,12 +708,8 @@ class AnalysisWorkerService:
                         state = row.state
                         session.rollback()
                         return state
-                    if now >= row.deadline_at:
-                        row.state = "timed_out"
-                        row.updated_at = now
-                        row.finished_at = now
-                        row.failure_code = "analysis_deadline_exceeded"
-                        row.failure_message = "analysis exceeded its server-owned deadline"
+                    if row.canonical_success_at is None and now >= row.deadline_at:
+                        self._timeout_row(row, now=now)
                         session.commit()
                         return "timed_out"
                     if row.started_at is None:
@@ -661,6 +729,7 @@ class AnalysisWorkerService:
                         analysis_id=durable_analysis_id,
                     )
                     outcome = self.executor.execute(command, now=self._now())
+                    outcome_at = self._now()
 
                     row = session.scalar(
                         select(AnalysisModel)
@@ -670,30 +739,42 @@ class AnalysisWorkerService:
                     if row is None:
                         session.rollback()
                         return "missing"
-                    completed_at = self._now()
                     if outcome.not_score_ready is not None:
-                        persist_not_score_ready(session, row, outcome.not_score_ready, now=completed_at)
+                        if row.canonical_success_at is not None:
+                            session.rollback()
+                            raise RetryableReportFinalization(
+                                "post-success canonical retry did not reproduce completed outcome"
+                            )
+                        persist_not_score_ready(session, row, outcome.not_score_ready, now=outcome_at)
                         state = row.state
                         session.commit()
                         return state
 
                     assert outcome.completed is not None
                     if self.report_artifacts is None:
-                        persist_completed(session, row, outcome.completed, now=completed_at)
+                        persist_completed(session, row, outcome.completed, now=outcome_at)
                         state = row.state
                         session.commit()
                         return state
 
-                    # Keep durable analysis nonterminal while live canonical authority
-                    # is rendered/uploaded. A process loss here is therefore safely
-                    # redeliverable and cannot expose completed + missing report.
-                    session.rollback()
+                    boundary_state = self._record_canonical_success_boundary(
+                        session,
+                        row,
+                        success_at=outcome_at,
+                    )
+                    if boundary_state != "protected":
+                        return boundary_state
+
+                    # Canonical success is now durably protected from lifecycle
+                    # timeout writers while the live canonical object is rendered.
+                    # A retry still reruns canonical execution; the marker is never
+                    # promoted to report/scoring authority.
                     try:
                         prepared_report = self.report_artifacts.generate(
                             consumer_id=consumer_id,
                             analysis_id=analysis_id,
                             outcome=outcome.completed,
-                            generated_at=completed_at,
+                            generated_at=outcome_at,
                         )
                     except Exception as exc:
                         raise RetryableReportFinalization(
@@ -716,7 +797,7 @@ class AnalysisWorkerService:
                         row=row,
                         outcome=outcome.completed,
                         artifact=prepared_report,
-                        completed_at=completed_at,
+                        completed_at=outcome_at,
                     )
                     if state == "retry":
                         raise RetryableReportFinalization(
@@ -726,25 +807,32 @@ class AnalysisWorkerService:
                 except RetryableReportFinalization:
                     self._rollback_quietly(session)
                     raise
-                except Exception:
+                except Exception as exc:
                     session.rollback()
                     row = session.scalar(
                         select(AnalysisModel)
                         .where(AnalysisModel.analysis_id == analysis_id)
                         .with_for_update()
                     )
+                    if (
+                        row is not None
+                        and row.state not in TERMINAL_STATES
+                        and row.canonical_success_at is not None
+                    ):
+                        session.rollback()
+                        raise RetryableReportFinalization(
+                            "post-success worker failure requires retry"
+                        ) from exc
                     if row is not None and row.state not in TERMINAL_STATES:
                         now = self._now()
                         if now >= row.deadline_at:
-                            row.state = "timed_out"
-                            row.failure_code = "analysis_deadline_exceeded"
-                            row.failure_message = "analysis exceeded its server-owned deadline"
+                            self._timeout_row(row, now=now)
                         else:
                             row.state = "failed"
                             row.failure_code = "analysis_execution_failed"
                             row.failure_message = "analysis execution failed"
-                        row.finished_at = now
-                        row.updated_at = now
+                            row.finished_at = now
+                            row.updated_at = now
                     session.commit()
                     return row.state if row is not None else "failed"
                 finally:
@@ -767,6 +855,7 @@ class AnalysisWorkerService:
                         select(AnalysisModel)
                         .where(
                             AnalysisModel.state.in_(("queued", "running")),
+                            AnalysisModel.canonical_success_at.is_(None),
                             AnalysisModel.deadline_at <= now,
                         )
                         .with_for_update(skip_locked=True)
@@ -774,10 +863,6 @@ class AnalysisWorkerService:
                     )
                 )
                 for row in rows:
-                    row.state = "timed_out"
-                    row.updated_at = now
-                    row.finished_at = now
-                    row.failure_code = "analysis_deadline_exceeded"
-                    row.failure_message = "analysis exceeded its server-owned deadline"
+                    self._timeout_row(row, now=now)
                     count += 1
         return count
