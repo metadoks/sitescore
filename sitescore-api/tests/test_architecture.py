@@ -103,7 +103,7 @@ def test_dependency_contract_is_exact_and_directional():
         "psycopg[binary]==3.3.4",
         "celery==5.6.3",
         "redis==7.4.1",
-        "boto3==1.43.68",
+        "boto3==1.43.55",
         "sitescore-core==0.1.0",
         "sitescore-data==0.1.0",
         "sitescore-providers==0.1.0",
@@ -143,5 +143,10 @@ def test_frozen_sibling_packages_do_not_import_sitescore_api():
 
 def test_5_5_scope_does_not_introduce_commercial_or_orchestration_dependencies():
     rendered = (PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8").lower()
+    source = _source()
     for forbidden in ("stripe", "n8n"):
         assert forbidden not in rendered
+        assert forbidden not in source.lower()
+    artifacts = (SRC_ROOT / "report_artifacts.py").read_text(encoding="utf-8")
+    assert "ACL=" not in artifacts
+    assert "public-read" not in artifacts
