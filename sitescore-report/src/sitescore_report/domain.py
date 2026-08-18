@@ -20,7 +20,7 @@ from sitescore_app import (
     require_canonical_application_analysis_result,
 )
 
-REPORT_PACKAGE_VERSION = "0.2.0"
+REPORT_PACKAGE_VERSION = "0.3.0"
 REPORT_SCHEMA_VERSION = "sitescore-report-v1"
 REPORT_PROJECTION_VERSION = "application-analysis-result-v1"
 
