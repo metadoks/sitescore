@@ -106,6 +106,7 @@ class PostgresAnalysisLifecycleBackend:
                         started_at=None,
                         finished_at=None,
                         deadline_at=now + timedelta(seconds=self.deadline_seconds),
+                        canonical_success_at=None,
                         result_body=None,
                         readiness_body=None,
                         failure_code=None,
@@ -160,7 +161,11 @@ class PostgresAnalysisLifecycleBackend:
                 )
                 if row is None:
                     raise AnalysisNotFound()
-                if row.state not in TERMINAL_STATES and now >= row.deadline_at:
+                if (
+                    row.state not in TERMINAL_STATES
+                    and row.canonical_success_at is None
+                    and now >= row.deadline_at
+                ):
                     row.state = "timed_out"
                     row.updated_at = now
                     row.finished_at = now
@@ -194,6 +199,8 @@ def persist_not_score_ready(
     canonical = require_canonical_not_score_ready_outcome(outcome)
     if row.state in TERMINAL_STATES:
         return False
+    if row.canonical_success_at is not None:
+        return False
     if now >= row.deadline_at:
         row.state = "timed_out"
         row.finished_at = now
@@ -221,13 +228,17 @@ def persist_completed(
     canonical = require_canonical_completed_outcome(outcome)
     if row.state in TERMINAL_STATES:
         return False
-    if now >= row.deadline_at:
-        row.state = "timed_out"
-        row.finished_at = now
-        row.updated_at = now
-        row.failure_code = "analysis_deadline_exceeded"
-        row.failure_message = "analysis exceeded its server-owned deadline"
-        return False
+    if row.canonical_success_at is None:
+        if now >= row.deadline_at:
+            row.state = "timed_out"
+            row.finished_at = now
+            row.updated_at = now
+            row.failure_code = "analysis_deadline_exceeded"
+            row.failure_message = "analysis exceeded its server-owned deadline"
+            return False
+        row.canonical_success_at = now
+    elif row.canonical_success_at >= row.deadline_at:
+        raise ValueError("canonical success marker must precede the analysis deadline")
     row.state = "completed"
     row.result_body = canonical.result_body
     row.readiness_body = None
