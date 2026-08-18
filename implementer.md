@@ -8,25 +8,26 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.3
 CHECKPOINT_TITLE: Narrative / Insight Authority Boundary
-IMPLEMENTER_STATE: READY_FOR_REVIEW
+IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_POST_LOCK_VERIFY
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
+EXPECTED_BASE_SHA_PRE_LOCK: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
 CODE_BRANCH: faz5/5-3-narrative-insight-authority
-CODE_HEAD_SHA: fe937664a781a04e29a09e574bba46e371e26b90
+REVIEWED_AND_MERGED_HEAD_SHA: fe937664a781a04e29a09e574bba46e371e26b90
 PR: #19
-PR_STATE: OPEN
-PR_MERGEABLE: TRUE
-PR_MERGED: FALSE
-REVIEWER_STATE_SEEN: NEEDS_HARDENING
-IMPLEMENTER_ACTION_SEEN: HARDEN
-REVIEWED_HEAD_SHA_SEEN: 1d0e9fd57bda67cece6f17838f73569170066bf0
+PR_STATE: CLOSED
+PR_MERGED: TRUE
+MERGE_COMMIT_SHA: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
+POST_LOCK_MAIN_SHA: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
+REVIEWER_STATE_SEEN: READY_TO_LOCK
+IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_REVIEWER: NARR53-H001
-RESOLVED_BLOCKERS_BY_IMPLEMENTER: NARR53-H001
+BLOCKERS_REPORTED_BY_REVIEWER: NONE
+NARR53_H001_STATUS: RESOLVED
+NARR53_F001_STATUS: RESOLVED
 VALIDATED_SHA: ba03c99bfae8d1d47365d10a22305139c00ac183
 VALIDATION_RUN_ID: 32073646926
 VALIDATION_JOB_ID: 95522037839
@@ -39,22 +40,29 @@ FROZEN_REGRESSION_TESTS: 1375 PASS
 COMBINED_TESTS: 1479 PASS
 ```
 
-## NARR53-H001 resolution
+## Post-LOCK verification
 
-V2 removes provider-authored prose from every narrative section. OpenAI can select only closed code-owned `NarrativeClaimId` values and exact code-owned evidence-key tuples. Each claim has a code-owned section, canonical categorical/status compatibility predicate, exact evidence contract and deterministic final text template. Only claims active for the exact canonical source state are exposed; local validation requires exact claim/state/section/evidence/anchor compatibility.
+User issued literal `LOCK` after Reviewer independently marked exact HEAD `fe937664a781a04e29a09e574bba46e371e26b90` as `READY_TO_LOCK` with `IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED`, `BLOCKERS: NONE`, and all contract/design/reopen gates at zero.
+
+PR #19 was merged with `expected_head_sha=fe937664a781a04e29a09e574bba46e371e26b90` using merge commit method.
+
+Exact merge result:
 
 ```text
-prompt: sitescore-narrative-prompt-v2
-schema: sitescore-narrative-v2
-fallback: sitescore-narrative-fallback-v2
+pre-lock main: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
+reviewed head: fe937664a781a04e29a09e574bba46e371e26b90
+merge commit: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
 ```
 
-This structurally closes unrelated evidence, unsupported executive/caveat assertions, empirical/guarantee synonyms, arbitrary provider assertions, claim/evidence mismatch and source-state mismatch. Tests cover all Reviewer-required adversarial cases and valid strong/weak/low-confidence/risk cases.
+GitHub merge commit verification shows parents exactly:
 
-Fresh exact-SHA validation `ba03c99bfae8d1d47365d10a22305139c00ac183` succeeded: report 16, API 88, frozen 1375, combined 1479. PostgreSQL migration and real Celery/Redis transport were re-proved.
+```text
+parent 1: 8b856aafd64d862dee2f2c022b2f9e5a41dc3edf
+parent 2: fe937664a781a04e29a09e574bba46e371e26b90
+```
 
-Final candidate `fe937664a781a04e29a09e574bba46e371e26b90`; validated-to-final is exactly one commit/one file, solely temporary validation workflow deletion. Locked-base merge-base remains exact `8b856aafd64d862dee2f2c022b2f9e5a41dc3edf`, behind 0, final product diff is 10 files, all `sitescore-report/**`.
+Post-merge PR state is `CLOSED / merged TRUE`. Live `main` compares identical to merge commit `30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae`.
 
-`NARR53-H001` is resolved by Implementer evidence only. Reviewer must independently re-review exact new HEAD before formally clearing it or issuing READY_TO_LOCK. No merge, no LOCK, no FAZ 5.4 start.
+No FAZ 5.4 work has been started. Reviewer must perform post-LOCK verification and explicitly open the next checkpoint before any further implementation.
 
 > Mathematically validated scoring engine; empirical validation pending.
