@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sitescore-report"
-version = "0.1.0"
-description = "Canonical report facts and report-domain projection for SiteScore AI"
+version = "0.2.0"
+description = "Canonical report facts and validated narrative authority for SiteScore AI"
 requires-python = ">=3.11"
 dependencies = [
     "sitescore-app==0.1.0",
     "sitescore-core==0.1.0",
+    "openai==3.2.0",
+    "pydantic==2.13.4",
 ]
 
 [project.optional-dependencies]

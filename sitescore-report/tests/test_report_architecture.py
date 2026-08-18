@@ -14,15 +14,17 @@ SRC_ROOT = PACKAGE_ROOT / "src" / "sitescore_report"
 def test_package_dependency_contract_is_exact_and_directional():
     project = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text())
     assert project["project"]["name"] == "sitescore-report"
-    assert project["project"]["version"] == "0.1.0"
+    assert project["project"]["version"] == "0.2.0"
     assert project["project"]["dependencies"] == [
         "sitescore-app==0.1.0",
         "sitescore-core==0.1.0",
+        "openai==3.2.0",
+        "pydantic==2.13.4",
     ]
     assert project["project"]["optional-dependencies"]["dev"] == ["pytest==8.4.2"]
 
     forbidden_dependencies = (
-        "openai", "jinja", "weasyprint", "matplotlib", "boto", "sqlalchemy",
+        "jinja", "weasyprint", "matplotlib", "boto", "sqlalchemy",
         "alembic", "celery", "redis", "fastapi", "stripe", "sitescore-api",
     )
     rendered = repr(project["project"]["dependencies"] + project["project"]["optional-dependencies"]["dev"]).lower()
@@ -34,7 +36,6 @@ def test_production_imports_do_not_bypass_application_or_add_rendering_runtime()
         "sitescore.analyze",
         "sitescore.engines",
         "sitescore_api",
-        "openai",
         "jinja2",
         "weasyprint",
         "matplotlib",
@@ -60,6 +61,21 @@ def test_production_imports_do_not_bypass_application_or_add_rendering_runtime()
                     name == forbidden or name.startswith(forbidden + ".")
                     for forbidden in forbidden_modules
                 ), (path, name)
+
+
+def test_narrative_production_surface_has_no_rendering_or_html_authority():
+    narrative = (SRC_ROOT / "narrative.py").read_text().lower()
+    assert "sitescore.analyze" not in narrative
+    assert "sitescore.engines" not in narrative
+    assert "sitescore_api" not in narrative
+    assert "jinja" not in narrative
+    assert "weasyprint" not in narrative
+    assert "matplotlib" not in narrative
+    assert "boto3" not in narrative
+    assert "stripe" not in narrative
+    assert "n8n" not in narrative
+    assert "<html" not in narrative
+    assert "<style" not in narrative
 
 
 def test_frozen_and_locked_upstream_packages_do_not_import_report_package():
