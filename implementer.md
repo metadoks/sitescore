@@ -61,8 +61,6 @@ CELERY_RESULT_BACKEND: disabled://
 
 ## 1. Final candidate
 
-Checkpoint 5.5 remains on the Reviewer-authorized branch/PR:
-
 ```text
 base: main@7d6ddbdb94567761733ff540239d959096d98f61
 branch: faz5/5-5-delivery-ready-report-artifact
@@ -70,23 +68,19 @@ PR: #21
 final HEAD: 99b5694aeb81b6e926255f6b70d68184ee030a35
 ```
 
-PR #21 is OPEN, mergeable TRUE, merged FALSE. Live `main` is still IDENTICAL to the exact expected base. Locked base -> final candidate is 58 commits ahead / 0 behind with exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`. Final diff is 26 files and every changed file is under `sitescore-api/**`. Locked `sitescore-report==0.3.0` and all frozen analytical packages remain unchanged.
+PR #21 is OPEN, mergeable TRUE, merged FALSE. Live `main` remains IDENTICAL to the expected base. Locked base -> final candidate is 58 commits ahead / 0 behind with exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`. Final diff is 26 files, all under `sitescore-api/**`. Locked `sitescore-report==0.3.0` and all frozen analytical packages remain unchanged.
 
-No merge has been performed. No user LOCK has been consumed. No `5-FINAL` work has started.
+No merge. No user LOCK consumed. No `5-FINAL` work started.
 
 ## 2. Reviewer state seen
 
-Reviewer independently accepted H001-H005 and requested only:
+Reviewer independently marked H001-H005 RESOLVED and opened only `RPT55-H006` as blocking on reviewed head `ca96ee6e3fefde47e834f420afdaf05a4e141004`.
 
-```text
-RPT55-H006: OPEN / BLOCKING
-```
+Implementer considers H006 resolved on new final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`. Reviewer must independently accept or reject this claim.
 
-Implementer has hardened H006 on the same branch/PR and considers H001-H006 resolved. This is implementation evidence only; Reviewer acceptance is still required.
+## 3. H006 resolution
 
-## 3. RPT55-H006 — terminal immutability without false public timeout
-
-The H005 `timed_out -> running` repair mechanism has been removed. Durable public terminal states are now treated as immutable by worker entry and by the canonical-success coordination path:
+The prior H005 narrow-race repair that could change durable `timed_out -> running` has been removed. Public terminal states are immutable:
 
 ```text
 completed       -> completed
@@ -95,189 +89,90 @@ failed          -> failed
 timed_out       -> timed_out
 ```
 
-In particular, no `timed_out -> running` or `timed_out -> completed` repair exists.
+The pre-marker race is prevented before a false terminal timeout can be committed.
 
-The race is instead prevented before a false terminal timeout can become durable/public.
-
-### Shared server-owned execution/timeout authority
-
-The worker already owns a PostgreSQL session-level advisory lock for the complete execution attempt. H006 centralizes the stable server-derived key in `lifecycle.py` and makes timeout writers claim the same key through nonblocking transaction-level advisory locking before publishing `timed_out`.
-
-Production coordination is therefore:
+The worker owns a server-derived PostgreSQL **session advisory lock** for the complete execution attempt. Polling and periodic timeout writers use the same stable key and must acquire a nonblocking **transaction advisory lock** before publishing `timed_out`.
 
 ```text
-live worker owns session advisory lock
--> polling/reconciler cannot acquire timeout-authority lock
--> no competing durable/public timed_out is emitted
--> worker itself still enforces the analytical deadline on its outcome path
+active worker owns execution lock
+-> timeout writer cannot claim timeout authority
+-> no competing durable/public timed_out
+
+worker lost / lock released
++ no canonical_success_at
++ deadline expired
+-> normal timeout writer can publish stable timed_out
 ```
 
-If the worker is lost before genuine canonical success, PostgreSQL releases the session advisory lock. With no `canonical_success_at` marker, ordinary polling/reconciler timeout authority is then available and converges the expired analysis to stable `timed_out`.
+The worker still enforces deadline semantics on its own outcome path. This coordination does not extend caller deadlines, make `timed_out` provisional, or authorize report generation from stored state.
 
-This is temporary concurrency coordination, not a deadline extension and not a provisional-terminal model.
+`canonical_success_at` remains coordination-only. Worker recovery requiring report authority still reruns genuine canonical execution.
 
-### Polling writer
+## 4. H006 adversarial PostgreSQL proof
 
-`PostgresAnalysisLifecycleBackend.retrieve(...)` still requires all locked timeout conditions, but additionally requires a successful nonblocking advisory timeout-authority claim before writing `timed_out`.
+New test: `sitescore-api/tests/test_report_terminal_immutability.py`.
 
-### Periodic reconciler
+It proves:
 
-`AnalysisWorkerService.reconcile_expired(...)` likewise only terminalizes an expired candidate after acquiring the same transaction advisory lock. Rows owned by a live execution attempt are skipped rather than terminalized and later resurrected.
+1. **Pre-marker owner polling race** — canonical completed outcome exists pre-deadline, marker not yet durable, deadline passes, real `retrieve()` runs while worker owns execution lock; retrieve remains `running`, no terminal timeout is published, worker then reaches `completed + terminal report`.
+2. **Pre-marker periodic reconciler race** — real `reconcile_expired()` cannot timeout the actively owned analysis; after release worker reaches `completed + terminal report`.
+3. **Terminal immutability** — `timed_out`, `failed`, `not_score_ready`, and `completed` remain byte/field-equivalent terminal resources through worker entry; executor is not invoked. The canonical-success boundary also cannot resurrect an existing `timed_out` row.
+4. **No-success control** — while an active worker has not succeeded, timeout publication is temporarily excluded; after synthetic process loss releases the execution lock with no success marker, real retrieval converges to stable `timed_out` and repeated reads remain terminal.
 
-### Worker entry and terminal rows
+Existing H005 regressions continue to prove unprotected expired rows time out via retrieve, reconciler and execute-entry paths.
 
-`execute_analysis(...)` checks `TERMINAL_STATES` before execution and returns the durable terminal state unchanged. The canonical-success boundary also refuses to mutate any row outside `queued|running`.
+## 5. Accepted boundaries preserved
 
-The `canonical_success_at` marker remains coordination evidence only; retries requiring report authority still rerun canonical execution and never rehydrate authority from stored JSON/fingerprint/marker.
+H001-H005 remain preserved, including paired completed/report durability, ambiguous-commit reconciliation, actual-resource conflict fail-close, pre-deadline success protection, exact live canonical report authority, resolver-only report API, private object storage and frozen 5.1 terminal-state immutability.
 
-## 4. H006 real-PostgreSQL adversarial proof
+No new migration was required; migration chain remains `0001 -> 0002 -> 0003`.
 
-New production-path regression:
-
-`sitescore-api/tests/test_report_terminal_immutability.py`
-
-It exercises the exact Reviewer-required race.
-
-### 4.1 Pre-marker owner-polling race
-
-A genuine canonical completed outcome is produced before deadline. The worker is blocked after the live completed outcome exists but before `canonical_success_at` is durable, while retaining its execution advisory lock. Time crosses the analytical deadline and the real owner-scoped lifecycle retrieve path runs.
-
-Proved:
+## 6. Fresh exact-head validation
 
 ```text
-retrieve returns running
-no durable/public timed_out is written
-canonical_success_at is still NULL during the seam
-failure fields remain NULL
-worker resumes
-final analysis = completed
-terminal report = ready OR failed
-```
-
-There is no terminal resurrection because no false terminal state was committed.
-
-### 4.2 Pre-marker periodic-reconciler race
-
-The same pre-marker seam is exercised against the real `reconcile_expired()` path after deadline.
-
-Proved:
-
-```text
-reconcile_expired() == 0 for the actively owned analysis
-row remains running
-canonical_success_at remains NULL during the seam
-worker resumes
-final analysis = completed
-terminal report exists
-```
-
-### 4.3 Terminal immutability
-
-Stable rows are seeded for:
-
-```text
-timed_out
-failed
-not_score_ready
-completed
-```
-
-Worker entry returns each exact terminal state without invoking canonical execution and without changing state, timestamps, result/readiness bodies, marker or failure fields.
-
-The implicated canonical-success boundary is also exercised directly on an existing `timed_out` row with a synthetic pre-deadline live success timestamp and proves the row remains `timed_out`, marker remains NULL and deadline failure metadata is unchanged.
-
-### 4.4 No-success control / lock release
-
-A worker holds the execution advisory lock but has not achieved canonical success. After deadline, polling while that live claim exists does not publish a revocable timeout. A synthetic process-loss-equivalent then ends the worker attempt before success; the session advisory lock is released and no marker exists.
-
-The next real lifecycle retrieval after deadline produces stable `timed_out`, and repeated retrieval remains `timed_out`.
-
-Therefore active coordination cannot suppress deadline terminalization forever when no success was achieved. Existing H005 regressions additionally retain the no-marker periodic reconciler and execute-entry timeout guards.
-
-## 5. H001-H005 preserved
-
-H006 preserves all Reviewer-accepted boundaries:
-
-- H001 analytical success is not converted into report-induced failure/timeout.
-- H002 ambiguous report commits require fresh PostgreSQL reconciliation before destructive compensation.
-- H003 durable `analysis=completed` remains paired with exactly one terminal current report resource.
-- H004 conflicts fail the actual `(analysis_id, report_artifact_version)` resource closed.
-- H005 genuine pre-deadline canonical success remains protected through report finalization/recovery.
-- no stored JSON/fingerprint/marker becomes report authority.
-- `POST /v1/reports` remains resolver-only and never reruns analysis.
-- frozen 5.1 public terminal-state immutability is restored/preserved.
-
-No new H006 migration was necessary. Existing migration chain remains `0001 -> 0002 -> 0003`.
-
-## 6. Fresh exact-head authoritative validation
-
-```text
+validated SHA: f51d91f1c41d33af82392dc9df9a96fc68083352
 workflow: faz5-5-5-exact-head-validation
 run: 32185211836
 job: 95867141130
-validated SHA: f51d91f1c41d33af82392dc9df9a96fc68083352
 conclusion: SUCCESS
 ```
 
-Exact PR-head checkout assertion passed.
-
-Migration/infrastructure proof:
+Evidence:
 
 ```text
-PostgreSQL 16.15: 0001_faz5_1 -> 0002_faz5_5 -> 0003_faz5_5 PASS
-private pinned MinIO PUT/HEAD/GET/DELETE PASS
-no public ACL PASS
-real Redis/Celery 5.6.3 worker PASS
-task_acks_late=True PASS
-task_reject_on_worker_lost=True PASS
-result backend=disabled:// PASS
-reconcile_timeouts task received/succeeded PASS
+PostgreSQL 16.15 migration 0001 -> 0002 -> 0003: PASS
+private pinned MinIO PUT/HEAD/GET/DELETE: PASS
+no public ACL: PASS
+sitescore-report: 24 PASS
+sitescore-api including H001-H006: 100 PASS
+frozen regression baseline: 1375 PASS
+API + frozen: 1475 PASS
+TOTAL: 1499 PASS
+real Redis/Celery 5.6.3 worker: PASS
+task_acks_late=true: PASS
+task_reject_on_worker_lost=true: PASS
+result backend=disabled://: PASS
+reconcile_timeouts task received/succeeded: PASS
 ```
-
-Exact tests:
-
-```text
-sitescore-report:       24 PASS
-sitescore-api:         100 PASS
-app:                    19 PASS
-pipeline:               53 PASS
-benchmarks:            191 PASS
-metrics:                67 PASS
-spatial:               180 PASS
-providers:             418 PASS
-data:                  361 PASS
-core:                   86 PASS
--------------------------------
-frozen:               1375 PASS
-API + frozen:         1475 PASS
-TOTAL:                1499 PASS
-```
-
-Runtime evidence includes Python 3.11.15, FastAPI 0.140.0, Pydantic 2.13.4, SQLAlchemy 2.0.51, Alembic 1.18.5, psycopg 3.3.4, Celery 5.6.3, redis-py 7.4.1, OpenAI 3.2.0, Jinja2 3.1.6, Matplotlib 3.11.1, WeasyPrint 69.0, pypdf 6.14.2, boto3 1.43.55, sitescore-api 0.3.0 and locked sitescore-report 0.3.0.
 
 ## 7. Validation closure
 
-After SUCCESS only the temporary validation workflow was removed:
+After SUCCESS only the temporary workflow was removed:
 
 ```text
-validated: f51d91f1c41d33af82392dc9df9a96fc68083352
-final:     99b5694aeb81b6e926255f6b70d68184ee030a35
-commits:   1
+f51d91f1c41d33af82392dc9df9a96fc68083352
+-> 99b5694aeb81b6e926255f6b70d68184ee030a35
+
+ahead_by: 1
 changed file: .github/workflows/faz5-5-5-validation.yml
 status: REMOVED
 ```
 
-No product source, test, dependency, migration or documentation change occurred after the authoritative validation SHA.
+No product/test/dependency/migration/docs semantics changed after the authoritative validation SHA.
 
 ## 8. Reviewer action required
 
-Implementer considers **RPT55-H006 resolved**, preserving Reviewer-accepted H001-H005 and frozen 5.1 terminal-state immutability.
-
-Reviewer must independently inspect exact PR #21 HEAD:
-
-`99b5694aeb81b6e926255f6b70d68184ee030a35`
-
-and decide whether Checkpoint 5.5 can move to `READY_TO_LOCK` or requires further hardening.
+Reviewer must independently inspect exact PR #21 HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35` and decide whether H006 is RESOLVED and Checkpoint 5.5 may move to `READY_TO_LOCK`, or whether further hardening is required.
 
 No merge has been performed. No LOCK is authorized by Implementer. No `5-FINAL` work has started.
 
