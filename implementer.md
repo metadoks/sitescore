@@ -5,29 +5,34 @@ HANDOFF_PROTOCOL_VERSION: 1.0
 AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: IMPLEMENTER CHAT
+
 CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.5
 CHECKPOINT_TITLE: Delivery-Ready Report Artifact Contract
-IMPLEMENTER_STATE: READY_FOR_REVIEW
+IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_POST_LOCK_VERIFY
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
+
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 7d6ddbdb94567761733ff540239d959096d98f61
+EXPECTED_BASE_SHA_PRE_LOCK: 7d6ddbdb94567761733ff540239d959096d98f61
 CODE_BRANCH: faz5/5-5-delivery-ready-report-artifact
-CODE_HEAD_SHA: 99b5694aeb81b6e926255f6b70d68184ee030a35
+REVIEWED_AND_MERGED_HEAD_SHA: 99b5694aeb81b6e926255f6b70d68184ee030a35
 PR: #21
-PR_STATE: OPEN
-PR_MERGEABLE: TRUE
-PR_MERGED: FALSE
-REVIEWER_STATE_SEEN: NEEDS_HARDENING
-IMPLEMENTER_ACTION_SEEN: HARDEN
+PR_STATE: CLOSED
+PR_MERGED: TRUE
+MERGE_COMMIT_SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+POST_LOCK_MAIN_SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+MERGE_PARENT_1: 7d6ddbdb94567761733ff540239d959096d98f61
+MERGE_PARENT_2: 99b5694aeb81b6e926255f6b70d68184ee030a35
+
+REVIEWER_STATE_SEEN: READY_TO_LOCK
+IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_REVIEWER: RPT55-H006
-REVIEWER_CONFIRMED_RESOLVED: RPT55-H001, RPT55-H002, RPT55-H003, RPT55-H004, RPT55-H005
-RESOLVED_BLOCKERS_BY_IMPLEMENTER: RPT55-H001, RPT55-H002, RPT55-H003, RPT55-H004, RPT55-H005, RPT55-H006
-BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
+BLOCKERS_REPORTED_BY_REVIEWER: NONE
+REVIEWER_CONFIRMED_RESOLVED: RPT55-H001, RPT55-H002, RPT55-H003, RPT55-H004, RPT55-H005, RPT55-H006
+
 VALIDATED_SHA: f51d91f1c41d33af82392dc9df9a96fc68083352
 VALIDATION_WORKFLOW: faz5-5-5-exact-head-validation
 VALIDATION_RUN_ID: 32185211836
@@ -37,11 +42,13 @@ EXACT_HEAD_CHECKOUT_ASSERTION: PASS
 TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz5-5-5-validation.yml REMOVAL
+
 SITESCORE_REPORT_TESTS: 24 PASS
 SITESCORE_API_TESTS: 100 PASS
 FROZEN_REGRESSION_TESTS: 1375 PASS
 API_PLUS_FROZEN_TESTS: 1475 PASS
 COMBINED_TESTS: 1499 PASS
+
 POSTGRESQL_MIGRATION_0002_FAZ5_5: PASS
 POSTGRESQL_MIGRATION_0003_FAZ5_5: PASS
 PRIVATE_MINIO_S3_PUT_HEAD_GET_DELETE: PASS
@@ -50,20 +57,37 @@ REDIS_CELERY_REAL_WORKER: PASS
 CELERY_TASK_ACKS_LATE: TRUE
 CELERY_TASK_REJECT_ON_WORKER_LOST: TRUE
 CELERY_RESULT_BACKEND: disabled://
+
+START_5_FINAL: NO
 ```
 
-Reviewer accepted H001-H005 and opened only H006 on reviewed head `ca96ee6e3fefde47e834f420afdaf05a4e141004`. H006 is hardened on exact final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`.
+## Post-LOCK record
 
-The terminal-resurrection repair is removed. Durable completed/not_score_ready/failed/timed_out states are immutable. The pre-marker race is prevented by shared PostgreSQL advisory-lock authority: worker session lock for execution; nonblocking transaction lock on the same key before polling/reconciler may publish timeout. Worker loss before success releases the claim; with no success marker, normal timeout authority resumes. `canonical_success_at` remains coordination-only.
+The user issued literal `LOCK` in the Implementer chat. Before merge, Implementer freshly re-read Reviewer authority, Implementer evidence, PR #21 and live `main`.
 
-Real PostgreSQL H006 regression proves pre-marker polling and reconciler races, terminal immutability, and no-success worker-loss convergence; prior H005 regressions preserve ordinary no-marker deadline paths.
+All exact lock gates passed:
 
-Exact validation: `f51d91f1c41d33af82392dc9df9a96fc68083352`, run `32185211836`, job `95867141130`, SUCCESS. Report 24, API 100, frozen 1375, total 1499 PASS. PostgreSQL migrations, private MinIO, real Redis/Celery, late ACK, worker-loss rejection and disabled result backend all PASS.
+- Reviewer state: `READY_TO_LOCK`
+- Implementer action: `LOCK_IF_USER_AUTHORIZED`
+- Lock authority: `USER_ONLY`
+- literal user LOCK: present in current turn
+- reviewed SHA exactly matched live PR head `99b5694aeb81b6e926255f6b70d68184ee030a35`
+- PR #21 was OPEN, mergeable, base `main`, head `faz5/5-5-delivery-ready-report-artifact`
+- live `main` exactly matched expected base `7d6ddbdb94567761733ff540239d959096d98f61`
+- contract/design/reopen gates were zero
+- blockers: NONE
 
-Validated -> final is one commit / one file only: temporary `.github/workflows/faz5-5-5-validation.yml` removal. Locked base -> final is 58 ahead / 0 behind; 26 changed files all under `sitescore-api/**`.
+PR #21 was merged using merge method `merge` with `expected_head_sha=99b5694aeb81b6e926255f6b70d68184ee030a35`.
 
-Reviewer must independently inspect exact PR #21 final HEAD and decide READY_TO_LOCK vs further hardening.
+GitHub returned merge commit:
 
-No merge. No LOCK consumed. No 5-FINAL work started.
+`8f757b81c0cb69e5e6be62f45e94ff9a57432cca`
+
+Post-merge verification proved PR #21 is CLOSED/MERGED and live `main` is identical to the merge commit. The merge commit is verified and has exact parents:
+
+1. `7d6ddbdb94567761733ff540239d959096d98f61`
+2. `99b5694aeb81b6e926255f6b70d68184ee030a35`
+
+FAZ 5.5 is therefore merged. Implementer is STOPPED pending Reviewer post-LOCK verification. `5-FINAL` has NOT been started.
 
 > Mathematically validated scoring engine; empirical validation pending.
