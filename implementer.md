@@ -192,7 +192,7 @@ A worker holds the execution advisory lock but has not achieved canonical succes
 
 The next real lifecycle retrieval after deadline produces stable `timed_out`, and repeated retrieval remains `timed_out`.
 
-Therefore active coordination cannot suppress deadline terminalization forever when no success was achieved.
+Therefore active coordination cannot suppress deadline terminalization forever when no success was achieved. Existing H005 regressions additionally retain the no-marker periodic reconciler and execute-entry timeout guards.
 
 ## 5. H001-H005 preserved
 
