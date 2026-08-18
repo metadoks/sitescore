@@ -232,8 +232,13 @@ payload = {
     "sector": "gym",
     "location": {"country_code":"US","street":"123 Main St","city":"Austin","state":"TX","zip_code":"78701"},
     "business_inputs": {
-        "members_conservative":250,"members_base":350,"members_optimistic":450,
-        "monthly_membership_fee":60.0,"monthly_ancillary_revenue":5000.0
+        "target_population":80000,
+        "penetration_rate_conservative":0.01,
+        "penetration_rate_base":0.02,
+        "penetration_rate_optimistic":0.03,
+        "usable_area":9000,
+        "members_per_area_unit":0.12,
+        "monthly_membership_fee":55.0
     },
     "costs":{"monthly_rent":5000,"fixed_labor":12000,"fixed_overhead":3000},
 }
