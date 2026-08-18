@@ -52,46 +52,17 @@ CELERY_TASK_REJECT_ON_WORKER_LOST: TRUE
 CELERY_RESULT_BACKEND: disabled://
 ```
 
-## H006 final evidence
+Reviewer accepted H001-H005 and opened only H006 on reviewed head `ca96ee6e3fefde47e834f420afdaf05a4e141004`. H006 is hardened on exact final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`.
 
-Reviewer accepted H001-H005 and opened only RPT55-H006 on reviewed head `ca96ee6e3fefde47e834f420afdaf05a4e141004`. Implementer considers H006 resolved on exact final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`.
+The terminal-resurrection repair is removed. Durable completed/not_score_ready/failed/timed_out states are immutable. The pre-marker race is prevented by shared PostgreSQL advisory-lock authority: worker session lock for execution; nonblocking transaction lock on the same key before polling/reconciler may publish timeout. Worker loss before success releases the claim; with no success marker, normal timeout authority resumes. `canonical_success_at` remains coordination-only.
 
-The former `timed_out -> running` repair is removed. Durable `completed`, `not_score_ready`, `failed`, and `timed_out` are immutable. Instead, the pre-marker race is prevented before false timeout publication: the worker holds a session-level PostgreSQL advisory lock for its execution attempt, while owner polling and periodic timeout reconciliation must acquire the same stable server-derived key via nonblocking transaction-level advisory lock before writing `timed_out`.
+Real PostgreSQL H006 regression proves pre-marker polling and reconciler races, terminal immutability, and no-success worker-loss convergence; prior H005 regressions preserve ordinary no-marker deadline paths.
 
-A live worker therefore excludes competing durable/public timeout publication. The worker itself still enforces the analysis deadline on its outcome path. If it is lost before genuine success, its session lock is released; absent `canonical_success_at`, normal timeout authority resumes and the expired resource converges to stable `timed_out`. The marker remains coordination-only and never report/scoring authority.
+Exact validation: `f51d91f1c41d33af82392dc9df9a96fc68083352`, run `32185211836`, job `95867141130`, SUCCESS. Report 24, API 100, frozen 1375, total 1499 PASS. PostgreSQL migrations, private MinIO, real Redis/Celery, late ACK, worker-loss rejection and disabled result backend all PASS.
 
-`sitescore-api/tests/test_report_terminal_immutability.py` proves: pre-marker real polling race, pre-marker real reconciler race, immutable terminal worker entry/coordination, and no-success worker-loss convergence. Existing H005 tests preserve ordinary no-marker retrieval/reconciler/execute-entry timeout guards.
+Validated -> final is one commit / one file only: temporary `.github/workflows/faz5-5-5-validation.yml` removal. Locked base -> final is 58 ahead / 0 behind; 26 changed files all under `sitescore-api/**`.
 
-No H006 migration was needed. Existing chain remains `0001 -> 0002 -> 0003`.
-
-## Fresh exact-head validation
-
-```text
-validated SHA: f51d91f1c41d33af82392dc9df9a96fc68083352
-run: 32185211836
-job: 95867141130
-conclusion: SUCCESS
-report: 24 PASS
-api: 100 PASS
-frozen: 1375 PASS
-api+frozen: 1475 PASS
-total: 1499 PASS
-```
-
-PostgreSQL 16.15 migration chain, private pinned MinIO/no-public-ACL, real Redis/Celery 5.6.3, late ACK, reject-on-worker-lost, disabled result backend and real `reconcile_timeouts` task all passed.
-
-Validation closure is exact:
-
-```text
-f51d91f1c41d33af82392dc9df9a96fc68083352
--> 99b5694aeb81b6e926255f6b70d68184ee030a35
-1 commit / 1 file
-.github/workflows/faz5-5-5-validation.yml REMOVED
-```
-
-No product/test/dependency/migration/docs change occurred after validation. Locked base -> final is 58 commits ahead / 0 behind, exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`, final diff 26 files all under `sitescore-api/**`. Locked report and frozen analytical packages remain unchanged.
-
-Reviewer must independently inspect PR #21 exact HEAD and decide READY_TO_LOCK or further hardening.
+Reviewer must independently inspect exact PR #21 final HEAD and decide READY_TO_LOCK vs further hardening.
 
 No merge. No LOCK consumed. No 5-FINAL work started.
 
