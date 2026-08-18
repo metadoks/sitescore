@@ -10,6 +10,8 @@
 - PDF byte storage: private S3-compatible object storage
 - Redis/Celery: execution transport only
 - Artifact version: `sitescore-report-artifact-v1`
+- Report schema migration: `0002_faz5_5`
+- Canonical-success/report-finalization coordination migration: `0003_faz5_5`
 
 > Mathematically validated scoring engine; empirical validation pending.
 
@@ -33,6 +35,7 @@ Forbidden report authority paths:
 
 ```text
 AnalysisModel.result_body JSON
+canonical_success_at coordination marker
 plain dictionaries / JSON
 analysis fingerprint alone
 analysis_id or report_id alone
@@ -42,7 +45,7 @@ caller score/financial/decision/confidence values
 caller filename/hash/storage key/bucket/object path
 ```
 
-The resolver API never generates or regenerates report truth.
+The resolver API never generates or regenerates report truth. `canonical_success_at` is coordination evidence only; it never reconstructs a report or scored analytical object.
 
 ## Durable report identity
 
@@ -90,16 +93,93 @@ failed
 
 Ready rows require coherent downloadable metadata and no failure fields. Failed rows require no downloadable object contract and a failure code.
 
+## Paired terminal durability
+
+A genuine canonical completed outcome is not exposed as durable `analysis.state=completed` before the current report artifact has a terminal resource.
+
+Production ordering with report generation enabled:
+
+```text
+analysis durable state = running
+-> canonical executor returns genuine CanonicalCompletedOutcome
+-> record server-owned canonical_success_at before deadline
+-> COMMIT running + canonical_success_at coordination marker
+-> generate/upload PreparedReportArtifact from the SAME live canonical outcome
+-> re-lock analysis
+-> persist analysis completed + exact canonical result_body
+-> persist report ready OR failed metadata
+-> ONE PostgreSQL commit exposes the terminal pair
+```
+
+Externally durable completion invariant:
+
+```text
+analysis.state = completed
+=> exactly one current report_artifact_version resource exists
+=> report.state = ready OR failed
+```
+
+A process loss before the paired terminal commit leaves the analysis nonterminal and therefore redeliverable. Worker recovery may rerun canonical execution to recover live factory-owned authority. That worker retry is not API authority and does not promote stored JSON or the coordination marker into report authority.
+
+Celery execution uses late acknowledgement and worker-loss redelivery semantics:
+
+```text
+task_acks_late = true
+task_reject_on_worker_lost = true
+result backend = disabled://
+```
+
+Report-finalization indeterminacy raises an explicit retry condition rather than returning successful `completed + missing report` or converting genuine analytical success into an analysis execution failure.
+
+## Canonical success / timeout coordination
+
+Locked FAZ 5.1 analytical deadline semantics remain authoritative until genuine canonical completed success is achieved.
+
+`0003_faz5_5` adds nullable server-owned:
+
+```text
+analyses.canonical_success_at
+```
+
+The marker may be written only when canonical completed success was achieved strictly before `deadline_at`. Database checks require:
+
+```text
+canonical_success_at IS NULL
+OR canonical_success_at < deadline_at
+
+canonical_success_at IS NULL
+OR state IN ('running','completed')
+```
+
+Before this marker exists, all locked timeout writers remain authoritative:
+
+```text
+GET/retrieve polling after deadline -> timed_out
+periodic reconcile_expired after deadline -> timed_out
+execute_analysis entry after deadline -> timed_out
+```
+
+After a genuine pre-deadline canonical success marker exists, report rendering, storage, ambiguous-commit reconciliation, process-loss recovery and worker retry may cross the original analysis deadline without rewriting that already-achieved analytical success to `timed_out`.
+
+The timeout writers therefore exclude rows with `canonical_success_at IS NOT NULL`. Execute-analysis redelivery after deadline is allowed only for such a protected row and still reruns canonical execution through worker authority to recover a live canonical object.
+
+If a timeout writer wins the row lock in the narrow interval after a genuine canonical completed result was reached before deadline but before the marker transaction commits, the worker may repair only the exact `analysis_deadline_exceeded` timeout using the live pre-deadline success timestamp. A success reached at or after the analytical deadline is never protected and remains timed out.
+
+This coordination does **not** extend caller-controlled deadlines, disable deadlines globally, or grant a report API retry path.
+
 ## Analysis/report failure separation
 
 Analytical truth remains owned by the locked analysis lifecycle.
 
-- canonical analytical success may persist `analysis.state = completed`;
-- render/storage failure does not rewrite that success;
-- report failure persists independently as terminal `report.state = failed`;
-- failed report rows expose no content path and V1 does not regenerate them.
+- before canonical success, deadline/failure semantics are unchanged;
+- genuine pre-deadline canonical success is durably protected while report finalization is pending;
+- render/storage failure does not rewrite that success into `failed`, `not_score_ready`, or `timed_out`;
+- report failure persists independently as terminal `report.state = failed` paired with `analysis.state = completed`;
+- failed report rows expose no content path and V1 does not regenerate them;
+- ambiguous report commit outcome is reconciled from a fresh PostgreSQL session before destructive object compensation;
+- a conflicting durable resource is failed closed by the actual `(analysis_id, report_artifact_version)` identity, even when its durable `report_id` differs from the candidate.
 
-If an object is uploaded but durable DB finalization fails, worker compensation performs a best-effort delete. An orphan object without a durable row is safer than a `ready` durable row pointing at a known missing object.
+If an object is uploaded but durable DB finalization is definitely absent, worker compensation performs a best-effort delete. If DB commit outcome is unknown, candidate storage is retained until fresh durable-state reconciliation makes cleanup safe.
 
 ## S3-compatible private storage
 
@@ -169,6 +249,7 @@ Semantics:
 
 - missing/foreign analysis -> 404-equivalent `report_not_found`;
 - `queued` / `running` -> 409 `report_not_yet_reportable`;
+- a protected report-finalization/retry analysis remains public `running` until paired terminal durability;
 - `not_score_ready` / `failed` / `timed_out` -> 409 `analysis_not_reportable`;
 - `completed` + durable report row -> returns that exact row;
 - `completed` + missing report row -> internal invariant failure;
