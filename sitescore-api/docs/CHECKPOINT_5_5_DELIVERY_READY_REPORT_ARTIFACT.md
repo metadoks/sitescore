@@ -151,33 +151,66 @@ canonical_success_at IS NULL
 OR state IN ('running','completed')
 ```
 
-Before this marker exists, all locked timeout writers remain authoritative:
+The canonical worker owns a server-derived PostgreSQL advisory-lock key for the entire execution attempt. Polling and periodic timeout writers use the same key through a nonblocking transaction-level advisory-lock claim before they are allowed to publish `timed_out`.
+
+This produces two distinct authority periods:
 
 ```text
-GET/retrieve polling after deadline -> timed_out
-periodic reconcile_expired after deadline -> timed_out
-execute_analysis entry after deadline -> timed_out
+active worker execution claim exists
+-> external timeout writer cannot durably publish timed_out
+-> worker itself still enforces the analytical deadline on its outcome path
+
+no active worker execution claim
++ no canonical_success_at marker
++ deadline expired
+-> normal polling/reconciler timeout authority may publish stable timed_out
 ```
+
+Before `canonical_success_at` exists, a live worker can therefore cross the wall-clock deadline only while it still owns the active execution claim. If canonical execution has not genuinely succeeded before the deadline, the worker outcome path still resolves to the locked timeout behavior. If the worker is lost before success, PostgreSQL releases the session advisory lock and ordinary timeout writers can subsequently converge the resource to stable `timed_out`.
 
 After a genuine pre-deadline canonical success marker exists, report rendering, storage, ambiguous-commit reconciliation, process-loss recovery and worker retry may cross the original analysis deadline without rewriting that already-achieved analytical success to `timed_out`.
 
-The timeout writers therefore exclude rows with `canonical_success_at IS NOT NULL`. Execute-analysis redelivery after deadline is allowed only for such a protected row and still reruns canonical execution through worker authority to recover a live canonical object.
+The timeout writers also exclude rows with `canonical_success_at IS NOT NULL`. Execute-analysis redelivery after deadline is allowed only for such a protected row and still reruns canonical execution through worker authority to recover a live canonical object.
 
-If a timeout writer wins the row lock in the narrow interval after a genuine canonical completed result was reached before deadline but before the marker transaction commits, the worker may repair only the exact `analysis_deadline_exceeded` timeout using the live pre-deadline success timestamp. A success reached at or after the analytical deadline is never protected and remains timed out.
+### Terminal-state immutability
 
-This coordination does **not** extend caller-controlled deadlines, disable deadlines globally, or grant a report API retry path.
+The locked FAZ 5.1 public lifecycle remains immutable once terminal state is durably committed:
+
+```text
+completed
+not_score_ready
+failed
+timed_out
+```
+
+No worker coordination path may move any of those states back to `queued`/`running` or replace one terminal outcome with another. In particular:
+
+```text
+timed_out -> running
+
+timed_out -> completed
+```
+
+are forbidden.
+
+The pre-marker canonical-success race is therefore solved by preventing a timeout writer from acquiring timeout authority while the live worker still owns execution, not by repairing or resurrecting an already durable `timed_out` row. If a terminal state already exists when a worker re-enters or attempts to record the canonical-success boundary, that terminal state is returned unchanged.
+
+This coordination does **not** extend caller-controlled deadlines, disable deadlines globally, redefine `timed_out` as provisional, teach polling consumers to resume after a terminal response, or grant a report API retry path.
 
 ## Analysis/report failure separation
 
 Analytical truth remains owned by the locked analysis lifecycle.
 
-- before canonical success, deadline/failure semantics are unchanged;
+- before canonical success, deadline/failure semantics remain authoritative;
+- an active worker execution claim prevents competing timeout writers from exposing a revocable false timeout;
+- if active execution is lost without success, ordinary timeout authority resumes and converges to stable `timed_out`;
 - genuine pre-deadline canonical success is durably protected while report finalization is pending;
 - render/storage failure does not rewrite that success into `failed`, `not_score_ready`, or `timed_out`;
 - report failure persists independently as terminal `report.state = failed` paired with `analysis.state = completed`;
 - failed report rows expose no content path and V1 does not regenerate them;
 - ambiguous report commit outcome is reconciled from a fresh PostgreSQL session before destructive object compensation;
-- a conflicting durable resource is failed closed by the actual `(analysis_id, report_artifact_version)` identity, even when its durable `report_id` differs from the candidate.
+- a conflicting durable resource is failed closed by the actual `(analysis_id, report_artifact_version)` identity, even when its durable `report_id` differs from the candidate;
+- public analysis terminal states are immutable once committed.
 
 If an object is uploaded but durable DB finalization is definitely absent, worker compensation performs a best-effort delete. If DB commit outcome is unknown, candidate storage is retained until fresh durable-state reconciliation makes cleanup safe.
 
