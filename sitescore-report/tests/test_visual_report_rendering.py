@@ -320,3 +320,84 @@ for source in cases:
         assert UNAVAILABLE_TOKEN in html
         assert domain.confidence.label == "low"
 ''')
+
+
+def test_unicode_and_long_provenance_content_wraps_without_breaking_pdf():
+    _run(r'''
+import json
+from io import BytesIO
+from types import SimpleNamespace
+from pypdf import PdfReader
+from sitescore_report import (
+    NarrativeClaimId,
+    NarrativeDraft,
+    NarrativeDraftAnchors,
+    NarrativePointDraft,
+    NarrativeProviderConfig,
+    build_canonical_report_facts,
+    build_report_domain_model,
+    build_validated_report_narrative,
+    render_report_html,
+    render_report_pdf,
+)
+
+
+def selection(payload, claim_id):
+    approved = payload["approved_claims"][claim_id.value]
+    return NarrativePointDraft(
+        claim_id=claim_id,
+        evidence_keys=list(approved["evidence_keys"]),
+    )
+
+
+class FakeResponses:
+    def parse(self, **kwargs):
+        payload = json.loads(kwargs["input"])
+        return SimpleNamespace(
+            status="completed",
+            output_parsed=NarrativeDraft(
+                canonical_anchors=NarrativeDraftAnchors(**payload["canonical_anchors"]),
+                executive_summary=[selection(payload, NarrativeClaimId.EXECUTIVE_CANONICAL_DECISION)],
+                strengths=[],
+                risks=[],
+                recommendations=[selection(payload, NarrativeClaimId.RECOMMEND_REVIEW_CANONICAL_DECISION)],
+                caveats=[
+                    selection(payload, NarrativeClaimId.CAVEAT_EMPIRICAL_VALIDATION_PENDING),
+                    selection(payload, NarrativeClaimId.CAVEAT_LANGUAGE_LAYER),
+                ],
+            ),
+        )
+
+
+class FakeClient:
+    def __init__(self):
+        self.responses = FakeResponses()
+
+
+source = build_scored(
+    "restaurant",
+    score=5.0,
+    monthly_rent=500000.0,
+    fixed_labor=500000.0,
+    fixed_overhead=250000.0,
+)
+domain = build_report_domain_model(build_canonical_report_facts(source))
+model_id = "model-İstanbul-Çeşme-ğüşöç-" * 18
+narrative = build_validated_report_narrative(
+    domain,
+    config=NarrativeProviderConfig(model_id=model_id),
+    client=FakeClient(),
+)
+assert narrative.provenance.generation_mode == "llm"
+assert narrative.provenance.model_id == model_id
+
+html = render_report_html(domain, narrative)
+assert model_id in html
+pdf = render_report_pdf(domain, narrative)
+reader = PdfReader(BytesIO(pdf))
+assert len(reader.pages) >= 3
+text = "\n".join(page.extract_text() or "" for page in reader.pages)
+assert "SiteScore AI" in text
+assert "empirical validation pending" in text.lower()
+assert domain.decision.headline in text
+''')
