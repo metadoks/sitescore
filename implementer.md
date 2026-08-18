@@ -9,25 +9,26 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5.4
 CHECKPOINT_TITLE: Visual Report + PDF Rendering
-IMPLEMENTER_STATE: READY_FOR_REVIEW
+IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_POST_LOCK_VERIFY
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
+EXPECTED_BASE_SHA_PRE_LOCK: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
 CODE_BRANCH: faz5/5-4-visual-report-pdf-rendering
-CODE_HEAD_SHA: d725df4022170f32c0d225677994d43dd5628273
+REVIEWED_AND_MERGED_HEAD_SHA: d725df4022170f32c0d225677994d43dd5628273
 PR: #20
-PR_STATE: OPEN
-PR_MERGEABLE: TRUE
-PR_MERGED: FALSE
+PR_STATE: CLOSED
+PR_MERGED: TRUE
+MERGE_COMMIT_SHA: 7d6ddbdb94567761733ff540239d959096d98f61
+POST_LOCK_MAIN_SHA: 7d6ddbdb94567761733ff540239d959096d98f61
 
-REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION_SEEN: IMPLEMENT
+REVIEWER_STATE_SEEN: READY_TO_LOCK
+IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
+BLOCKERS_REPORTED_BY_REVIEWER: NONE
 
 VALIDATED_SHA: 1dccda51c8505963ff308aabde9d496929c2a5ad
 VALIDATION_WORKFLOW: faz5-5-4-exact-head-validation
@@ -53,197 +54,42 @@ VISUAL_PDF_PAGES_EACH: 5
 VISUAL_MANUAL_INSPECTION: PASS
 ```
 
-## 1. Scope and final diff
+## Post-LOCK verification
 
-FAZ 5.4 was implemented from exact locked base `main@30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae` on branch `faz5/5-4-visual-report-pdf-rendering` and PR #20.
+User issued literal `LOCK` after Reviewer independently marked exact HEAD `d725df4022170f32c0d225677994d43dd5628273` as `READY_TO_LOCK` with `IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED`, `LOCK_AUTHORITY: USER_ONLY`, `BLOCKERS: NONE`, and all contract/design/reopen gates at zero.
 
-Final candidate:
-
-```text
-d725df4022170f32c0d225677994d43dd5628273
-```
-
-Locked-base -> final compare:
+Immediately before merge, Implementer re-fetched authoritative `reviewer.md`, `implementer.md`, PR #20, and live `main` state. The lock gates matched exactly:
 
 ```text
-merge-base: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
-ahead_by: 19
-behind_by: 0
-changed files: 11
+reviewed head: d725df4022170f32c0d225677994d43dd5628273
+current PR head: d725df4022170f32c0d225677994d43dd5628273
+PR state: OPEN
+PR merged: FALSE
+PR base: main
+PR base SHA: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
+live main vs expected base: IDENTICAL
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+BLOCKERS: NONE
 ```
 
-Every final changed file is under `sitescore-report/**`. No frozen FAZ 3/4 package, locked `sitescore-api`, or FAZ 5.5+ report-resource/storage/API/payment/n8n implementation is present. Current live `main` remains identical to the expected base.
+PR #20 was merged with merge method `merge` and exact `expected_head_sha=d725df4022170f32c0d225677994d43dd5628273`.
 
-## 2. Rendering authority
-
-The final render chain is:
+Exact merge result:
 
 ```text
-exact factory-owned ReportDomainModel A
-+ exact factory-owned ValidatedReportNarrative N
-+ N.approved_context.report_domain_model is A
--> versioned PresentationPolicy
--> canonical tables + deterministic SVG charts
--> package-controlled Jinja2 HTML/CSS
--> WeasyPrint
--> in-memory PDF bytes
+pre-lock main: 30a12424cebfb6bcd53ad6fcd5d5db1b2315d9ae
+reviewed head: d725df4022170f32c0d225677994d43dd5628273
+merge commit: 7d6ddbdb94567761733ff540239d959096d98f61
 ```
 
-Both locked authority objects are revalidated. Cross-source report/narrative substitution, dict/JSON views, copied/manual shells, fingerprints, caller numerical values, caller chart values, caller HTML/CSS/template paths and caller prose are not render authority.
+Post-merge PR #20 is `CLOSED / merged TRUE`. Live `main` compares identical to merge commit `7d6ddbdb94567761733ff540239d959096d98f61`.
 
-No scoring, financial, decision, confidence, normalization, benchmark, readiness or analysis-fingerprint computation is reimplemented in the renderer.
+The authoritative 5.4 validation evidence remains unchanged: exact-head run `32122031730` / job `95664355562` succeeded with 24 report tests, 88 locked API tests, 1375 frozen regressions, 1487 total tests, PostgreSQL migration proof, real Redis/Celery transport proof, and three visually inspected five-page PDF artifacts.
 
-## 3. Presentation fidelity and missingness
+No product-branch changes were made after merge. No FAZ 5.5 work has been started.
 
-`sitescore-report==0.3.0` adds one code-owned versioned presentation policy for scores, currency, canonical 0..1 rates displayed as percentages, already-percentage canonical fields, ratios/BEC, booleans, labels/risk flags and missing values.
-
-The same policy drives repeated table/chart displays. Presentation rounding never feeds back into analytical authority. Missing/absent facts render as `Not available`; they are not converted to zero, neutral, favorable or complete evidence.
-
-## 4. Controlled render stack and security
-
-Exact rendering runtime pins:
-
-```text
-Jinja2==3.1.6
-matplotlib==3.11.1
-weasyprint==69.0
-```
-
-Dev PDF parser:
-
-```text
-pypdf==6.14.2
-```
-
-Jinja uses autoescape and `StrictUndefined`; validated narrative is normal escaped data. HTML template and CSS are package-owned assets selected only through the closed render-asset contract. Caller template/CSS/path injection is not accepted.
-
-Matplotlib generates in-memory SVG only from exact canonical report values. WeasyPrint URL fetching is restricted to `data:` assets; HTTP(S) and `file://` resources fail closed. No network fonts are used.
-
-Renderer/chart/template/asset failures are explicit `ReportRenderError` or upstream authority errors and cannot become empty/fake-valid PDF success.
-
-## 5. PDF semantics and explicit 5.5 exclusion
-
-`render_report_pdf(...)` returns PDF bytes only in memory. FAZ 5.4 does not issue or persist:
-
-```text
-report_id
-analysis_id <-> report resource binding
-report DB rows
-S3/object storage
-storage_key
-report API routes
-payment/Stripe
-n8n
-email delivery
-commercial order state
-```
-
-Those remain later-checkpoint concerns.
-
-Frozen COMB-005 is still not approved. Current real production lifecycle can still end `queued -> running -> not_score_ready`; 5.4 does not fabricate a scored PDF from NOT_SCORE_READY.
-
-## 6. Exact-head authoritative validation
-
-Authoritative run:
-
-```text
-workflow: faz5-5-4-exact-head-validation
-run: 32122031730
-job: 95664355562
-validated SHA: 1dccda51c8505963ff308aabde9d496929c2a5ad
-conclusion: SUCCESS
-```
-
-The workflow explicitly checked out `${github.event.pull_request.head.sha}` and asserted that `git rev-parse HEAD` equaled exact SHA `1dccda51c8505963ff308aabde9d496929c2a5ad`. This closes the synthetic PR merge-ref ambiguity from an earlier non-authoritative integration run.
-
-Fresh exact-head results:
-
-```text
-sitescore-report:        24 PASS
-sitescore-api:           88 PASS
-sitescore-app:           19 PASS
-sitescore-pipeline:      53 PASS
-sitescore-benchmarks:   191 PASS
-sitescore-metrics:       67 PASS
-sitescore-spatial:      180 PASS
-sitescore-providers:    418 PASS
-sitescore-data:         361 PASS
-sitescore-core:          86 PASS
----------------------------------
-frozen regression:    1375 PASS
-locked API + frozen:  1463 PASS
-combined with report: 1487 PASS
-```
-
-The same exact-head run re-proved PostgreSQL 16.15 migration and a real Celery 5.6.3 worker over Redis 7.4.10 with result backend `disabled://`; `sitescore_api.reconcile_timeouts` was received and succeeded.
-
-## 7. Visual PDF artifact evidence
-
-Exact-head artifact:
-
-```text
-name: faz5-5-4-visual-pdf-evidence-exact-head
-artifact ID: 9318957971
-digest: sha256:881f249f5130722e7a1edef34d05ce5a7b26af8a096c5c7a55490fe78168e349
-head SHA: 1dccda51c8505963ff308aabde9d496929c2a5ad
-archive size: 150428 bytes
-```
-
-Files:
-
-```text
-normal-strong.pdf
-  49172 bytes
-  5 pages
-  prime_opportunity / high confidence / stress false
-
-financially-stressed.pdf
-  51406 bytes
-  5 pages
-  dead_end / high confidence / stress true
-
-low-confidence-incomplete.pdf
-  49412 bytes
-  5 pages
-  hidden_gem / low confidence / stress false
-```
-
-All three PDFs were parsed successfully, rendered to page images, and manually inspected. No clipping/overlap was observed. The financially stressed report visibly preserves weak/non-viable classification, severe rent burden, negative base operating margin and stress failure. The incomplete report visibly preserves low confidence, unknown/degraded context and `Not available` missing fields.
-
-Unicode/long-provenance overflow robustness is also covered by the 24-test report suite.
-
-## 8. Validated SHA -> final candidate closure
-
-```text
-validated exact HEAD:
-1dccda51c8505963ff308aabde9d496929c2a5ad
-
-final candidate HEAD:
-d725df4022170f32c0d225677994d43dd5628273
-```
-
-Exact compare:
-
-```text
-ahead_by: 1
-behind_by: 0
-total_commits: 1
-changed files: 1
-```
-
-Sole change:
-
-```text
-.github/workflows/faz5-5-4-validation.yml
-REMOVED
-```
-
-No product source, tests, dependency/package contract, HTML template, CSS, documentation or rendering behavior changed after successful exact-head validation.
-
-## 9. Reviewer next action
-
-Implementer evidence is complete. Reviewer must independently review exact final HEAD `d725df4022170f32c0d225677994d43dd5628273` and either request hardening or issue exact-head `READY_TO_LOCK`.
-
-No merge was performed. No user LOCK was consumed. FAZ 5.5 has not started.
+Reviewer must now independently perform post-LOCK verification and explicitly open the next checkpoint before any further implementation.
 
 > Mathematically validated scoring engine; empirical validation pending.
