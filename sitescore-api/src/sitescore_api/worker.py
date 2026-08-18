@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import UUID
@@ -23,6 +24,22 @@ def _advisory_key(analysis_id: UUID) -> int:
     return int.from_bytes(sha256(analysis_id.bytes).digest()[:8], "big", signed=True)
 
 
+def _failed_report_artifact(artifact: PreparedReportArtifact) -> PreparedReportArtifact:
+    """Preserve provenance/identity while clearing every ready-content binding."""
+
+    return replace(
+        artifact,
+        state="failed",
+        content_sha256=None,
+        mime_type=None,
+        filename=None,
+        byte_length=None,
+        storage_key=None,
+        failure_code="report_generation_failed",
+        failure_message="report artifact generation failed",
+    )
+
+
 class AnalysisWorkerService:
     def __init__(
         self,
@@ -38,8 +55,63 @@ class AnalysisWorkerService:
     def _now() -> datetime:
         return datetime.now(timezone.utc)
 
+    def _persist_report_after_completed(
+        self,
+        session: Session,
+        *,
+        analysis_id: UUID,
+        artifact: PreparedReportArtifact,
+    ) -> None:
+        """Persist report state after canonical analysis truth is already durable.
+
+        Report metadata/finalization is intentionally a separate failure domain.
+        A ready object that cannot be durably bound is compensated, then a
+        sanitized failed report record is attempted in a fresh transaction.
+        No exception from this method is allowed to reclassify a completed
+        canonical analysis as failed/timed_out/not_score_ready.
+        """
+
+        try:
+            row = session.scalar(
+                select(AnalysisModel)
+                .where(AnalysisModel.analysis_id == analysis_id)
+                .with_for_update()
+            )
+            if row is None or row.state != "completed":
+                session.rollback()
+                if self.report_artifacts is not None:
+                    self.report_artifacts.compensate(artifact)
+                return
+            persist_report_artifact(session, row, artifact, now=self._now())
+            # Force ORM/DB constraint failures into this report-specific domain
+            # before the commit boundary, while still covering commit failures.
+            session.flush()
+            session.commit()
+            return
+        except Exception:
+            session.rollback()
+            if self.report_artifacts is not None:
+                self.report_artifacts.compensate(artifact)
+
+        failed_artifact = _failed_report_artifact(artifact)
+        try:
+            row = session.scalar(
+                select(AnalysisModel)
+                .where(AnalysisModel.analysis_id == analysis_id)
+                .with_for_update()
+            )
+            if row is None or row.state != "completed":
+                session.rollback()
+                return
+            persist_report_artifact(session, row, failed_artifact, now=self._now())
+            session.flush()
+            session.commit()
+        except Exception:
+            # A true database outage can prevent durable report-failure metadata,
+            # but canonical analysis truth was committed before this domain began.
+            session.rollback()
+
     def execute_analysis(self, analysis_id: UUID) -> str:
-        prepared_report: PreparedReportArtifact | None = None
         with self.database.engine.connect() as connection:
             with Session(
                 bind=connection,
@@ -106,30 +178,37 @@ class AnalysisWorkerService:
                     completed_at = self._now()
                     if outcome.not_score_ready is not None:
                         persist_not_score_ready(session, row, outcome.not_score_ready, now=completed_at)
-                    else:
-                        assert outcome.completed is not None
-                        persisted = persist_completed(session, row, outcome.completed, now=completed_at)
-                        if persisted and self.report_artifacts is not None:
+                        state = row.state
+                        session.commit()
+                        return state
+
+                    assert outcome.completed is not None
+                    persisted = persist_completed(session, row, outcome.completed, now=completed_at)
+                    state = row.state
+                    # RPT55-H001: commit canonical analytical truth before entering
+                    # the report generation/finalization failure domain.
+                    session.commit()
+
+                    if persisted and self.report_artifacts is not None:
+                        try:
                             prepared_report = self.report_artifacts.generate(
                                 consumer_id=row.consumer_id,
                                 analysis_id=row.analysis_id,
                                 outcome=outcome.completed,
                                 generated_at=completed_at,
                             )
-                            persist_report_artifact(
-                                session,
-                                row,
-                                prepared_report,
-                                now=self._now(),
-                            )
-                    state = row.state
-                    try:
-                        session.commit()
-                    except Exception:
-                        session.rollback()
-                        if prepared_report is not None and self.report_artifacts is not None:
-                            self.report_artifacts.compensate(prepared_report)
-                        raise
+                        except Exception:
+                            # Genuine canonical authority is expected to make
+                            # ReportArtifactGenerator return a sanitized failed
+                            # artifact for report-layer errors. An unexpected
+                            # generator exception still cannot regress the already
+                            # committed canonical analysis state.
+                            return state
+                        self._persist_report_after_completed(
+                            session,
+                            analysis_id=row.analysis_id,
+                            artifact=prepared_report,
+                        )
                     return state
                 except Exception:
                     session.rollback()
