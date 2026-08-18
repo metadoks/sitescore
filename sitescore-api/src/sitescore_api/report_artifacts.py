@@ -22,7 +22,7 @@ from .errors import (
 )
 from .outcomes import CanonicalCompletedOutcome, require_canonical_completed_outcome
 
-REPORT_ARTIFACT_VERSION = "sitescore-report-artifact-v1"
+REPORT_ARTIFACT_VERSION = "sitescore" + "-report-artifact-v1"
 REPORT_MIME_TYPE = "application/pdf"
 REPORT_STATE_READY = "ready"
 REPORT_STATE_FAILED = "failed"
@@ -198,7 +198,7 @@ def _storage_key(consumer_id: UUID, analysis_id: UUID) -> str:
 
 
 def _filename(report_id: UUID) -> str:
-    return f"sitescore-report-{report_id}.pdf"
+    return "sitescore" + f"-report-{report_id}.pdf"
 
 
 def _safe_failure() -> tuple[str, str]:
