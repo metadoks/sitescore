@@ -11,6 +11,7 @@ def build_celery(settings: Settings) -> Celery:
         task_store_errors_even_if_ignored=False,
         task_acks_late=True,
         task_acks_on_failure_or_timeout=True,
+        task_reject_on_worker_lost=True,
         worker_prefetch_multiplier=1,
         task_soft_time_limit=settings.worker_soft_time_limit_seconds,
         task_time_limit=settings.worker_hard_time_limit_seconds,
