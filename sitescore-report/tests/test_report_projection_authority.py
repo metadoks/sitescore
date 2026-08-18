@@ -260,7 +260,7 @@ for sector in ("coffee", "restaurant", "gym", "beauty"):
     analysis_input = source.application_core_input.analysis_input
     core = source.core_result
 
-    assert facts.provenance.report_package_version == REPORT_PACKAGE_VERSION == "0.2.0"
+    assert facts.provenance.report_package_version == REPORT_PACKAGE_VERSION == "0.3.0"
     assert facts.provenance.report_schema_version == REPORT_SCHEMA_VERSION
     assert facts.provenance.report_projection_version == REPORT_PROJECTION_VERSION
     assert facts.provenance.source_analysis_fingerprint == core.analysis_fingerprint
