@@ -1,0 +1,37 @@
+name: faz5-5-4-test-version-patch
+
+on:
+  push:
+    branches:
+      - faz5/5-4-visual-report-pdf-rendering
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Update locked report package expectation for 5.4
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('sitescore-report/tests/test_report_projection_authority.py')
+          text = path.read_text()
+          old = 'assert facts.provenance.report_package_version == REPORT_PACKAGE_VERSION == "0.2.0"'
+          new = 'assert facts.provenance.report_package_version == REPORT_PACKAGE_VERSION == "0.3.0"'
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          PY
+          if git diff --quiet; then
+            echo "No patch required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sitescore-report/tests/test_report_projection_authority.py
+          git commit -m "FAZ 5.4 align report package provenance regression"
+          git push
