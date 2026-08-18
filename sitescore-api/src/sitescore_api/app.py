@@ -71,17 +71,18 @@ def create_app(
         try:
             runtime = build_runtime()
         except ValueError:
-            # Missing/invalid deployment configuration fails closed at request time.
             runtime = None
 
     app = FastAPI(
         title="SiteScore API",
         version=__version__,
         description=(
-            "FAZ 5.1 machine-consumer API. PostgreSQL is durable lifecycle truth; "
-            "Redis/Celery are execution transport only. Current locked COMB-005 "
-            "authority is not approved, so the real canonical production path is "
-            "expected to terminate as not_score_ready. V1 cancellation and callbacks/webhooks are not supported."
+            "FAZ 5.5 machine-consumer analysis and durable report-artifact API. PostgreSQL is durable "
+            "metadata/lifecycle truth; Redis/Celery are execution transport only; private S3-compatible "
+            "object storage holds report PDF bytes. Report artifacts are generated only from the exact live "
+            "canonical completed outcome and are never reconstructed from stored JSON. Current frozen COMB-005 "
+            "authority is not approved, so the real canonical production path is expected to terminate as "
+            "not_score_ready. V1 cancellation and callbacks/webhooks are not supported."
         ),
     )
     app.state.sitescore_runtime = runtime
@@ -153,6 +154,7 @@ def create_app(
     app.include_router(
         create_v1_router(
             runtime.lifecycle if runtime is not None else None,
+            report_backend=getattr(runtime, "reports", None) if runtime is not None else None,
             database=runtime.database if runtime is not None else None,
             settings=runtime.settings if runtime is not None else None,
         )
