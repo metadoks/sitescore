@@ -117,9 +117,10 @@ def test_dependency_contract_is_exact_and_directional():
         "httpx==0.28.1",
         "pytest==8.4.2",
     ]
+    report_source_root = REPO_ROOT / "sitescore-report" / "src"
     report_source = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
-        for path in (REPO_ROOT / "sitescore-report").rglob("*.py")
+        for path in report_source_root.rglob("*.py")
     )
     assert "sitescore_api" not in report_source
 
