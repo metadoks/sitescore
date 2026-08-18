@@ -10,14 +10,50 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .db import Database
-from .db_models import AnalysisModel, TERMINAL_STATES
+from .db_models import AnalysisModel, ReportModel, TERMINAL_STATES
 from .execution import CanonicalAnalysisExecutor
 from .ingress import build_analysis_ingress_command
 from .lifecycle import persist_completed, persist_not_score_ready
 from .models import AnalysisRequest
-from .report_artifacts import PreparedReportArtifact, ReportArtifactGenerator, persist_report_artifact
+from .report_artifacts import (
+    PreparedReportArtifact,
+    REPORT_MIME_TYPE,
+    REPORT_STATE_FAILED,
+    REPORT_STATE_READY,
+    ReportArtifactGenerator,
+    persist_report_artifact,
+)
 
 _REQUEST_ADAPTER = TypeAdapter(AnalysisRequest)
+_REPORT_ARTIFACT_FIELDS = (
+    "report_id",
+    "analysis_id",
+    "report_artifact_version",
+    "state",
+    "analysis_fingerprint",
+    "report_schema_version",
+    "report_projection_version",
+    "narrative_prompt_version",
+    "narrative_schema_version",
+    "narrative_provider",
+    "narrative_model_id",
+    "narrative_generation_mode",
+    "narrative_fallback_version",
+    "presentation_schema_version",
+    "presentation_policy_version",
+    "template_version",
+    "stylesheet_version",
+    "chart_version",
+    "renderer_version",
+    "generated_at",
+    "content_sha256",
+    "mime_type",
+    "filename",
+    "byte_length",
+    "storage_key",
+    "failure_code",
+    "failure_message",
+)
 
 
 def _advisory_key(analysis_id: UUID) -> int:
@@ -29,7 +65,7 @@ def _failed_report_artifact(artifact: PreparedReportArtifact) -> PreparedReportA
 
     return replace(
         artifact,
-        state="failed",
+        state=REPORT_STATE_FAILED,
         content_sha256=None,
         mime_type=None,
         filename=None,
@@ -38,6 +74,12 @@ def _failed_report_artifact(artifact: PreparedReportArtifact) -> PreparedReportA
         failure_code="report_generation_failed",
         failure_message="report artifact generation failed",
     )
+
+
+def _report_row_matches_artifact(row: ReportModel, artifact: PreparedReportArtifact) -> bool:
+    """Require exact durable report semantics, never report-id-only idempotence."""
+
+    return all(getattr(row, field) == getattr(artifact, field) for field in _REPORT_ARTIFACT_FIELDS)
 
 
 class AnalysisWorkerService:
@@ -55,6 +97,171 @@ class AnalysisWorkerService:
     def _now() -> datetime:
         return datetime.now(timezone.utc)
 
+    @staticmethod
+    def _rollback_quietly(session: Session) -> None:
+        try:
+            session.rollback()
+        except Exception:
+            pass
+
+    def _commit_report_metadata(self, session: Session) -> None:
+        """Single report metadata commit seam used by deterministic ACK-loss tests."""
+
+        session.commit()
+
+    def _ready_object_matches(self, artifact: PreparedReportArtifact) -> bool:
+        """Verify the exact server-owned ready binding without reading report bytes."""
+
+        if (
+            self.report_artifacts is None
+            or artifact.state != REPORT_STATE_READY
+            or artifact.storage_key is None
+            or artifact.byte_length is None
+            or artifact.mime_type != REPORT_MIME_TYPE
+        ):
+            return False
+        try:
+            metadata = self.report_artifacts.storage.head(artifact.storage_key)
+        except Exception:
+            return False
+        return (
+            metadata.byte_length == artifact.byte_length
+            and metadata.content_type in (None, artifact.mime_type)
+        )
+
+    def _reconcile_report_commit(self, artifact: PreparedReportArtifact) -> str:
+        """Resolve an ambiguous commit using a fresh independent PostgreSQL session.
+
+        Returns one of: absent, ready, ready_invalid, failed, conflict, unknown.
+        No destructive storage action is taken here.
+        """
+
+        try:
+            with self.database.session() as fresh:
+                row = fresh.scalar(
+                    select(ReportModel).where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                    )
+                )
+                if row is None:
+                    return "absent"
+                if row.report_id != artifact.report_id:
+                    return "conflict"
+                if _report_row_matches_artifact(row, artifact):
+                    if artifact.state == REPORT_STATE_READY:
+                        return "ready" if self._ready_object_matches(artifact) else "ready_invalid"
+                    if artifact.state == REPORT_STATE_FAILED:
+                        return "failed"
+                    return "conflict"
+                failed_artifact = _failed_report_artifact(artifact)
+                if _report_row_matches_artifact(row, failed_artifact):
+                    return "failed"
+                return "conflict"
+        except Exception:
+            return "unknown"
+
+    def _same_identity_state(self, artifact: PreparedReportArtifact) -> str:
+        try:
+            with self.database.session() as fresh:
+                row = fresh.scalar(
+                    select(ReportModel).where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                        ReportModel.report_id == artifact.report_id,
+                    )
+                )
+                if row is None:
+                    return "absent"
+                return row.state
+        except Exception:
+            return "unknown"
+
+    def _transition_same_identity_to_failed(self, artifact: PreparedReportArtifact) -> bool:
+        """Fail closed for an exact report identity that cannot remain valid ready.
+
+        The transition preserves the row's analytical/provenance identity and only
+        clears caller-visible ready content bindings. If commit acknowledgement is
+        itself ambiguous, a fresh session reconciles the resulting durable state.
+        """
+
+        for _ in range(3):
+            try:
+                with self.database.session() as fresh:
+                    row = fresh.scalar(
+                        select(ReportModel)
+                        .where(
+                            ReportModel.analysis_id == artifact.analysis_id,
+                            ReportModel.report_artifact_version == artifact.report_artifact_version,
+                            ReportModel.report_id == artifact.report_id,
+                        )
+                        .with_for_update()
+                    )
+                    if row is None:
+                        return False
+                    if row.state == REPORT_STATE_FAILED:
+                        return True
+                    row.state = REPORT_STATE_FAILED
+                    row.content_sha256 = None
+                    row.mime_type = None
+                    row.filename = None
+                    row.byte_length = None
+                    row.storage_key = None
+                    row.failure_code = "report_generation_failed"
+                    row.failure_message = "report artifact generation failed"
+                    row.updated_at = self._now()
+                    fresh.flush()
+                    try:
+                        self._commit_report_metadata(fresh)
+                        return True
+                    except Exception:
+                        self._rollback_quietly(fresh)
+            except Exception:
+                pass
+            state = self._same_identity_state(artifact)
+            if state == REPORT_STATE_FAILED:
+                return True
+            if state == "unknown":
+                return False
+        return False
+
+    def _persist_failed_report_fresh(
+        self,
+        *,
+        analysis_id: UUID,
+        artifact: PreparedReportArtifact,
+    ) -> None:
+        failed_artifact = _failed_report_artifact(artifact)
+        try:
+            with self.database.session() as fresh:
+                row = fresh.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == analysis_id)
+                    .with_for_update()
+                )
+                if row is None or row.state != "completed":
+                    self._rollback_quietly(fresh)
+                    return
+                persisted_row = persist_report_artifact(
+                    fresh,
+                    row,
+                    failed_artifact,
+                    now=self._now(),
+                )
+                if not _report_row_matches_artifact(persisted_row, failed_artifact):
+                    raise ValueError("existing report row is not semantically equivalent")
+                fresh.flush()
+                try:
+                    self._commit_report_metadata(fresh)
+                    return
+                except Exception:
+                    self._rollback_quietly(fresh)
+        except Exception:
+            pass
+        # A failed-artifact commit may also have lost only its acknowledgement.
+        # Fresh reconciliation prevents a duplicate or contradictory write.
+        self._reconcile_report_commit(failed_artifact)
+
     def _persist_report_after_completed(
         self,
         session: Session,
@@ -64,11 +271,10 @@ class AnalysisWorkerService:
     ) -> None:
         """Persist report state after canonical analysis truth is already durable.
 
-        Report metadata/finalization is intentionally a separate failure domain.
-        A ready object that cannot be durably bound is compensated, then a
-        sanitized failed report record is attempted in a fresh transaction.
-        No exception from this method is allowed to reclassify a completed
-        canonical analysis as failed/timed_out/not_score_ready.
+        RPT55-H001 isolates report finalization from canonical analysis completion.
+        RPT55-H002 treats a report commit exception as UNKNOWN until a fresh,
+        independent database read resolves whether the exact artifact committed.
+        Destructive object compensation is never authorized by uncertainty alone.
         """
 
         try:
@@ -82,34 +288,59 @@ class AnalysisWorkerService:
                 if self.report_artifacts is not None:
                     self.report_artifacts.compensate(artifact)
                 return
-            persist_report_artifact(session, row, artifact, now=self._now())
+            persisted_row = persist_report_artifact(session, row, artifact, now=self._now())
+            if not _report_row_matches_artifact(persisted_row, artifact):
+                raise ValueError("existing report row is not semantically equivalent")
             # Force ORM/DB constraint failures into this report-specific domain
             # before the commit boundary, while still covering commit failures.
             session.flush()
-            session.commit()
+            self._commit_report_metadata(session)
             return
         except Exception:
-            session.rollback()
+            self._rollback_quietly(session)
+
+        reconciliation = self._reconcile_report_commit(artifact)
+
+        # Exact ready metadata really committed and the exact object binding still
+        # exists: acknowledgement was lost, so keep both row and object.
+        if reconciliation == "ready":
+            return
+
+        # A durable failed row already owns this identity. A candidate ready object
+        # is unbound and may now be compensated safely.
+        if reconciliation == "failed":
             if self.report_artifacts is not None:
                 self.report_artifacts.compensate(artifact)
+            return
 
-        failed_artifact = _failed_report_artifact(artifact)
-        try:
-            row = session.scalar(
-                select(AnalysisModel)
-                .where(AnalysisModel.analysis_id == analysis_id)
-                .with_for_update()
-            )
-            if row is None or row.state != "completed":
-                session.rollback()
-                return
-            persist_report_artifact(session, row, failed_artifact, now=self._now())
-            session.flush()
-            session.commit()
-        except Exception:
-            # A true database outage can prevent durable report-failure metadata,
-            # but canonical analysis truth was committed before this domain began.
-            session.rollback()
+        # A committed ready row whose object binding is already invalid must not
+        # remain caller-valid ready. First make the DB state failed, confirm it,
+        # then compensate only after the failed state is durable.
+        if reconciliation == "ready_invalid":
+            if self._transition_same_identity_to_failed(artifact):
+                if self.report_artifacts is not None:
+                    self.report_artifacts.compensate(artifact)
+            return
+
+        # Same server-owned identity but contradictory semantics is not idempotent
+        # success. Fail the exact identity closed before any destructive cleanup.
+        if reconciliation == "conflict":
+            if self._transition_same_identity_to_failed(artifact):
+                if self.report_artifacts is not None:
+                    self.report_artifacts.compensate(artifact)
+            return
+
+        # Database unavailable / commit outcome indeterminate: do not delete an
+        # object that may already be referenced by a successfully committed row.
+        if reconciliation == "unknown":
+            return
+
+        # Fresh DB proves no report row committed. Only now is candidate-object
+        # compensation safe, followed by a sanitized failed row in a fresh session.
+        assert reconciliation == "absent"
+        if self.report_artifacts is not None:
+            self.report_artifacts.compensate(artifact)
+        self._persist_failed_report_fresh(analysis_id=analysis_id, artifact=artifact)
 
     def execute_analysis(self, analysis_id: UUID) -> str:
         with self.database.engine.connect() as connection:
