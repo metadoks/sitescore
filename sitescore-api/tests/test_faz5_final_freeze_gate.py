@@ -89,7 +89,9 @@ def test_faz5_final_migration_and_terminal_artifact_contract_is_complete():
     assert "canonical_success_at" in models
     assert "ck_canonical_success_before_deadline" in models
     assert "ck_canonical_success_state" in models
-    assert "try_analysis_timeout_claim" in lifecycle
+    assert "def analysis_advisory_key" in lifecycle
+    assert "def try_analysis_timeout_authority" in lifecycle
+    assert "pg_try_advisory_xact_lock" in lifecycle
     assert "row.state not in TERMINAL_STATES" in lifecycle
 
 
