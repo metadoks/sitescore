@@ -66,13 +66,13 @@ def test_faz5_final_worker_report_and_durable_truth_authority_remain_directional
     assert "task_ignore_result=True" in celery_app
     assert "task_acks_late=True" in celery_app
     assert "task_reject_on_worker_lost=True" in celery_app
-    assert 'backend=None' in celery_app
+    assert "backend=None" in celery_app
     assert '"sitescore_api.reconcile_timeouts"' in celery_app
 
 
 def test_faz5_final_migration_and_terminal_artifact_contract_is_complete():
     versions = PACKAGE_ROOT / "alembic" / "versions"
-    migration_1 = (versions / "0001_faz5_1_api_consumer_lifecycle.py").read_text(encoding="utf-8")
+    migration_1 = (versions / "0001_faz5_1_consumer_lifecycle.py").read_text(encoding="utf-8")
     migration_2 = (versions / "0002_faz5_5_report_artifact.py").read_text(encoding="utf-8")
     migration_3 = (versions / "0003_faz5_5_canonical_success_boundary.py").read_text(encoding="utf-8")
     models = (SRC_ROOT / "db_models.py").read_text(encoding="utf-8")
@@ -80,9 +80,9 @@ def test_faz5_final_migration_and_terminal_artifact_contract_is_complete():
 
     assert 'revision: str = "0001_faz5_1"' in migration_1
     assert 'revision: str = "0002_faz5_5"' in migration_2
-    assert 'down_revision' in migration_2 and '"0001_faz5_1"' in migration_2
+    assert "down_revision" in migration_2 and '"0001_faz5_1"' in migration_2
     assert 'revision: str = "0003_faz5_5"' in migration_3
-    assert 'down_revision' in migration_3 and '"0002_faz5_5"' in migration_3
+    assert "down_revision" in migration_3 and '"0002_faz5_5"' in migration_3
 
     assert 'TERMINAL_STATES = ("completed", "not_score_ready", "failed", "timed_out")' in models
     assert 'REPORT_STATES = ("ready", "failed")' in models
