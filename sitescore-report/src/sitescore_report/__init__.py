@@ -1,4 +1,4 @@
-"""SiteScore FAZ 5 canonical report and validated narrative authority."""
+"""SiteScore FAZ 5 canonical report, validated narrative, and deterministic presentation."""
 
 from .domain import (
     REPORT_PACKAGE_VERSION,
@@ -54,6 +54,26 @@ from .narrative import (
     require_approved_narrative_context,
     require_validated_report_narrative,
     validate_narrative_draft,
+)
+from .rendering import (
+    CHART_VERSION,
+    DEFAULT_PRESENTATION_POLICY,
+    JINJA2_RUNTIME_VERSION,
+    MATPLOTLIB_RUNTIME_VERSION,
+    PRESENTATION_POLICY_VERSION,
+    PRESENTATION_SCHEMA_VERSION,
+    RENDERER_VERSION,
+    STYLESHEET_VERSION,
+    TEMPLATE_VERSION,
+    UNAVAILABLE_TOKEN,
+    WEASYPRINT_RUNTIME_VERSION,
+    PresentationPolicy,
+    RenderAsset,
+    ReportChartAsset,
+    ReportRenderError,
+    build_report_chart_assets,
+    render_report_html,
+    render_report_pdf,
 )
 
 __version__ = REPORT_PACKAGE_VERSION
@@ -111,4 +131,22 @@ __all__ = [
     "build_deterministic_fallback_draft",
     "build_validated_report_narrative",
     "require_validated_report_narrative",
+    "PRESENTATION_SCHEMA_VERSION",
+    "PRESENTATION_POLICY_VERSION",
+    "TEMPLATE_VERSION",
+    "STYLESHEET_VERSION",
+    "CHART_VERSION",
+    "RENDERER_VERSION",
+    "JINJA2_RUNTIME_VERSION",
+    "MATPLOTLIB_RUNTIME_VERSION",
+    "WEASYPRINT_RUNTIME_VERSION",
+    "UNAVAILABLE_TOKEN",
+    "ReportRenderError",
+    "RenderAsset",
+    "PresentationPolicy",
+    "DEFAULT_PRESENTATION_POLICY",
+    "ReportChartAsset",
+    "build_report_chart_assets",
+    "render_report_html",
+    "render_report_pdf",
 ]
