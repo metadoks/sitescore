@@ -1,0 +1,158 @@
+name: faz5-5-5-validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-fast:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sitescore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sitescore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SITESCORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
+      SITESCORE_BROKER_URL: redis://127.0.0.1:6379/0
+      SITESCORE_API_KEY_PEPPER: test-only-ci-pepper-0123456789-abcdefghijklmnopqrstuvwxyz
+      SITESCORE_ANALYSIS_DEADLINE_SECONDS: "900"
+      SITESCORE_WORKER_SOFT_LIMIT_SECONDS: "840"
+      SITESCORE_WORKER_HARD_LIMIT_SECONDS: "900"
+      SITESCORE_REPORT_STORAGE_BUCKET: sitescore-reports
+      SITESCORE_REPORT_STORAGE_REGION: us-east-1
+      SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
+      SITESCORE_REPORT_MAX_BYTES: "10485760"
+      AWS_EC2_METADATA_DISABLED: "true"
+      MPLCONFIGDIR: /tmp/sitescore-mplconfig
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact PR head checkout
+        run: |
+          ACTUAL=$(git rev-parse HEAD)
+          EXPECTED='${{ github.event.pull_request.head.sha }}'
+          echo "ACTUAL_HEAD=$ACTUAL"
+          echo "EXPECTED_HEAD=$EXPECTED"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Start pinned private MinIO integration service
+        run: |
+          ACCESS=$(python -c 'import secrets; print("ci" + secrets.token_hex(8))')
+          SECRET=$(python -c 'import secrets; print(secrets.token_hex(24))')
+          echo "::add-mask::$ACCESS"
+          echo "::add-mask::$SECRET"
+          echo "AWS_ACCESS_KEY_ID=$ACCESS" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=$SECRET" >> "$GITHUB_ENV"
+          docker run -d --name sitescore-minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER="$ACCESS" \
+            -e MINIO_ROOT_PASSWORD="$SECRET" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
+            server /data --address :9000
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null
+          docker exec sitescore-minio minio --version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install exact local runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do
+            python -m pip install -e "$pkg" --no-deps
+          done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
+
+      - name: Verify 5.5 dependency versions
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          expected = {
+              "sitescore-api": "0.3.0",
+              "sitescore-report": "0.3.0",
+              "boto3": "1.43.55",
+              "Jinja2": "3.1.6",
+              "matplotlib": "3.11.1",
+              "weasyprint": "69.0",
+              "openai": "3.2.0",
+              "pydantic": "2.13.4",
+              "pytest": "8.4.2",
+          }
+          for name, version in expected.items():
+              actual = importlib.metadata.version(name)
+              print(f"{name}={actual}")
+              assert actual == version, (name, actual, version)
+          PY
+
+      - name: Upgrade PostgreSQL through FAZ 5.5 migration
+        working-directory: sitescore-api
+        run: alembic upgrade head
+
+      - name: Prove real S3-compatible put head get delete with private object
+        run: |
+          python - <<'PY'
+          import boto3, os
+          from sitescore_api.report_artifacts import S3CompatibleObjectStorage
+          endpoint = os.environ["SITESCORE_REPORT_STORAGE_ENDPOINT_URL"]
+          bucket = os.environ["SITESCORE_REPORT_STORAGE_BUCKET"]
+          region = os.environ["SITESCORE_REPORT_STORAGE_REGION"]
+          client = boto3.client("s3", endpoint_url=endpoint, region_name=region)
+          client.create_bucket(Bucket=bucket)
+          storage = S3CompatibleObjectStorage(bucket=bucket, region=region, endpoint_url=endpoint)
+          payload = b"%PDF-1.7\nminio integration\n%%EOF\n"
+          key = "integration/private/report.pdf"
+          storage.put(key, payload, content_type="application/pdf")
+          head = storage.head(key)
+          assert head.byte_length == len(payload)
+          assert head.content_type == "application/pdf"
+          assert storage.get(key, max_bytes=1024) == payload
+          acl = client.get_object_acl(Bucket=bucket, Key=key)
+          assert not any("AllUsers" in str(grant) or "AuthenticatedUsers" in str(grant) for grant in acl.get("Grants", []))
+          storage.delete(key)
+          try:
+              storage.head(key)
+          except Exception:
+              pass
+          else:
+              raise AssertionError("deleted object must not remain readable")
+          print("MINIO_S3_PUT_HEAD_GET_DELETE=PASS")
+          PY
+
+      - name: Run sitescore-report locked suite
+        working-directory: sitescore-report
+        run: python -m pytest -o addopts='' -q
+
+      - name: Run sitescore-api 5.5 suite
+        working-directory: sitescore-api
+        run: python -m pytest -o addopts='' -q
