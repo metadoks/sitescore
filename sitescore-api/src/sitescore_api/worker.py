@@ -15,6 +15,7 @@ from .execution import CanonicalAnalysisExecutor
 from .ingress import build_analysis_ingress_command
 from .lifecycle import persist_completed, persist_not_score_ready
 from .models import AnalysisRequest
+from .outcomes import CanonicalCompletedOutcome
 from .report_artifacts import (
     PreparedReportArtifact,
     REPORT_MIME_TYPE,
@@ -54,6 +55,10 @@ _REPORT_ARTIFACT_FIELDS = (
     "failure_code",
     "failure_message",
 )
+
+
+class RetryableReportFinalization(RuntimeError):
+    """Keep the analysis retryable when terminal pair durability is indeterminate."""
 
 
 def _advisory_key(analysis_id: UUID) -> int:
@@ -105,9 +110,12 @@ class AnalysisWorkerService:
             pass
 
     def _commit_report_metadata(self, session: Session) -> None:
-        """Single report metadata commit seam used by deterministic ACK-loss tests."""
+        """Single terminal-pair commit seam used by deterministic ACK-loss tests."""
 
         session.commit()
+
+    def _before_paired_terminal_commit(self, artifact: PreparedReportArtifact) -> None:
+        """No-op seam used to prove process-loss safety before terminal durability."""
 
     def _ready_object_matches(self, artifact: PreparedReportArtifact) -> bool:
         """Verify the exact server-owned ready binding without reading report bytes."""
@@ -130,7 +138,7 @@ class AnalysisWorkerService:
         )
 
     def _reconcile_report_commit(self, artifact: PreparedReportArtifact) -> str:
-        """Resolve an ambiguous commit using a fresh independent PostgreSQL session.
+        """Resolve an ambiguous report-only commit using a fresh PostgreSQL session.
 
         Returns one of: absent, ready, ready_invalid, failed, conflict, unknown.
         No destructive storage action is taken here.
@@ -161,6 +169,53 @@ class AnalysisWorkerService:
         except Exception:
             return "unknown"
 
+    def _reconcile_paired_commit(
+        self,
+        outcome: CanonicalCompletedOutcome,
+        artifact: PreparedReportArtifact,
+    ) -> str:
+        """Reconcile atomic analysis-completed + terminal-report durability."""
+
+        try:
+            with self.database.session() as fresh:
+                analysis = fresh.scalar(
+                    select(AnalysisModel).where(AnalysisModel.analysis_id == artifact.analysis_id)
+                )
+                report = fresh.scalar(
+                    select(ReportModel).where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                    )
+                )
+                if analysis is None:
+                    return "missing"
+                if analysis.state == "completed":
+                    if (
+                        analysis.result_body != outcome.result_body
+                        or analysis.readiness_body is not None
+                        or analysis.failure_code is not None
+                        or analysis.failure_message is not None
+                    ):
+                        return "conflict"
+                    if report is None:
+                        return "completed_missing"
+                    if report.report_id != artifact.report_id:
+                        return "conflict"
+                    if _report_row_matches_artifact(report, artifact):
+                        if artifact.state == REPORT_STATE_READY:
+                            return "ready" if self._ready_object_matches(artifact) else "ready_invalid"
+                        if artifact.state == REPORT_STATE_FAILED:
+                            return "failed"
+                    failed_artifact = _failed_report_artifact(artifact)
+                    if _report_row_matches_artifact(report, failed_artifact):
+                        return "failed"
+                    return "conflict"
+                if analysis.state in {"queued", "running"}:
+                    return "absent" if report is None else "conflict"
+                return "conflict"
+        except Exception:
+            return "unknown"
+
     def _same_identity_state(self, artifact: PreparedReportArtifact) -> str:
         try:
             with self.database.session() as fresh:
@@ -177,13 +232,39 @@ class AnalysisWorkerService:
         except Exception:
             return "unknown"
 
-    def _transition_same_identity_to_failed(self, artifact: PreparedReportArtifact) -> bool:
-        """Fail closed for an exact report identity that cannot remain valid ready.
+    def _resource_state(self, artifact: PreparedReportArtifact) -> str:
+        try:
+            with self.database.session() as fresh:
+                row = fresh.scalar(
+                    select(ReportModel).where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                    )
+                )
+                if row is None:
+                    return "absent"
+                return row.state
+        except Exception:
+            return "unknown"
 
-        The transition preserves the row's analytical/provenance identity and only
-        clears caller-visible ready content bindings. If commit acknowledgement is
-        itself ambiguous, a fresh session reconciles the resulting durable state.
-        """
+    @staticmethod
+    def _fail_row_from_candidate(
+        row: ReportModel,
+        artifact: PreparedReportArtifact,
+        *,
+        now: datetime,
+    ) -> None:
+        """Preserve the durable report_id while aligning failed provenance to candidate."""
+
+        failed = _failed_report_artifact(artifact)
+        for field in _REPORT_ARTIFACT_FIELDS:
+            if field == "report_id":
+                continue
+            setattr(row, field, getattr(failed, field))
+        row.updated_at = now
+
+    def _transition_same_identity_to_failed(self, artifact: PreparedReportArtifact) -> bool:
+        """Fail closed for an exact report identity that cannot remain valid ready."""
 
         for _ in range(3):
             try:
@@ -201,15 +282,7 @@ class AnalysisWorkerService:
                         return False
                     if row.state == REPORT_STATE_FAILED:
                         return True
-                    row.state = REPORT_STATE_FAILED
-                    row.content_sha256 = None
-                    row.mime_type = None
-                    row.filename = None
-                    row.byte_length = None
-                    row.storage_key = None
-                    row.failure_code = "report_generation_failed"
-                    row.failure_message = "report artifact generation failed"
-                    row.updated_at = self._now()
+                    self._fail_row_from_candidate(row, artifact, now=self._now())
                     fresh.flush()
                     try:
                         self._commit_report_metadata(fresh)
@@ -219,6 +292,40 @@ class AnalysisWorkerService:
             except Exception:
                 pass
             state = self._same_identity_state(artifact)
+            if state == REPORT_STATE_FAILED:
+                return True
+            if state == "unknown":
+                return False
+        return False
+
+    def _transition_resource_to_failed(self, artifact: PreparedReportArtifact) -> bool:
+        """Fail the actual analysis/version resource even when report_id conflicts."""
+
+        for _ in range(3):
+            try:
+                with self.database.session() as fresh:
+                    row = fresh.scalar(
+                        select(ReportModel)
+                        .where(
+                            ReportModel.analysis_id == artifact.analysis_id,
+                            ReportModel.report_artifact_version == artifact.report_artifact_version,
+                        )
+                        .with_for_update()
+                    )
+                    if row is None:
+                        return False
+                    if row.state == REPORT_STATE_FAILED:
+                        return True
+                    self._fail_row_from_candidate(row, artifact, now=self._now())
+                    fresh.flush()
+                    try:
+                        self._commit_report_metadata(fresh)
+                        return True
+                    except Exception:
+                        self._rollback_quietly(fresh)
+            except Exception:
+                pass
+            state = self._resource_state(artifact)
             if state == REPORT_STATE_FAILED:
                 return True
             if state == "unknown":
@@ -258,9 +365,191 @@ class AnalysisWorkerService:
                     self._rollback_quietly(fresh)
         except Exception:
             pass
-        # A failed-artifact commit may also have lost only its acknowledgement.
-        # Fresh reconciliation prevents a duplicate or contradictory write.
         self._reconcile_report_commit(failed_artifact)
+
+    def _complete_analysis_with_failed_resource(
+        self,
+        outcome: CanonicalCompletedOutcome,
+        artifact: PreparedReportArtifact,
+    ) -> str:
+        """Pair canonical completion with an already fail-closed terminal resource."""
+
+        try:
+            with self.database.session() as fresh:
+                analysis = fresh.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == artifact.analysis_id)
+                    .with_for_update()
+                )
+                report = fresh.scalar(
+                    select(ReportModel)
+                    .where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                    )
+                    .with_for_update()
+                )
+                if analysis is None:
+                    return "missing"
+                if analysis.state == "completed":
+                    return "completed" if report is not None else "retry"
+                if analysis.state not in {"queued", "running"}:
+                    return analysis.state
+                if report is None or report.state != REPORT_STATE_FAILED:
+                    return "retry"
+                persisted = persist_completed(fresh, analysis, outcome, now=self._now())
+                if not persisted:
+                    return analysis.state
+                fresh.flush()
+                self._commit_report_metadata(fresh)
+                return "completed"
+        except Exception:
+            pass
+
+        try:
+            with self.database.session() as check:
+                analysis = check.scalar(
+                    select(AnalysisModel).where(AnalysisModel.analysis_id == artifact.analysis_id)
+                )
+                report = check.scalar(
+                    select(ReportModel).where(
+                        ReportModel.analysis_id == artifact.analysis_id,
+                        ReportModel.report_artifact_version == artifact.report_artifact_version,
+                    )
+                )
+                if (
+                    analysis is not None
+                    and analysis.state == "completed"
+                    and analysis.result_body == outcome.result_body
+                    and analysis.failure_code is None
+                    and report is not None
+                    and report.state == REPORT_STATE_FAILED
+                ):
+                    return "completed"
+        except Exception:
+            pass
+        return "retry"
+
+    def _persist_failed_pair_fresh(
+        self,
+        outcome: CanonicalCompletedOutcome,
+        artifact: PreparedReportArtifact,
+    ) -> str:
+        failed_artifact = _failed_report_artifact(artifact)
+        try:
+            with self.database.session() as fresh:
+                row = fresh.scalar(
+                    select(AnalysisModel)
+                    .where(AnalysisModel.analysis_id == artifact.analysis_id)
+                    .with_for_update()
+                )
+                if row is None:
+                    return "missing"
+                if row.state == "completed":
+                    report = fresh.scalar(
+                        select(ReportModel).where(
+                            ReportModel.analysis_id == artifact.analysis_id,
+                            ReportModel.report_artifact_version == artifact.report_artifact_version,
+                        )
+                    )
+                    return "completed" if report is not None else "retry"
+                if row.state not in {"queued", "running"}:
+                    return row.state
+                persisted = persist_completed(fresh, row, outcome, now=self._now())
+                if not persisted:
+                    return row.state
+                persisted_report = persist_report_artifact(
+                    fresh,
+                    row,
+                    failed_artifact,
+                    now=self._now(),
+                )
+                if not _report_row_matches_artifact(persisted_report, failed_artifact):
+                    raise ValueError("existing report row is not semantically equivalent")
+                fresh.flush()
+                self._commit_report_metadata(fresh)
+                return "completed"
+        except Exception:
+            pass
+
+        reconciliation = self._reconcile_paired_commit(outcome, failed_artifact)
+        if reconciliation in {"failed", "ready"}:
+            return "completed"
+        if reconciliation == "conflict":
+            if self._transition_resource_to_failed(failed_artifact):
+                return self._complete_analysis_with_failed_resource(outcome, failed_artifact)
+        if reconciliation == "completed_missing":
+            self._persist_failed_report_fresh(
+                analysis_id=artifact.analysis_id,
+                artifact=failed_artifact,
+            )
+            return "completed" if self._resource_state(failed_artifact) == REPORT_STATE_FAILED else "retry"
+        return "retry"
+
+    def _persist_completed_report_pair(
+        self,
+        session: Session,
+        *,
+        row: AnalysisModel,
+        outcome: CanonicalCompletedOutcome,
+        artifact: PreparedReportArtifact,
+        completed_at: datetime,
+    ) -> str:
+        """Atomically expose completed analysis and one terminal report resource."""
+
+        try:
+            persisted = persist_completed(session, row, outcome, now=completed_at)
+            if not persisted:
+                if self.report_artifacts is not None:
+                    self.report_artifacts.compensate(artifact)
+                session.commit()
+                return row.state
+            persisted_report = persist_report_artifact(
+                session,
+                row,
+                artifact,
+                now=completed_at,
+            )
+            if not _report_row_matches_artifact(persisted_report, artifact):
+                raise ValueError("existing report row is not semantically equivalent")
+            session.flush()
+            self._commit_report_metadata(session)
+            return "completed"
+        except Exception:
+            self._rollback_quietly(session)
+
+        reconciliation = self._reconcile_paired_commit(outcome, artifact)
+        if reconciliation == "ready":
+            return "completed"
+        if reconciliation == "failed":
+            if self.report_artifacts is not None:
+                self.report_artifacts.compensate(artifact)
+            return "completed"
+        if reconciliation in {"ready_invalid", "conflict"}:
+            if self._transition_resource_to_failed(artifact):
+                if self.report_artifacts is not None:
+                    self.report_artifacts.compensate(artifact)
+                return self._complete_analysis_with_failed_resource(outcome, artifact)
+            return "retry"
+        if reconciliation == "completed_missing":
+            if self.report_artifacts is not None:
+                self.report_artifacts.compensate(artifact)
+            self._persist_failed_report_fresh(
+                analysis_id=artifact.analysis_id,
+                artifact=artifact,
+            )
+            return "completed" if self._resource_state(artifact) == REPORT_STATE_FAILED else "retry"
+        if reconciliation == "unknown":
+            return "retry"
+        if reconciliation == "missing":
+            if self.report_artifacts is not None:
+                self.report_artifacts.compensate(artifact)
+            return "missing"
+
+        assert reconciliation == "absent"
+        if self.report_artifacts is not None:
+            self.report_artifacts.compensate(artifact)
+        return self._persist_failed_pair_fresh(outcome, artifact)
 
     def _persist_report_after_completed(
         self,
@@ -269,13 +558,7 @@ class AnalysisWorkerService:
         analysis_id: UUID,
         artifact: PreparedReportArtifact,
     ) -> None:
-        """Persist report state after canonical analysis truth is already durable.
-
-        RPT55-H001 isolates report finalization from canonical analysis completion.
-        RPT55-H002 treats a report commit exception as UNKNOWN until a fresh,
-        independent database read resolves whether the exact artifact committed.
-        Destructive object compensation is never authorized by uncertainty alone.
-        """
+        """Persist/repair report state for an already-durable completed analysis."""
 
         try:
             row = session.scalar(
@@ -291,8 +574,6 @@ class AnalysisWorkerService:
             persisted_row = persist_report_artifact(session, row, artifact, now=self._now())
             if not _report_row_matches_artifact(persisted_row, artifact):
                 raise ValueError("existing report row is not semantically equivalent")
-            # Force ORM/DB constraint failures into this report-specific domain
-            # before the commit boundary, while still covering commit failures.
             session.flush()
             self._commit_report_metadata(session)
             return
@@ -300,43 +581,25 @@ class AnalysisWorkerService:
             self._rollback_quietly(session)
 
         reconciliation = self._reconcile_report_commit(artifact)
-
-        # Exact ready metadata really committed and the exact object binding still
-        # exists: acknowledgement was lost, so keep both row and object.
         if reconciliation == "ready":
             return
-
-        # A durable failed row already owns this identity. A candidate ready object
-        # is unbound and may now be compensated safely.
         if reconciliation == "failed":
             if self.report_artifacts is not None:
                 self.report_artifacts.compensate(artifact)
             return
-
-        # A committed ready row whose object binding is already invalid must not
-        # remain caller-valid ready. First make the DB state failed, confirm it,
-        # then compensate only after the failed state is durable.
         if reconciliation == "ready_invalid":
             if self._transition_same_identity_to_failed(artifact):
                 if self.report_artifacts is not None:
                     self.report_artifacts.compensate(artifact)
             return
-
-        # Same server-owned identity but contradictory semantics is not idempotent
-        # success. Fail the exact identity closed before any destructive cleanup.
         if reconciliation == "conflict":
-            if self._transition_same_identity_to_failed(artifact):
+            if self._transition_resource_to_failed(artifact):
                 if self.report_artifacts is not None:
                     self.report_artifacts.compensate(artifact)
             return
-
-        # Database unavailable / commit outcome indeterminate: do not delete an
-        # object that may already be referenced by a successfully committed row.
         if reconciliation == "unknown":
-            return
+            raise RetryableReportFinalization("report finalization requires retry")
 
-        # Fresh DB proves no report row committed. Only now is candidate-object
-        # compensation safe, followed by a sanitized failed row in a fresh session.
         assert reconciliation == "absent"
         if self.report_artifacts is not None:
             self.report_artifacts.compensate(artifact)
@@ -388,6 +651,7 @@ class AnalysisWorkerService:
                     payload = dict(row.request_payload)
                     creation_request_id = row.creation_request_id
                     durable_analysis_id = row.analysis_id
+                    consumer_id = row.consumer_id
                     session.commit()
 
                     request_model = _REQUEST_ADAPTER.validate_python(payload)
@@ -414,33 +678,54 @@ class AnalysisWorkerService:
                         return state
 
                     assert outcome.completed is not None
-                    persisted = persist_completed(session, row, outcome.completed, now=completed_at)
-                    state = row.state
-                    # RPT55-H001: commit canonical analytical truth before entering
-                    # the report generation/finalization failure domain.
-                    session.commit()
+                    if self.report_artifacts is None:
+                        persist_completed(session, row, outcome.completed, now=completed_at)
+                        state = row.state
+                        session.commit()
+                        return state
 
-                    if persisted and self.report_artifacts is not None:
-                        try:
-                            prepared_report = self.report_artifacts.generate(
-                                consumer_id=row.consumer_id,
-                                analysis_id=row.analysis_id,
-                                outcome=outcome.completed,
-                                generated_at=completed_at,
-                            )
-                        except Exception:
-                            # Genuine canonical authority is expected to make
-                            # ReportArtifactGenerator return a sanitized failed
-                            # artifact for report-layer errors. An unexpected
-                            # generator exception still cannot regress the already
-                            # committed canonical analysis state.
-                            return state
-                        self._persist_report_after_completed(
-                            session,
-                            analysis_id=row.analysis_id,
-                            artifact=prepared_report,
+                    # Keep durable analysis nonterminal while live canonical authority
+                    # is rendered/uploaded. A process loss here is therefore safely
+                    # redeliverable and cannot expose completed + missing report.
+                    session.rollback()
+                    try:
+                        prepared_report = self.report_artifacts.generate(
+                            consumer_id=consumer_id,
+                            analysis_id=analysis_id,
+                            outcome=outcome.completed,
+                            generated_at=completed_at,
+                        )
+                    except Exception as exc:
+                        raise RetryableReportFinalization(
+                            "report generator requires worker retry"
+                        ) from exc
+
+                    self._before_paired_terminal_commit(prepared_report)
+
+                    row = session.scalar(
+                        select(AnalysisModel)
+                        .where(AnalysisModel.analysis_id == analysis_id)
+                        .with_for_update()
+                    )
+                    if row is None:
+                        session.rollback()
+                        self.report_artifacts.compensate(prepared_report)
+                        return "missing"
+                    state = self._persist_completed_report_pair(
+                        session,
+                        row=row,
+                        outcome=outcome.completed,
+                        artifact=prepared_report,
+                        completed_at=completed_at,
+                    )
+                    if state == "retry":
+                        raise RetryableReportFinalization(
+                            "paired report finalization requires worker retry"
                         )
                     return state
+                except RetryableReportFinalization:
+                    self._rollback_quietly(session)
+                    raise
                 except Exception:
                     session.rollback()
                     row = session.scalar(
