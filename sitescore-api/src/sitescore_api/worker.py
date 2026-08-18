@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from hashlib import sha256
 from uuid import UUID
 
 from pydantic import TypeAdapter
@@ -13,7 +12,12 @@ from .db import Database
 from .db_models import AnalysisModel, ReportModel, TERMINAL_STATES
 from .execution import CanonicalAnalysisExecutor
 from .ingress import build_analysis_ingress_command
-from .lifecycle import persist_completed, persist_not_score_ready
+from .lifecycle import (
+    analysis_advisory_key,
+    persist_completed,
+    persist_not_score_ready,
+    try_analysis_timeout_authority,
+)
 from .models import AnalysisRequest
 from .outcomes import CanonicalCompletedOutcome
 from .report_artifacts import (
@@ -59,10 +63,6 @@ _REPORT_ARTIFACT_FIELDS = (
 
 class RetryableReportFinalization(RuntimeError):
     """Keep the analysis retryable when terminal pair durability is indeterminate."""
-
-
-def _advisory_key(analysis_id: UUID) -> int:
-    return int.from_bytes(sha256(analysis_id.bytes).digest()[:8], "big", signed=True)
 
 
 def _failed_report_artifact(artifact: PreparedReportArtifact) -> PreparedReportArtifact:
@@ -128,6 +128,7 @@ class AnalysisWorkerService:
 
         The marker is coordination evidence only. It is never used as report/scoring
         authority; retries still rerun canonical execution to recover the live object.
+        Durable terminal states are immutable and are never repaired/resurrected here.
         """
 
         if row.canonical_success_at is not None:
@@ -151,23 +152,7 @@ class AnalysisWorkerService:
             session.commit()
             return state
 
-        if row.state == "timed_out":
-            # A timeout writer may have won the row lock after the canonical result
-            # was already achieved before the deadline but before this marker commit.
-            # The live outcome timestamp is authoritative for that narrow race.
-            if (
-                row.failure_code != "analysis_deadline_exceeded"
-                or row.result_body is not None
-                or row.readiness_body is not None
-            ):
-                state = row.state
-                session.rollback()
-                return state
-            row.state = "running"
-            row.finished_at = None
-            row.failure_code = None
-            row.failure_message = None
-        elif row.state not in {"queued", "running"}:
+        if row.state not in {"queued", "running"}:
             state = row.state
             session.rollback()
             return state
@@ -180,6 +165,14 @@ class AnalysisWorkerService:
         row.failure_message = None
         session.commit()
         return "protected"
+
+    def _before_canonical_success_boundary(
+        self,
+        outcome: CanonicalCompletedOutcome,
+        *,
+        success_at: datetime,
+    ) -> None:
+        """No-op seam proving pre-marker timeout races while advisory execution is owned."""
 
     def _commit_report_metadata(self, session: Session) -> None:
         """Single terminal-pair commit seam used by deterministic ACK-loss tests."""
@@ -687,7 +680,7 @@ class AnalysisWorkerService:
                 locked = bool(
                     session.execute(
                         text("SELECT pg_try_advisory_lock(:key)"),
-                        {"key": _advisory_key(analysis_id)},
+                        {"key": analysis_advisory_key(analysis_id)},
                     ).scalar_one()
                 )
                 if not locked:
@@ -730,6 +723,12 @@ class AnalysisWorkerService:
                     )
                     outcome = self.executor.execute(command, now=self._now())
                     outcome_at = self._now()
+
+                    if outcome.completed is not None and self.report_artifacts is not None:
+                        self._before_canonical_success_boundary(
+                            outcome.completed,
+                            success_at=outcome_at,
+                        )
 
                     row = session.scalar(
                         select(AnalysisModel)
@@ -839,7 +838,7 @@ class AnalysisWorkerService:
                     try:
                         session.execute(
                             text("SELECT pg_advisory_unlock(:key)"),
-                            {"key": _advisory_key(analysis_id)},
+                            {"key": analysis_advisory_key(analysis_id)},
                         )
                         session.commit()
                     except Exception:
@@ -863,6 +862,8 @@ class AnalysisWorkerService:
                     )
                 )
                 for row in rows:
+                    if not try_analysis_timeout_authority(session, row.analysis_id):
+                        continue
                     self._timeout_row(row, now=now)
                     count += 1
         return count
