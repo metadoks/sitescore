@@ -1,9 +1,9 @@
 name: faz5-5-4-exact-validation
 
 on:
-  push:
+  pull_request:
     branches:
-      - faz5/5-4-visual-report-pdf-rendering
+      - main
 
 jobs:
   validate:
