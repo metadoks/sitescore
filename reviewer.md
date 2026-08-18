@@ -20,7 +20,7 @@ USER_LOCK_AUTHORIZED: NO
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 7d6ddbdb94567761733ff540239d959096d98f61
 CODE_BRANCH: faz5/5-5-delivery-ready-report-artifact
-REVIEWED_HEAD_SHA: d744150f618c84f652da0ae419facea1c59e5f87
+REVIEWED_HEAD_SHA: 169c067a79b13edd64d866ad9fe15a697fe887b9
 PR: #21
 
 FAZ_3_STATUS: FROZEN
@@ -36,15 +36,17 @@ DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
 RPT55_H001_STATUS: RESOLVED
-RPT55_H002_STATUS: OPEN
-BLOCKERS: RPT55-H002
+RPT55_H002_STATUS: RESOLVED
+RPT55_H003_STATUS: OPEN
+RPT55_H004_STATUS: OPEN
+BLOCKERS: RPT55-H003, RPT55-H004
 ```
 
 ---
 
 # 1. EXACT LIVE STATE REVIEWED
 
-Reviewer independently re-read coordination state and live GitHub state after the first 5.5 hardening cycle.
+Reviewer independently re-read coordination state and live GitHub after the H002 hardening cycle.
 
 ```text
 main: 7d6ddbdb94567761733ff540239d959096d98f61
@@ -55,466 +57,370 @@ state: OPEN
 merged: FALSE
 mergeable: TRUE
 draft: FALSE
-base branch: main
 base SHA: 7d6ddbdb94567761733ff540239d959096d98f61
-head branch: faz5/5-5-delivery-ready-report-artifact
-head SHA: d744150f618c84f652da0ae419facea1c59e5f87
+head SHA: 169c067a79b13edd64d866ad9fe15a697fe887b9
 ```
 
-The final candidate is 33 commits ahead / 0 behind the exact locked base. The final PR diff contains 18 files and every changed file is under:
-
-```text
-sitescore-api/**
-```
-
-The temporary validation workflow is absent from the final candidate.
-
-Locked `sitescore-report==0.3.0` and all frozen analytical packages remain unchanged.
+Locked base -> final candidate is 37 commits ahead / 0 behind. Final PR diff is 19 files, all under `sitescore-api/**`. Locked `sitescore-report==0.3.0` and frozen analytical packages remain unchanged.
 
 ---
 
-# 2. PRIOR BLOCKER RPT55-H001 — RESOLVED
+# 2. RPT55-H002 — RESOLVED
 
-Reviewer independently inspected the hardening delta from prior reviewed head:
+Reviewer independently inspected the H002 delta:
 
 ```text
-81da6f4e12850a33d84e0cca258647b8ac4c7442
-->
 d744150f618c84f652da0ae419facea1c59e5f87
+->
+169c067a79b13edd64d866ad9fe15a697fe887b9
 ```
 
-Product/test hardening is confined to:
+Product/test change is confined to:
 
 ```text
 sitescore-api/src/sitescore_api/worker.py
-sitescore-api/tests/test_report_live_authority.py
+sitescore-api/tests/test_report_commit_reconciliation.py
 ```
 
-plus removal of the temporary validation workflow after successful validation.
+The implementation now treats report metadata COMMIT exception as UNKNOWN until a fresh `Database.session()` reconciles durable state. Exact equivalence is bound across report/analysis/artifact identity, state, fingerprint, report/projection provenance, narrative provenance, presentation/template/stylesheet/chart/renderer versions, generated time, hash/MIME/filename/size/storage key, and failure fields.
 
-The new worker semantics now commit canonical analytical truth before entering report finalization:
+The real-PostgreSQL adversarial test genuinely performs:
 
 ```text
-exact CanonicalCompletedOutcome
--> persist_completed(...)
--> COMMIT analysis.state=completed + exact canonical result_body
--> generate report from the SAME live completed outcome object
--> separate report persistence/finalization domain
+real report-ready PostgreSQL COMMIT
+-> COMMIT succeeds
+-> synthetic acknowledgement-loss exception
 ```
 
-This closes the original H001 problem where a report metadata failure could roll back canonical completion and cause `analysis_execution_failed`.
-
-Reviewer verified the new report-specific path:
-
-```text
-persist_report_artifact(...)
--> explicit session.flush()
--> session.commit()
-```
-
-is guarded separately, and ordinary pre-commit report metadata failure triggers rollback + best-effort object compensation + sanitized failed-report persistence without regressing the already committed analysis state.
-
-The new real-PostgreSQL adversarial test injects failure after successful PDF upload but before report-ready metadata persistence. It proves:
-
-```text
-executor call count = 1
-same live CanonicalCompletedOutcome identity reaches report generation
-analysis remains completed
-canonical result_body remains exact
-analysis failure fields remain absent
-uploaded object compensation occurs
-failed report row is persisted
-ready content bindings are absent
-POST /v1/reports resolves existing failed resource only
-no JSON authority rehydration
-no analysis rerun
-```
+and proves exact committed ready metadata + exact object remain intact and downloadable. Same-`report_id` content-semantic corruption is no longer accepted as idempotent success and transitions to sanitized failed before object compensation.
 
 Therefore:
 
 ```text
-RPT55-H001: RESOLVED
+RPT55-H002: RESOLVED
 ```
 
----
-
-# 3. FRESH VALIDATION EVIDENCE — ACCEPTED BUT NOT SUFFICIENT FOR LOCK
-
-Fresh exact-head hardening validation succeeded at:
+Fresh exact-head H002 validation is also accepted as genuine evidence:
 
 ```text
+validated SHA: 3952df60bddf86e7ba36b06283d3468daad6edbd
 workflow: faz5-5-5-exact-head-validation
-run: 32162211707
-job: 95793488010
-validated SHA: 9cc58d1765da6f52646116dbbf55e5a76ba0a03b
+run: 32166096019
+job: 95805923610
 conclusion: SUCCESS
-```
 
-Reviewer independently verified the workflow run/job and logs.
-
-Evidence includes:
-
-```text
-exact SHA checkout assertion: PASS
-PostgreSQL 0001 -> 0002 migration: PASS
-private MinIO S3-compatible PUT/HEAD/GET/DELETE: PASS
-no public object ACL grant: PASS
-locked sitescore-report: 24 PASS
-sitescore-api: 95 PASS
+sitescore-report: 24 PASS
+sitescore-api: 96 PASS
 frozen baseline: 1375 PASS
-API + frozen: 1470 PASS
-combined total: 1494 PASS
-real Redis/Celery worker: PASS
-Celery result backend: disabled://
+API + frozen: 1471 PASS
+combined: 1495 PASS
+PostgreSQL migration through 0002: PASS
+private MinIO S3 integration: PASS
+Redis/Celery worker: PASS
+result backend: disabled://
 ```
 
-Validated SHA -> final candidate is exactly:
+Validated -> final candidate is exactly one commit removing only `.github/workflows/faz5-5-5-validation.yml`.
 
-```text
-9cc58d1765da6f52646116dbbf55e5a76ba0a03b
-->
-d744150f618c84f652da0ae419facea1c59e5f87
-
-ahead_by: 1
-behind_by: 0
-changed files: 1
-```
-
-Sole delta:
-
-```text
-.github/workflows/faz5-5-5-validation.yml -> REMOVED
-```
-
-No product/test/dependency/migration/docs semantics changed after the successful run.
-
-However the successful suite does not exercise the new blocker below, so the validation cannot authorize LOCK.
+This validation does not exercise H003/H004 below, so it cannot authorize LOCK.
 
 ---
 
-# 4. RPT55-H002 — AMBIGUOUS DB COMMIT CAN CREATE FALSE `ready` REPORT
+# 3. RPT55-H003 — TERMINAL ANALYSIS CAN BECOME PERMANENTLY `completed + no report resource`
 
 Status:
 
 ```text
-RPT55-H002: OPEN / BLOCKING
+RPT55-H003: OPEN / BLOCKING
 ```
 
-## 4.1 Problem
+## 3.1 Current ordering creates a crash/restart durability gap
 
-The current `_persist_report_after_completed(...)` treats **every** exception from:
+Current completed path is semantically:
 
 ```text
-session.commit()
+canonical executor succeeds
+-> persist_completed(...)
+-> COMMIT analysis.state=completed + result_body
+-> generate PDF/report artifact from live outcome
+-> persist/finalize report metadata
 ```
 
-as though PostgreSQL definitely did not commit the ready report row.
+But `execute_analysis()` treats every `TERMINAL_STATES` analysis as an immediate return before any report generation/reconciliation logic.
 
-Its failure path is semantically:
+Therefore, after the analysis completion COMMIT and before a terminal report row becomes durable, any process death / worker loss / hard time limit / host failure can produce:
 
 ```text
-persist ready ReportModel
--> flush
--> session.commit() raises
--> rollback
--> compensate uploaded PDF object (DELETE)
--> derive failed artifact
--> persist failed artifact
+analysis.state = completed
+report row = absent
 ```
 
-That is correct only when the report-ready DB transaction is definitely uncommitted.
+A subsequent Celery redelivery/retry does not repair it because it sees terminal `completed` and returns without re-entering the report path.
 
-But a database commit has an unavoidable client-observation ambiguity window:
+The current task topology has only:
 
 ```text
-client sends COMMIT
-PostgreSQL commits transaction durably
-connection/acknowledgement fails before client receives success
-session.commit() raises to application
+execute_analysis
+drain_outbox
+reconcile_timeouts
 ```
 
-In that case the database may already contain the exact `ready` row even though Python observed an exception.
+There is no report outbox, report-finalization task, or report reconciler that can close this gap after restart.
 
-The current code then immediately compensates/deletes the exact PDF object.
+## 3.2 Resolver-only API makes the gap permanent
 
-After that it attempts to persist a sanitized failed artifact using the same `report_id`. `persist_report_artifact(...)` currently behaves as:
+The locked 5.5 authority rule correctly forbids:
 
 ```text
-existing row for (analysis_id, artifact_version) found
-AND existing.report_id == artifact.report_id
--> return existing row unchanged
+AnalysisModel.result_body JSON -> report authority
+POST /v1/reports -> analysis rerun
 ```
 
-It does not require the existing row's state/content/provenance semantics to equal the requested failed artifact.
-
-Therefore the ambiguous-commit sequence can become:
+The current report resolver explicitly treats:
 
 ```text
-1. PDF upload succeeds
-2. ready report row actually commits
-3. commit acknowledgement is lost -> application sees exception
-4. application deletes PDF object
-5. application builds failed artifact
-6. DB lookup finds same report_id already `ready`
-7. persist helper silently returns existing ready row
-8. final DB state remains `ready`
-9. object is now missing because compensation deleted it
+completed analysis + missing report row
 ```
 
-Externally this produces:
+as `report_invariant_violation` / HTTP 500.
+
+Therefore a worker crash after analysis completion but before report finalization is not merely a transient delay: after live `ApplicationAnalysisResult` authority disappears with the worker process, no accepted V1 path can reconstruct the report.
+
+## 3.3 A normal Exception path can create the same invalid state
+
+The current worker also contains:
 
 ```text
-GET /v1/reports/{report_id}
--> state = ready
-
-GET /v1/reports/{report_id}/content
--> artifact integrity failure / missing object
+try:
+    prepared_report = report_artifacts.generate(...)
+except Exception:
+    return completed_state
 ```
 
-The content endpoint correctly refuses to stream missing/corrupt bytes, but that does **not** make the durable resource contract valid. A caller-visible `ready` resource whose exact server-owned object was deleted is a false-ready state.
+An unexpected generator-level exception therefore returns successful `completed` while persisting no failed report resource. This produces the same durable invariant violation without requiring process death.
 
-This violates the 5.5 transaction/storage invariant:
+`ReportArtifactGenerator` catches many expected render/storage failures internally, but an outer unexpected failure must still not make `completed + missing report row` a legitimate terminal state.
+
+## 3.4 H002 `unknown` can also strand an absent row permanently
+
+H002 correctly avoids destructive object deletion when commit outcome cannot be reconciled because PostgreSQL is unavailable.
+
+However current `reconciliation == "unknown"` simply returns. If the original report-ready COMMIT actually did **not** commit and PostgreSQL later recovers, final durable state can be:
 
 ```text
-DB ready metadata must not knowingly point to a missing object.
+analysis = completed
+report row = absent
+object = orphaned or indeterminate
 ```
 
-It also violates the intended rule that a storage orphan with no DB resource is safer than a DB `ready` resource with a missing/wrong object.
+There is no scheduled/follow-up report reconciliation, and terminal analysis retry skips report processing. Thus the deliberately safe temporary uncertainty can become permanent resource loss.
 
-## 4.2 Why current H001 test does not catch H002
+## 3.5 Required invariant
 
-The H001 adversarial test injects failure **before** the ready metadata is committed by making the first `persist_report_artifact(...)` call raise.
-
-That proves the definite-precommit failure path.
-
-It does not simulate:
+Before 5.5 LOCK, production semantics must ensure:
 
 ```text
-DB commit actually succeeds
-BUT session.commit() raises to the caller afterward
+if analysis is durably/external-state `completed`,
+then the current report_artifact_version has exactly one durable terminal report resource:
+    ready
+    OR failed
 ```
 
-Therefore all 95 API tests can pass while the false-ready window remains open.
+A normal worker return/acknowledgement must never leave `completed + missing report row`.
+
+A catastrophic interruption before this paired durable invariant is reached must leave enough durable state for deterministic retry/reconciliation without using stored JSON as report authority and without POST-triggered analysis rerun.
+
+H001 remains semantic, not ordering-specific:
+
+```text
+report failure must not turn genuine analytical success into durable analysis_execution_failed / not_score_ready / timed_out.
+```
+
+Implementer may restructure transaction ordering inside 5.5 if needed. H001 does **not** require preserving the current commit-analysis-first ordering if that ordering makes crash-safe delivery impossible.
+
+A valid approach may, for example, build the terminal `PreparedReportArtifact` while the live canonical outcome exists and while analysis is still nonterminal, then make canonical completion + terminal report metadata a paired durable PostgreSQL decision, with H002-style reconciliation around ambiguous commit and safe object compensation on definite non-commit. Equivalent designs are acceptable if they prove the invariant.
+
+Do not introduce serialized JSON rehydration as authority merely to solve restart recovery.
 
 ---
 
-# 5. REQUIRED H002 HARDENING — SAME BRANCH / SAME PR
+# 4. RPT55-H004 — DIFFERENT-`report_id` CONFLICT BRANCH DOES NOT ACTUALLY FAIL CLOSED
 
-Do not create a new PR. Do not start `5-FINAL`.
-
-Continue only on:
+Status:
 
 ```text
-branch: faz5/5-5-delivery-ready-report-artifact
-PR: #21
+RPT55-H004: OPEN / BLOCKING
 ```
 
-## 5.1 Treat commit exception as UNKNOWN until independently reconciled
+Current `_reconcile_report_commit(artifact)` queries the unique report resource by:
 
-A report-ready commit exception MUST NOT immediately authorize object deletion.
+```text
+analysis_id + report_artifact_version
+```
 
-After a ready metadata commit exception, resolve the durable outcome using a **fresh independent PostgreSQL session/connection**, not merely the possibly failed transaction/session.
+and correctly returns `conflict` if the durable row's `report_id != artifact.report_id`.
 
-The reconciliation must query the authoritative report identity by server-owned keys, at minimum:
+But the subsequent conflict handler calls:
+
+```text
+_transition_same_identity_to_failed(artifact)
+```
+
+and that method queries using:
 
 ```text
 analysis_id
 report_artifact_version
-report_id
+artifact.report_id
 ```
 
-and compare the persisted row against the exact prepared artifact.
+If the conflict is specifically a different durable `report_id`, that query returns no row and the transition returns `False`. The `conflict` branch then returns without changing the actual conflicting row and without proving a safe object state.
 
-## 5.2 Exact semantic match required
+This contradicts the claimed H002 state-machine contract that a durable conflicting/mismatched identity fails closed.
 
-If a row already exists with the same `report_id`, equality of ID alone is insufficient.
-
-For a committed ready artifact, verify all security/identity-relevant bindings that determine the exact resource, including at minimum:
+The risk is amplified by the server-owned object key being deterministic by:
 
 ```text
-analysis_id
-report_id
-report_artifact_version
-state
-analysis_fingerprint
-content_sha256
-byte_length
-mime_type
-filename
-storage_key
-report/projection versions
-narrative provenance/version fields
-presentation/template/chart/renderer versions
+consumer_id + analysis_id + report_artifact_version
 ```
 
-Do not let an existing row with same report ID but different state/content semantics silently satisfy persistence.
+and **not** by `report_id`. A candidate generation can therefore write the same deterministic key while a contradictory ready row for the same analysis/version already exists. If conflict handling no-ops, caller-visible metadata can remain `ready` while its stored hash/content binding no longer matches the object.
 
-`persist_report_artifact(...)` may remain an insert-oriented helper if reconciliation is handled elsewhere, but no production path may interpret a semantic mismatch as successful idempotent persistence.
+The existing H002 test covers same-`report_id` semantic mismatch but not different-`report_id` conflict.
 
-## 5.3 Safe reconciliation outcomes
+Required outcome:
 
-### Case A — fresh DB confirms exact committed ready row
-
-If a fresh authoritative read proves the exact ready row was committed and the exact object still satisfies its expected storage binding:
-
-```text
-KEEP object
-KEEP ready row
-return success from report finalization
-```
-
-Do not compensate a proven committed ready artifact merely because the original client lost the commit acknowledgement.
-
-### Case B — fresh DB proves ready row did NOT commit
-
-If a fresh read proves no exact report row exists:
-
-```text
-best-effort compensate exact uploaded object
--> persist sanitized failed report in a fresh transaction when DB is usable
-```
-
-This is the existing H001-style failure outcome.
-
-### Case C — fresh DB finds committed failed row
-
-Compensate any unbound ready object and keep/validate the failed resource contract.
-
-### Case D — fresh DB finds conflicting/mismatched row
-
-Fail closed. Do not silently treat it as idempotent success. Do not expose a false ready artifact.
-
-### Case E — commit outcome cannot be determined because DB remains unavailable
-
-Do not make a destructive compensation decision that could turn a successfully committed ready row into `ready + missing object` merely from uncertainty.
-
-A temporary orphan object with no durable report row is safer than deleting an object that may already be referenced by a committed ready row.
-
-The implementation may use bounded reconciliation/retry or another equivalent deterministic mechanism, but the safety invariant above is mandatory.
-
-## 5.4 Object verification after reconciled ready commit
-
-When reconciliation concludes that ready metadata committed, verify the exact object binding before accepting the resource as ready. At minimum preserve existing checks around:
-
-```text
-server-owned storage key
-object existence
-byte length
-MIME expectations
-```
-
-The existing content download path must continue to verify full SHA-256 + byte length + PDF signature before streaming.
-
-If reconciliation proves a committed ready row but also proves the referenced object is missing/invalid, the system must not leave that row caller-visible as valid `ready`. Transition/fail closed in a way consistent with the closed `ready|failed` report contract.
+- a row found by the unique `(analysis_id, report_artifact_version)` resource identity must never be ignored merely because its `report_id` differs from the candidate;
+- conflict resolution must operate on the actual durable conflicting row/resource identity;
+- no path may finish with caller-visible `ready` metadata whose exact object binding is known/likely to have been overwritten, deleted, or contradicted;
+- destructive compensation must still obey H002's commit-ambiguity safety rules.
 
 ---
 
-# 6. REQUIRED ADVERSARIAL TESTS
+# 5. REQUIRED ADVERSARIAL TESTS — SAME PR
 
-Keep the existing H001 test.
+Keep all existing H001 and H002 regressions.
 
-Add a deterministic real-PostgreSQL test for **commit acknowledgement loss after actual commit**.
+Add deterministic production-path tests for H003/H004.
 
-A valid test can, for example, instrument the report-ready commit so that it:
+## 5.1 Crash/restart between analysis success and report durable terminal state
 
-```text
-1. invokes the real commit successfully;
-2. then raises a synthetic client-side/connection acknowledgement error exactly once.
-```
+Inject a process-loss-equivalent seam after canonical success but before the paired durable report invariant. Use a `BaseException`/explicit crash seam or equivalent that is not converted into an ordinary successful worker return.
 
-The test must target the **report-ready metadata transaction**, not the earlier canonical analysis completion commit.
+Then instantiate a fresh worker and simulate redelivery/retry.
 
-Prove at minimum:
+Prove:
 
 ```text
-canonical executor called exactly once
-analysis remains completed
-canonical result_body remains exact
-analysis failure fields remain absent
-exact live outcome remains the report authority
-PDF upload succeeds
-ready metadata is actually committed before the synthetic exception
-application does NOT produce `ready + deleted/missing object`
+no externally durable completed + missing report terminal resource remains
+retry/reconciliation can finish deterministically
+no POST JSON rehydration
+no POST-triggered analysis rerun
+final analysis = completed
+final report = ready OR failed
+analysis failure fields absent
 ```
 
-Then prove one of the safe allowed final outcomes:
+If the chosen design intentionally reruns canonical execution after a pre-terminal crash, prove it is a worker retry consequence, not report API authority, and preserve all existing analytical authority gates.
+
+## 5.2 Unexpected generator exception
+
+Force the report generator boundary itself to raise unexpectedly.
+
+Prove a normal worker return cannot leave:
 
 ```text
-A. exact ready row retained + exact object retained + content endpoint succeeds
+analysis=completed
+report row absent
 ```
 
-or, if implementation intentionally converts the reconciled state to failed:
+Either persist `completed + failed report` safely or leave a clearly retryable nonterminal state until a terminal paired result can be made durable.
+
+## 5.3 H002 unknown -> later DB recovery
+
+Simulate a report commit failure where reconciliation is temporarily unavailable and the ready row was not actually committed. After DB access is restored, prove the system has a deterministic recovery path and does not strand `completed + no report row` forever.
+
+## 5.4 Different-report-id conflict
+
+Pre-create a durable row for the same:
 
 ```text
-B. failed row persisted + ready bindings cleared + object compensated + no caller-visible ready state
+analysis_id + report_artifact_version
 ```
 
-Also add/retain coverage showing an existing same `report_id` with state/content mismatch is not silently accepted as an equivalent artifact.
+with a different `report_id`, exercise the production finalization/reconciliation path, and prove:
 
-The test should exercise production worker/reconciliation behavior, not only a standalone helper.
+```text
+conflict is not accepted as idempotent success
+actual conflicting row is handled fail-closed
+no false-ready metadata survives
+candidate object is not destructively handled until DB state is safely resolved
+```
 
 ---
 
-# 7. PRESERVE ALL ACCEPTED 5.5 BOUNDARIES
+# 6. PRESERVE ACCEPTED BOUNDARIES
 
-H002 hardening must not weaken any already accepted checkpoint invariant:
+Do not weaken:
 
 ```text
-no JSON report-authority rehydration
-no analysis rerun
-exact live CanonicalCompletedOutcome authority
-analysis completion isolated from report failure
-one artifact/version per analysis
+exact live CanonicalCompletedOutcome / ApplicationAnalysisResult authority
+no AnalysisModel.result_body report-authority rehydration
+no POST /v1/reports analysis rerun
+H001 analytical-success/report-failure separation
+H002 ambiguous-COMMIT reconciliation
 owner isolation through analysis consumer
+one artifact version per analysis
 private S3-compatible storage
 server-owned object key
-no public/raw storage URL
-SHA-256 / size / PDF-signature integrity verification
-report:write / report:read scopes
-resolver-only POST /v1/reports
+SHA-256 / byte-length / MIME / PDF integrity checks
+report:write / report:read
+resolver-only report API
 locked sitescore-report==0.3.0
 frozen FAZ 3/4 and locked 5.0-5.4
 ```
 
-Do not add payment, Stripe, n8n, email, frontend or FAZ 6 orchestration.
+No payment, Stripe, n8n, email, frontend, callback/webhook, or FAZ 6 / 5-FINAL scope.
 
 ---
 
-# 8. REVALIDATION / FINALIZATION REQUIRED
+# 7. REVALIDATION / FINALIZATION
 
-The current successful validation predates H002 and becomes stale after the required fix.
+The current successful validation predates H003/H004 and becomes stale after required changes.
 
 After hardening:
 
-1. run a fresh exact-HEAD full validation;
-2. prove real PostgreSQL migration through `0002_faz5_5`;
-3. prove private MinIO S3-compatible integration;
-4. run all sitescore-api tests including H001 + H002 adversarial cases;
-5. run locked sitescore-report 24 tests;
-6. run frozen baseline 1375;
-7. re-prove real Redis/Celery worker with disabled result backend;
-8. record exact validated SHA/run/job/counts;
-9. remove only the temporary validation workflow after success;
-10. prove validated SHA -> final candidate delta is exactly that workflow removal;
-11. update `implementer.md` to the new exact final candidate;
+1. fresh exact-HEAD validation;
+2. real PostgreSQL migration through `0002_faz5_5`;
+3. private MinIO S3 integration;
+4. full sitescore-api suite including H001/H002/H003/H004 adversarial tests;
+5. locked sitescore-report 24 tests;
+6. frozen baseline 1375;
+7. real Redis/Celery worker proof with disabled result backend;
+8. exact SHA/run/job/test counts recorded;
+9. remove only temporary validation workflow after success;
+10. prove validated SHA -> final candidate delta is exactly workflow removal;
+11. update `implementer.md`;
 12. STOP for Reviewer.
 
-Any product/test/doc/dependency change after the fresh successful validation requires another exact-head validation.
+Any product/test/dependency/migration/docs change after validation requires another exact-head validation.
 
 ---
 
-# 9. REVIEW DECISION
+# 8. REVIEW DECISION
 
 ```text
 REVIEW_DECISION: NEEDS_HARDENING
 IMPLEMENTER_ACTION: HARDEN
-REVIEWED_HEAD_SHA: d744150f618c84f652da0ae419facea1c59e5f87
+REVIEWED_HEAD_SHA: 169c067a79b13edd64d866ad9fe15a697fe887b9
 PR: #21
 
 RPT55-H001: RESOLVED
-RPT55-H002: OPEN / BLOCKING
+RPT55-H002: RESOLVED
+RPT55-H003: OPEN / BLOCKING
+RPT55-H004: OPEN / BLOCKING
 
-BLOCKERS: RPT55-H002
+BLOCKERS: RPT55-H003, RPT55-H004
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -525,6 +431,6 @@ START_5_FINAL: NO
 
 Reviewer does not merge and does not self-lock.
 
-Implementer must harden only the current checkpoint on the same branch/PR, revalidate the exact head, finalize handoff, and STOP.
+Implementer must harden only Checkpoint 5.5 on the same branch/PR, revalidate exact head, finalize handoff, and STOP.
 
 > Mathematically validated scoring engine; empirical validation pending.
