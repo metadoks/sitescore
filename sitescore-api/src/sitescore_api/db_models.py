@@ -80,6 +80,14 @@ class AnalysisModel(Base):
             "NOT (state IN ('queued','running') AND finished_at IS NOT NULL)",
             name="ck_nonterminal_not_finished",
         ),
+        CheckConstraint(
+            "canonical_success_at IS NULL OR canonical_success_at < deadline_at",
+            name="ck_canonical_success_before_deadline",
+        ),
+        CheckConstraint(
+            "canonical_success_at IS NULL OR state IN ('running','completed')",
+            name="ck_canonical_success_state",
+        ),
         Index("ix_analysis_consumer_analysis", "consumer_id", "analysis_id"),
         Index("ix_analysis_deadline", "state", "deadline_at"),
     )
@@ -100,6 +108,9 @@ class AnalysisModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     result_body: Mapped[dict[str, object] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
