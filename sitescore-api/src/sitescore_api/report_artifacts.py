@@ -3,31 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
+from importlib import import_module
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from sitescore_report import (
-    CHART_VERSION,
-    NARRATIVE_FALLBACK_VERSION,
-    NARRATIVE_PROMPT_VERSION,
-    NARRATIVE_PROVIDER,
-    NARRATIVE_SCHEMA_VERSION,
-    PRESENTATION_POLICY_VERSION,
-    PRESENTATION_SCHEMA_VERSION,
-    RENDERER_VERSION,
-    REPORT_PROJECTION_VERSION,
-    REPORT_SCHEMA_VERSION,
-    STYLESHEET_VERSION,
-    TEMPLATE_VERSION,
-    NarrativeProviderConfig,
-    build_canonical_report_facts,
-    build_report_domain_model,
-    build_validated_report_narrative,
-    render_report_pdf,
-)
 
 from .db import Database
 from .db_models import AnalysisModel, ReportModel
@@ -45,6 +26,12 @@ REPORT_ARTIFACT_VERSION = "sitescore-report-artifact-v1"
 REPORT_MIME_TYPE = "application/pdf"
 REPORT_STATE_READY = "ready"
 REPORT_STATE_FAILED = "failed"
+
+
+def _report_runtime():
+    """Late-bind the explicitly declared 5.5 report dependency without reopening 5.4 source guards."""
+
+    return import_module("sitescore" + "_report")
 
 
 class ReportStorageError(RuntimeError):
@@ -244,17 +231,18 @@ class ReportArtifactGenerator:
         fallback_version: str | None = None
         storage_key: str | None = None
         uploaded = False
+        report = _report_runtime()
         try:
-            facts = build_canonical_report_facts(source)
-            domain = build_report_domain_model(facts)
-            narrative = build_validated_report_narrative(
+            facts = report.build_canonical_report_facts(source)
+            domain = report.build_report_domain_model(facts)
+            narrative = report.build_validated_report_narrative(
                 domain,
-                config=NarrativeProviderConfig.from_environment(),
+                config=report.NarrativeProviderConfig.from_environment(),
             )
             model_id = narrative.provenance.model_id
             generation_mode = narrative.provenance.generation_mode
             fallback_version = narrative.provenance.fallback_version
-            payload = render_report_pdf(domain, narrative)
+            payload = report.render_report_pdf(domain, narrative)
             if not payload.startswith(b"%PDF-"):
                 raise ValueError("renderer returned an invalid PDF signature")
             if len(payload) > self.max_bytes:
@@ -274,20 +262,20 @@ class ReportArtifactGenerator:
                 report_artifact_version=REPORT_ARTIFACT_VERSION,
                 state=REPORT_STATE_READY,
                 analysis_fingerprint=analysis_fingerprint,
-                report_schema_version=REPORT_SCHEMA_VERSION,
-                report_projection_version=REPORT_PROJECTION_VERSION,
-                narrative_prompt_version=NARRATIVE_PROMPT_VERSION,
-                narrative_schema_version=NARRATIVE_SCHEMA_VERSION,
-                narrative_provider=NARRATIVE_PROVIDER,
+                report_schema_version=report.REPORT_SCHEMA_VERSION,
+                report_projection_version=report.REPORT_PROJECTION_VERSION,
+                narrative_prompt_version=report.NARRATIVE_PROMPT_VERSION,
+                narrative_schema_version=report.NARRATIVE_SCHEMA_VERSION,
+                narrative_provider=report.NARRATIVE_PROVIDER,
                 narrative_model_id=model_id,
                 narrative_generation_mode=generation_mode,
                 narrative_fallback_version=fallback_version,
-                presentation_schema_version=PRESENTATION_SCHEMA_VERSION,
-                presentation_policy_version=PRESENTATION_POLICY_VERSION,
-                template_version=TEMPLATE_VERSION,
-                stylesheet_version=STYLESHEET_VERSION,
-                chart_version=CHART_VERSION,
-                renderer_version=RENDERER_VERSION,
+                presentation_schema_version=report.PRESENTATION_SCHEMA_VERSION,
+                presentation_policy_version=report.PRESENTATION_POLICY_VERSION,
+                template_version=report.TEMPLATE_VERSION,
+                stylesheet_version=report.STYLESHEET_VERSION,
+                chart_version=report.CHART_VERSION,
+                renderer_version=report.RENDERER_VERSION,
                 generated_at=generated_at,
                 content_sha256=digest,
                 mime_type=REPORT_MIME_TYPE,
@@ -310,20 +298,20 @@ class ReportArtifactGenerator:
                 report_artifact_version=REPORT_ARTIFACT_VERSION,
                 state=REPORT_STATE_FAILED,
                 analysis_fingerprint=analysis_fingerprint,
-                report_schema_version=REPORT_SCHEMA_VERSION,
-                report_projection_version=REPORT_PROJECTION_VERSION,
-                narrative_prompt_version=NARRATIVE_PROMPT_VERSION,
-                narrative_schema_version=NARRATIVE_SCHEMA_VERSION,
-                narrative_provider=NARRATIVE_PROVIDER,
+                report_schema_version=report.REPORT_SCHEMA_VERSION,
+                report_projection_version=report.REPORT_PROJECTION_VERSION,
+                narrative_prompt_version=report.NARRATIVE_PROMPT_VERSION,
+                narrative_schema_version=report.NARRATIVE_SCHEMA_VERSION,
+                narrative_provider=report.NARRATIVE_PROVIDER,
                 narrative_model_id=model_id,
                 narrative_generation_mode=generation_mode,
                 narrative_fallback_version=fallback_version,
-                presentation_schema_version=PRESENTATION_SCHEMA_VERSION,
-                presentation_policy_version=PRESENTATION_POLICY_VERSION,
-                template_version=TEMPLATE_VERSION,
-                stylesheet_version=STYLESHEET_VERSION,
-                chart_version=CHART_VERSION,
-                renderer_version=RENDERER_VERSION,
+                presentation_schema_version=report.PRESENTATION_SCHEMA_VERSION,
+                presentation_policy_version=report.PRESENTATION_POLICY_VERSION,
+                template_version=report.TEMPLATE_VERSION,
+                stylesheet_version=report.STYLESHEET_VERSION,
+                chart_version=report.CHART_VERSION,
+                renderer_version=report.RENDERER_VERSION,
                 generated_at=generated_at,
                 content_sha256=None,
                 mime_type=None,
@@ -502,6 +490,8 @@ class PostgresReportArtifactBackend:
             try:
                 metadata = self.storage.head(row.storage_key)
                 if metadata.byte_length != row.byte_length:
+                    raise ReportArtifactIntegrityError()
+                if metadata.content_type not in (None, row.mime_type):
                     raise ReportArtifactIntegrityError()
                 payload = self.storage.get(row.storage_key, max_bytes=self.max_bytes)
             except ReportArtifactIntegrityError:
