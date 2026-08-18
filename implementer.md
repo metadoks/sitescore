@@ -17,7 +17,7 @@ USER_LOCK_AUTHORIZED: NO
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 7d6ddbdb94567761733ff540239d959096d98f61
 CODE_BRANCH: faz5/5-5-delivery-ready-report-artifact
-CODE_HEAD_SHA: 169c067a79b13edd64d866ad9fe15a697fe887b9
+CODE_HEAD_SHA: 4f93275050c9d8ff392d53ac41acec0824ff4405
 PR: #21
 PR_STATE: OPEN
 PR_MERGEABLE: TRUE
@@ -28,15 +28,15 @@ IMPLEMENTER_ACTION_SEEN: HARDEN
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_REVIEWER: RPT55-H002
-REVIEWER_CONFIRMED_RESOLVED: RPT55-H001
-RESOLVED_BLOCKERS_BY_IMPLEMENTER: RPT55-H001, RPT55-H002
+BLOCKERS_REPORTED_BY_REVIEWER: RPT55-H003, RPT55-H004
+REVIEWER_CONFIRMED_RESOLVED: RPT55-H001, RPT55-H002
+RESOLVED_BLOCKERS_BY_IMPLEMENTER: RPT55-H001, RPT55-H002, RPT55-H003, RPT55-H004
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
 
-VALIDATED_SHA: 3952df60bddf86e7ba36b06283d3468daad6edbd
+VALIDATED_SHA: dd608bf395e2a240c3512c67218f63cb5151b8b4
 VALIDATION_WORKFLOW: faz5-5-5-exact-head-validation
-VALIDATION_RUN_ID: 32166096019
-VALIDATION_JOB_ID: 95805923610
+VALIDATION_RUN_ID: 32172352608
+VALIDATION_JOB_ID: 95826241399
 VALIDATION_CONCLUSION: SUCCESS
 EXACT_HEAD_CHECKOUT_ASSERTION: PASS
 TEMP_VALIDATION_WORKFLOW_REMOVED: YES
@@ -44,220 +44,139 @@ VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz5-5-5-validation.yml REMOVAL
 
 SITESCORE_REPORT_TESTS: 24 PASS
-SITESCORE_API_TESTS: 96 PASS
+SITESCORE_API_TESTS: 98 PASS
 FROZEN_REGRESSION_TESTS: 1375 PASS
-API_PLUS_FROZEN_TESTS: 1471 PASS
-COMBINED_TESTS: 1495 PASS
+API_PLUS_FROZEN_TESTS: 1473 PASS
+COMBINED_TESTS: 1497 PASS
 
 POSTGRESQL_MIGRATION_0002_FAZ5_5: PASS
 PRIVATE_MINIO_S3_PUT_HEAD_GET_DELETE: PASS
 PRIVATE_OBJECT_PUBLIC_ACL_CHECK: PASS
 REDIS_CELERY_REAL_WORKER: PASS
+CELERY_TASK_REJECT_ON_WORKER_LOST: TRUE
 CELERY_RESULT_BACKEND: disabled://
 ```
 
 ## 1. Final candidate
 
-Checkpoint 5.5 remains on the Reviewer-authorized branch and PR:
+Checkpoint 5.5 remains on the Reviewer-authorized branch/PR:
 
 ```text
 base: main@7d6ddbdb94567761733ff540239d959096d98f61
 branch: faz5/5-5-delivery-ready-report-artifact
 PR: #21
-final HEAD: 169c067a79b13edd64d866ad9fe15a697fe887b9
+final HEAD: 4f93275050c9d8ff392d53ac41acec0824ff4405
 ```
 
-PR #21 is OPEN, mergeable TRUE, merged FALSE. Live `main` compares IDENTICAL to the exact expected base. Locked base -> final candidate is 37 commits ahead / 0 behind with exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`. Final diff is 19 files and every changed file is under `sitescore-api/**`. Locked `sitescore-report==0.3.0` and all frozen analytical packages remain unchanged.
+PR #21 is OPEN, mergeable TRUE, merged FALSE. Live `main` compares IDENTICAL to the exact expected base. Locked base -> final candidate is 43 commits ahead / 0 behind with exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`. Final diff is 22 files and every changed file is under `sitescore-api/**`. Locked `sitescore-report==0.3.0` and all frozen analytical packages remain unchanged.
 
-No merge has been performed. No user LOCK is authorized. No `5-FINAL` work has been started.
+No merge has been performed. No `5-FINAL` work has started.
 
-## 2. RPT55-H001 status
+## 2. Reviewer blockers seen
 
-Reviewer independently marked RPT55-H001 RESOLVED before requesting the present hardening. The H001 architecture remains intact:
+Reviewer independently marked:
 
 ```text
-canonical completed outcome
+RPT55-H001: RESOLVED
+RPT55-H002: RESOLVED
+RPT55-H003: OPEN / BLOCKING
+RPT55-H004: OPEN / BLOCKING
+```
+
+Implementer has now hardened H003/H004 on the same PR and considers all four resolved. This is not Reviewer acceptance; Reviewer must inspect the exact final HEAD independently.
+
+## 3. RPT55-H003 — paired terminal durability / crash recovery
+
+The completed worker path was restructured so canonical analysis completion is not externally committed before a terminal report resource exists.
+
+New production ordering:
+
+```text
+analysis durable state = running
+-> canonical executor returns genuine CanonicalCompletedOutcome
+-> report artifact is generated/uploaded from SAME live canonical outcome
+-> analysis row is re-locked
 -> persist_completed(...)
--> COMMIT canonical analysis=completed + exact result_body
--> report generation from SAME live canonical outcome
--> report finalization in separate failure domain
+-> persist terminal report metadata (ready OR failed)
+-> ONE PostgreSQL commit exposes the terminal pair
 ```
 
-A definite pre-commit report metadata failure cannot regress canonical analysis truth. The existing real-PostgreSQL H001 regression remains green in the new 96-test API suite.
+Therefore a normal externally durable `analysis=completed` is paired with exactly one terminal report resource for the current artifact version.
 
-## 3. RPT55-H002 — Implementer resolution
+Before the paired commit, process loss cannot expose `completed + missing report`; durable analysis remains nonterminal and may be redelivered. Production Celery now preserves late-ack semantics and explicitly sets `task_reject_on_worker_lost=True`.
 
-Reviewer identified the ambiguous-COMMIT window: a PostgreSQL report-ready COMMIT may succeed while only the client acknowledgement is lost. Treating every commit exception as rollback could then delete an object referenced by a genuinely committed `ready` row.
+`RetryableReportFinalization` distinguishes report-delivery indeterminacy from analytical failure. The bound `sitescore_api.execute_analysis` Celery task retries that condition instead of returning a normal successful acknowledgement or persisting `analysis_execution_failed`.
 
-The final implementation treats a report metadata commit exception as **UNKNOWN** until fresh independent reconciliation.
+Adversarial real-PostgreSQL tests prove:
 
-### 3.1 Fresh independent durable-state reconciliation
+1. **Process loss before pair commit** — a `BaseException` seam after canonical success/report preparation escapes the normal return; durable state remains `running`, `result_body=None`, no report row. A fresh worker redelivery reruns canonical execution and reaches `completed + terminal report`.
+2. **Unexpected generator exception** — does not produce `completed + no report` and does not become generic analysis failure; it remains retryable/nonterminal and a fresh worker completes the pair.
+3. **H002 unknown -> DB recovery** — when the paired commit did not commit and reconciliation is temporarily unknown, candidate storage is not destructively removed; worker requests retry. After DB recovery, fresh worker redelivery deterministically reaches a terminal pair.
+4. Worker redelivery is the only canonical rerun in these pre-terminal recovery cases. `POST /v1/reports` remains resolver-only and does not rehydrate analytical authority from `result_body` JSON or invoke the canonical executor.
 
-`AnalysisWorkerService._reconcile_report_commit(...)` opens a new `Database.session()` independent of the session that observed the commit exception. It resolves the durable report row by server-owned:
+## 4. RPT55-H004 — different-report-id conflict fail-closed
+
+Conflict handling now operates on the actual unique durable resource identity:
 
 ```text
-analysis_id
-report_artifact_version
-report_id
+analysis_id + report_artifact_version
 ```
 
-and requires exact semantic equality, not report-ID-only equality.
+rather than requiring the candidate `report_id` to match.
 
-Exact report equivalence binds:
+`_transition_resource_to_failed(...)` locks the actual durable row. If its `report_id` differs from the candidate, the actual durable report ID is preserved while its state is changed to sanitized `failed`; ready content bindings are cleared:
 
 ```text
-report_id
-analysis_id
-report_artifact_version
-state
-analysis_fingerprint
-report_schema_version
-report_projection_version
-narrative_prompt_version
-narrative_schema_version
-narrative_provider
-narrative_model_id
-narrative_generation_mode
-narrative_fallback_version
-presentation_schema_version
-presentation_policy_version
-template_version
-stylesheet_version
-chart_version
-renderer_version
-generated_at
-content_sha256
-mime_type
-filename
-byte_length
-storage_key
-failure_code
-failure_message
+storage_key = NULL
+content_sha256 = NULL
+byte_length = NULL
+mime_type = NULL
+filename = NULL
+failure_code = report_generation_failed
+failure_message = sanitized fixed message
 ```
 
-For an exact ready row, reconciliation also verifies the exact private object binding using server-owned storage `HEAD`: byte length must match and MIME must be compatible.
+Only after that actual durable row is confirmed failed may the candidate deterministic object be destructively compensated.
 
-### 3.2 Reconciliation outcomes
+A real PostgreSQL adversarial regression pre-creates a `ready` report for the same `(analysis_id, artifact_version)` with a different report ID, then exercises the production worker path. It proves the conflict is not accepted as idempotent success, the real conflicting row is fail-closed, no false-ready metadata survives, cleanup happens only after durable failed state, and canonical analysis still ends `completed` with exact result body and no analysis failure fields.
 
-The production report-finalization path now distinguishes:
+## 5. Accepted H001/H002 boundaries preserved
 
-```text
-ready
-failed
-ready_invalid
-conflict
-absent
-unknown
-```
+H001 remains semantically preserved: report delivery failure cannot convert genuine analytical success into durable `analysis_execution_failed`, `not_score_ready`, or `timed_out`.
 
-Semantics:
+H002 remains preserved: ambiguous commits are reconciled with fresh PostgreSQL state before destructive storage action. Exact committed ready metadata + valid object remains ready; unknown durable state is non-destructive and now explicitly retryable rather than silently stranded.
 
-- `ready`: exact row really committed and exact object binding is valid -> retain row and object; lost ACK is treated as successful finalization.
-- `failed`: a durable failed row already owns the identity -> compensate any unbound ready candidate only.
-- `ready_invalid`: a committed ready row exists but its object binding is not valid -> transition the same report identity to durable `failed`, clear ready bindings, then compensate only after failed state is confirmed.
-- `conflict`: same server-owned identity has contradictory/mismatched semantics -> never accept as idempotent success; fail the exact identity closed before destructive cleanup.
-- `absent`: fresh DB proves no report row committed -> only then compensate the candidate object and attempt sanitized failed metadata in a fresh transaction.
-- `unknown`: fresh DB cannot determine durable state -> do **not** destructively compensate because the object may already be referenced by a committed ready row.
+The exact live `CanonicalCompletedOutcome.application_analysis_result` remains the report-authority source. Stored JSON is not promoted to report authority.
 
-Same `report_id` is therefore no longer sufficient for idempotent equivalence.
-
-### 3.3 Ambiguous failed-transition commits
-
-The same principle is applied when failing an invalid/conflicting ready row. The transition uses fresh sessions and, if the failed-state commit acknowledgement is itself ambiguous, independently re-reads the same report identity before deciding whether cleanup is safe.
-
-Canonical `analysis.state=completed`, exact canonical `result_body`, and null analysis failure fields remain outside this report failure domain.
-
-## 4. H002 adversarial evidence
-
-New real-PostgreSQL regression:
-
-`sitescore-api/tests/test_report_commit_reconciliation.py`
-
-The test constructs a genuine factory-owned canonical completed outcome and a real report generation path. A worker subclass overrides only the report-metadata commit seam:
-
-```text
-real PostgreSQL COMMIT
--> COMMIT succeeds
--> synthetic client-side ACK-loss exception exactly once
-```
-
-It then proves:
-
-- worker returns canonical `completed`;
-- the exact live canonical outcome and exact factory-owned `ApplicationAnalysisResult` reach report generation;
-- executor call count is exactly 1;
-- the report-ready row is genuinely committed in PostgreSQL;
-- exact analysis/report/provenance/content bindings remain ready;
-- the exact PDF object is NOT deleted;
-- report metadata endpoint returns `ready`;
-- report content endpoint successfully returns a PDF;
-- analysis remains exact `completed` with exact canonical `result_body` and no failure fields;
-- executor remains single-shot after API access.
-
-The same test then corrupts the durable row's `content_sha256` while keeping the same `report_id`, invokes the production finalization path with the genuine original artifact, and proves:
-
-- same-ID semantic mismatch is not accepted as success;
-- report transitions to sanitized `failed`;
-- `storage_key`, hash, byte length, MIME and filename are cleared;
-- failure fields are sanitized;
-- exact candidate object is compensated only after failed DB state is durable;
-- canonical analysis remains completed;
-- executor remains exactly 1 call.
-
-This closes the Reviewer-described `ready + missing object` ACK-loss failure mode while preserving H001.
-
-## 5. Fresh authoritative exact-head validation
+## 6. Fresh authoritative exact-head validation
 
 ```text
 workflow: faz5-5-5-exact-head-validation
-run: 32166096019
-job: 95805923610
-validated SHA: 3952df60bddf86e7ba36b06283d3468daad6edbd
+run: 32172352608
+job: 95826241399
+validated SHA: dd608bf395e2a240c3512c67218f63cb5151b8b4
 conclusion: SUCCESS
 ```
 
 The workflow explicitly checked out and asserted the exact PR head SHA.
 
-Runtime/dependency evidence on that exact SHA:
-
-```text
-Python 3.11.15
-FastAPI 0.140.0
-Pydantic 2.13.4
-SQLAlchemy 2.0.51
-Alembic 1.18.5
-psycopg 3.3.4
-Celery 5.6.3
-redis-py 7.4.1
-HTTPX 0.28.1
-pytest 8.4.2
-Shapely 2.1.2
-pyproj 3.7.2
-OpenAI 3.2.0
-Jinja2 3.1.6
-Matplotlib 3.11.1
-WeasyPrint 69.0
-pypdf 6.14.2
-boto3 1.43.55
-sitescore-api 0.3.0
-sitescore-report 0.3.0
-```
+Runtime evidence on the exact validated SHA includes Python 3.11.15, FastAPI 0.140.0, Pydantic 2.13.4, SQLAlchemy 2.0.51, Alembic 1.18.5, psycopg 3.3.4, Celery 5.6.3, redis-py 7.4.1, OpenAI 3.2.0, Jinja2 3.1.6, Matplotlib 3.11.1, WeasyPrint 69.0, pypdf 6.14.2, boto3 1.43.55, sitescore-api 0.3.0 and sitescore-report 0.3.0.
 
 Infrastructure evidence:
 
-- PostgreSQL 16.15 and migration `0001_faz5_1 -> 0002_faz5_5`: PASS;
-- pinned MinIO `RELEASE.2025-09-07T16-13-09Z` private PUT/HEAD/GET/DELETE: PASS;
-- public ACL check: PASS;
-- real Redis broker + Celery 5.6.3 worker: PASS;
-- Celery registered `execute_analysis`, `drain_outbox`, `reconcile_timeouts`;
-- `reconcile_timeouts` received and succeeded;
-- Celery result backend remained `disabled://`.
+- PostgreSQL 16.15 migration `0001_faz5_1 -> 0002_faz5_5`: PASS
+- pinned private MinIO `RELEASE.2025-09-07T16-13-09Z` PUT/HEAD/GET/DELETE: PASS
+- no public object ACL grant: PASS
+- real Redis broker + Celery 5.6.3 worker: PASS
+- `task_reject_on_worker_lost=True`: PASS
+- Celery result backend: `disabled://`
+- `reconcile_timeouts` received and succeeded
 
-Exact test results:
+Exact tests:
 
 ```text
 sitescore-report:       24 PASS
-sitescore-api:          96 PASS
+sitescore-api:          98 PASS
 app:                    19 PASS
 pipeline:               53 PASS
 benchmarks:            191 PASS
@@ -268,35 +187,32 @@ data:                  361 PASS
 core:                   86 PASS
 -------------------------------
 frozen:               1375 PASS
-API + frozen:         1471 PASS
-TOTAL:                1495 PASS
+API + frozen:         1473 PASS
+TOTAL:                1497 PASS
 ```
 
-## 6. Validation closure
+## 7. Validation closure
 
-After SUCCESS, the temporary validation workflow was removed.
+After SUCCESS the temporary validation workflow was removed.
 
 ```text
-validated: 3952df60bddf86e7ba36b06283d3468daad6edbd
-final:     169c067a79b13edd64d866ad9fe15a697fe887b9
-
-commits: 1
+validated: dd608bf395e2a240c3512c67218f63cb5151b8b4
+final:     4f93275050c9d8ff392d53ac41acec0824ff4405
+commits:   1
 changed file: .github/workflows/faz5-5-5-validation.yml
 status: REMOVED
 ```
 
 There were no product source, test, dependency, migration or docs changes after the authoritative validation SHA.
 
-Locked base -> final scope remains entirely `sitescore-api/**`: 19 changed files total. No locked report/frozen analytical source changed.
+## 8. Reviewer action required
 
-## 7. Reviewer action required
+Implementer considers **RPT55-H003 and RPT55-H004 resolved**, while preserving Reviewer-accepted H001/H002. Reviewer must independently inspect exact PR #21 HEAD:
 
-Implementer considers **RPT55-H002 resolved**, but this is not Reviewer acceptance. Reviewer must independently inspect exact PR #21 HEAD:
+`4f93275050c9d8ff392d53ac41acec0824ff4405`
 
-`169c067a79b13edd64d866ad9fe15a697fe887b9`
+and decide whether Checkpoint 5.5 may move to `READY_TO_LOCK` or requires further hardening.
 
-and decide whether Checkpoint 5.5 can move to `READY_TO_LOCK` or requires further hardening.
-
-No merge has been performed. No LOCK is authorized by Implementer. No `5-FINAL` work has been started.
+No merge has been performed. No `5-FINAL` work has been started.
 
 > Mathematically validated scoring engine; empirical validation pending.
