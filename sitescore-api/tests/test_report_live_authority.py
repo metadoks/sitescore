@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
-import subprocess
 import sys
-import textwrap
 
 import pytest
 
@@ -13,30 +11,15 @@ REPORT_TESTS = REPO_ROOT / "sitescore-report" / "tests"
 DATABASE_URL = os.getenv("SITESCORE_DATABASE_URL")
 
 
-def _prefix() -> str:
-    sys.path.insert(0, str(REPORT_TESTS))
-    try:
-        from test_report_projection_authority import PREFIX
-        return PREFIX
-    finally:
-        sys.path.pop(0)
-
-
 def _run(body: str, *, database: bool = False) -> None:
     if database and not DATABASE_URL:
         pytest.skip("real PostgreSQL live-authority worker test requires SITESCORE_DATABASE_URL")
-    env = dict(os.environ)
-    env.pop("SITESCORE_NARRATIVE_MODEL_ID", None)
-    completed = subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(_prefix() + "\n" + body)],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=180,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
+    sys.path.insert(0, str(REPORT_TESTS))
+    try:
+        from test_report_projection_authority import _run as locked_report_run
+        locked_report_run(body)
+    finally:
+        sys.path.pop(0)
 
 
 def test_genuine_completed_outcome_generates_exact_pdf_and_forgery_is_rejected():
