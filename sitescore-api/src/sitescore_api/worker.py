@@ -14,6 +14,7 @@ from .execution import CanonicalAnalysisExecutor
 from .ingress import build_analysis_ingress_command
 from .lifecycle import persist_completed, persist_not_score_ready
 from .models import AnalysisRequest
+from .report_artifacts import PreparedReportArtifact, ReportArtifactGenerator, persist_report_artifact
 
 _REQUEST_ADAPTER = TypeAdapter(AnalysisRequest)
 
@@ -23,19 +24,22 @@ def _advisory_key(analysis_id: UUID) -> int:
 
 
 class AnalysisWorkerService:
-    def __init__(self, database: Database, executor: CanonicalAnalysisExecutor) -> None:
+    def __init__(
+        self,
+        database: Database,
+        executor: CanonicalAnalysisExecutor,
+        report_artifacts: ReportArtifactGenerator | None = None,
+    ) -> None:
         self.database = database
         self.executor = executor
+        self.report_artifacts = report_artifacts
 
     @staticmethod
     def _now() -> datetime:
         return datetime.now(timezone.utc)
 
     def execute_analysis(self, analysis_id: UUID) -> str:
-        # Session-level PostgreSQL advisory locks belong to a physical database
-        # connection. Keep that connection pinned for the entire execution; if a
-        # post-lock COMMIT returned it to the pool, a duplicate worker could check
-        # out the same connection and re-enter the lock.
+        prepared_report: PreparedReportArtifact | None = None
         with self.database.engine.connect() as connection:
             with Session(
                 bind=connection,
@@ -51,7 +55,6 @@ class AnalysisWorkerService:
                 if not locked:
                     session.rollback()
                     return "busy"
-                # Advisory lock is session/connection-level and survives COMMIT.
                 session.commit()
                 try:
                     row = session.scalar(
@@ -100,14 +103,33 @@ class AnalysisWorkerService:
                     if row is None:
                         session.rollback()
                         return "missing"
-                    now = self._now()
+                    completed_at = self._now()
                     if outcome.not_score_ready is not None:
-                        persist_not_score_ready(session, row, outcome.not_score_ready, now=now)
+                        persist_not_score_ready(session, row, outcome.not_score_ready, now=completed_at)
                     else:
                         assert outcome.completed is not None
-                        persist_completed(session, row, outcome.completed, now=now)
+                        persisted = persist_completed(session, row, outcome.completed, now=completed_at)
+                        if persisted and self.report_artifacts is not None:
+                            prepared_report = self.report_artifacts.generate(
+                                consumer_id=row.consumer_id,
+                                analysis_id=row.analysis_id,
+                                outcome=outcome.completed,
+                                generated_at=completed_at,
+                            )
+                            persist_report_artifact(
+                                session,
+                                row,
+                                prepared_report,
+                                now=self._now(),
+                            )
                     state = row.state
-                    session.commit()
+                    try:
+                        session.commit()
+                    except Exception:
+                        session.rollback()
+                        if prepared_report is not None and self.report_artifacts is not None:
+                            self.report_artifacts.compensate(prepared_report)
+                        raise
                     return state
                 except Exception:
                     session.rollback()
