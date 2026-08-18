@@ -52,17 +52,17 @@ CELERY_TASK_REJECT_ON_WORKER_LOST: TRUE
 CELERY_RESULT_BACKEND: disabled://
 ```
 
-## RPT55-H006 result
+## H006 implementation result
 
-Reviewer accepted H001-H005 and opened only H006 on `ca96ee6e3fefde47e834f420afdaf05a4e141004`. Implementer considers H006 resolved on exact final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`.
+Reviewer accepted H001-H005 and opened only RPT55-H006 on `ca96ee6e3fefde47e834f420afdaf05a4e141004`. Implementer considers H006 resolved on exact final HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35`.
 
-The former `timed_out -> running` repair path is removed. Public terminal states remain immutable. The pre-marker race is prevented by sharing the server-owned analysis advisory-lock key between the live worker and timeout writers: the worker holds a session advisory lock for its execution attempt; polling and periodic reconciliation must acquire the same key as a nonblocking transaction advisory lock before they can publish `timed_out`.
+The previous terminal resurrection repair is removed: durable `completed`, `not_score_ready`, `failed`, and `timed_out` are immutable. The pre-marker timeout race is now prevented by shared PostgreSQL advisory-lock authority. The worker holds a session advisory lock for the complete execution attempt; lifecycle polling and periodic reconciliation must acquire the same stable server-derived key using a nonblocking transaction advisory lock before publishing `timed_out`.
 
-Thus a live worker cannot race with a competing durable/public timeout. The worker itself still applies the analytical deadline. If the worker is lost before genuine success, its session lock is released; without `canonical_success_at`, normal timeout authority resumes and expired state converges to stable `timed_out`. The success marker remains coordination-only and never becomes scoring/report authority.
+A live execution attempt therefore cannot race with a competing durable/public timeout. The worker still enforces its analytical deadline on the execution outcome path. If execution is lost before genuine success, PostgreSQL releases the advisory lock; with no success marker, normal expired timeout authority resumes and converges to stable `timed_out`. `canonical_success_at` remains coordination evidence only, never report/scoring authority.
 
-Real PostgreSQL H006 test `test_report_terminal_immutability.py` proves the pre-marker polling race, pre-marker periodic reconciler race, terminal immutability for completed/not_score_ready/failed/timed_out, and no-success worker-loss convergence. Existing H005 tests preserve no-marker timeout guards including reconciler and worker-entry behavior.
+Real PostgreSQL H006 regression `test_report_terminal_immutability.py` proves the exact pre-marker owner-polling race, pre-marker periodic-reconciler race, immutable terminal worker entry/coordination, and no-success worker-loss convergence. Existing H005 regressions preserve no-marker retrieval/reconciler/execute-entry deadline guards.
 
-No H006 migration was required. Existing chain `0001 -> 0002 -> 0003` remains authoritative.
+No H006 migration was required; migration chain stays `0001 -> 0002 -> 0003`.
 
 ## Fresh exact-head validation
 
@@ -71,27 +71,27 @@ validated SHA: f51d91f1c41d33af82392dc9df9a96fc68083352
 run: 32185211836
 job: 95867141130
 conclusion: SUCCESS
-report: 24 PASS
-api: 100 PASS
+sitescore-report: 24 PASS
+sitescore-api: 100 PASS
 frozen: 1375 PASS
-api+frozen: 1475 PASS
-total: 1499 PASS
+API + frozen: 1475 PASS
+TOTAL: 1499 PASS
 ```
 
-PostgreSQL 16.15 migrations, pinned private MinIO private-object integration, real Redis/Celery 5.6.3, late ACK, reject-on-worker-lost, disabled result backend, and real reconcile_timeouts execution passed.
+PostgreSQL 16.15 migration chain, pinned private MinIO integration/no-public-ACL, real Redis/Celery 5.6.3, late ACK, reject-on-worker-lost, disabled result backend and real `reconcile_timeouts` task all passed.
 
-Validated -> final closure:
+Validation closure:
 
 ```text
 f51d91f1c41d33af82392dc9df9a96fc68083352
 -> 99b5694aeb81b6e926255f6b70d68184ee030a35
-1 commit / 1 file
+1 commit / 1 changed file
 .github/workflows/faz5-5-5-validation.yml REMOVED
 ```
 
-Locked base -> final is 58 commits ahead / 0 behind; exact merge base is `7d6ddbdb94567761733ff540239d959096d98f61`; 26 final changed files are all under `sitescore-api/**`. Locked report and frozen analytical packages remain unchanged.
+No product/test/dependency/migration/docs semantics changed after the authoritative validation SHA. Locked base -> final is 58 commits ahead / 0 behind, exact merge-base `7d6ddbdb94567761733ff540239d959096d98f61`, final diff 26 files all under `sitescore-api/**`. Locked report and frozen analytical packages remain unchanged.
 
-Reviewer must independently inspect PR #21 exact HEAD and decide READY_TO_LOCK or further hardening.
+Reviewer must independently inspect PR #21 exact HEAD `99b5694aeb81b6e926255f6b70d68184ee030a35` and decide READY_TO_LOCK or further hardening.
 
 No merge. No LOCK consumed. No 5-FINAL work started.
 
