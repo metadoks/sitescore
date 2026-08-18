@@ -91,6 +91,7 @@ else:
 
 def test_worker_passes_exact_live_identity_and_report_failure_preserves_completed():
     _run(r'''
+import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from sqlalchemy import select, text
@@ -99,7 +100,7 @@ from sitescore_api.db import Database
 from sitescore_api.db_models import AnalysisModel, ConsumerModel, ReportModel
 from sitescore_api.execution import ExecutionResult
 from sitescore_api.outcomes import build_canonical_completed_outcome
-from sitescore_api.report_artifacts import ReportArtifactGenerator, StoredObjectMetadata
+from sitescore_api.report_artifacts import ReportArtifactGenerator
 from sitescore_api.worker import AnalysisWorkerService
 
 class FailingStorage:
