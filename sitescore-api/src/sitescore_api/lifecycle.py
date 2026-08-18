@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -56,6 +57,28 @@ class AnalysisLifecycleBackend(Protocol):
     ) -> AcceptedAnalysisResource: ...
 
     def retrieve(self, analysis_id: UUID, *, consumer_id: UUID) -> RetrievedAnalysisResource: ...
+
+
+def analysis_advisory_key(analysis_id: UUID) -> int:
+    """Stable server-owned advisory-lock key shared by worker and timeout writers."""
+
+    return int.from_bytes(sha256(analysis_id.bytes).digest()[:8], "big", signed=True)
+
+
+def try_analysis_timeout_authority(session: Session, analysis_id: UUID) -> bool:
+    """Claim this transaction's right to publish timeout when no worker owns execution.
+
+    The canonical worker holds the same key as a session-level advisory lock for its
+    entire execution attempt. Timeout writers use the transaction-level variant so a
+    live worker attempt and a public terminal timeout can never both own authority.
+    """
+
+    return bool(
+        session.execute(
+            text("SELECT pg_try_advisory_xact_lock(:key)"),
+            {"key": analysis_advisory_key(analysis_id)},
+        ).scalar_one()
+    )
 
 
 class PostgresAnalysisLifecycleBackend:
@@ -165,6 +188,7 @@ class PostgresAnalysisLifecycleBackend:
                     row.state not in TERMINAL_STATES
                     and row.canonical_success_at is None
                     and now >= row.deadline_at
+                    and try_analysis_timeout_authority(session, row.analysis_id)
                 ):
                     row.state = "timed_out"
                     row.updated_at = now
