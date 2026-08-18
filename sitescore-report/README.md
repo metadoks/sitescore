@@ -1,6 +1,6 @@
 # sitescore-report
 
-`sitescore-report==0.2.0` extends the locked FAZ 5.2 canonical report domain with a truth-preserving narrative authority boundary.
+`sitescore-report==0.3.0` preserves the locked FAZ 5.2 canonical report domain and FAZ 5.3 narrative authority while adding a deterministic customer-facing visual/PDF view layer.
 
 Locked analytical authority remains:
 
@@ -10,74 +10,95 @@ factory-owned ApplicationAnalysisResult
 -> ReportDomainModel
 ```
 
-FAZ 5.3 adds only:
+Locked narrative authority remains:
 
 ```text
 canonical ReportDomainModel
 -> ApprovedNarrativeContext
 -> active code-owned NarrativeClaimId contract
 -> untrusted OpenAI Responses API claim selection OR deterministic fallback selection
--> strict schema validation
--> exact claim/state/evidence compatibility validation
--> code-owned versioned text templates
+-> exact claim/state/evidence validation
+-> code-owned narrative templates
 -> ValidatedReportNarrative
 ```
 
-The LLM is a selector/narrator only. It is not a scoring engine, financial calculator, decision authority, confidence authority, benchmark authority, readiness authority, or source of new business facts.
+FAZ 5.4 adds only:
 
-## Provider boundary
+```text
+exact canonical ReportDomainModel
++ exact ValidatedReportNarrative bound to that same model
+-> versioned presentation policy
+-> canonical tables + deterministic in-memory SVG charts
+-> package-controlled Jinja2 HTML template + CSS
+-> WeasyPrint
+-> in-memory PDF bytes
+```
 
-The primary production adapter uses the OpenAI Responses API with strict Pydantic structured output. Runtime package pins are:
+The rendering layer is a view layer. It does not calculate or reinterpret scores, financial feasibility, break-even, BEC, rent burden, operating margin, decision, confidence, readiness, normalization, benchmark percentile, or analysis fingerprints.
+
+## Exact rendering dependencies
+
+Runtime rendering pins are:
+
+```text
+Jinja2==3.1.6
+matplotlib==3.11.1
+weasyprint==69.0
+```
+
+The locked narrative runtime pins remain:
 
 ```text
 openai==3.2.0
 pydantic==2.13.4
 ```
 
-The model ID is deployment configuration (`SITESCORE_NARRATIVE_MODEL_ID`) and generation provenance only. API credentials remain OpenAI client/environment concerns and are never copied into report facts, narrative context, narrative provenance, or prompt payloads. The request supplies no tools.
-
-Provider output is always untrusted until deterministic local validation succeeds.
-
-## Closed semantic claim authority
-
-`NarrativeDraft` contains **no provider-authored prose field**. Every section, including executive summary and caveats, is represented only by closed claim selections:
+PDF structural tests use dev-only:
 
 ```text
-claim_id: NarrativeClaimId
-evidence_keys: exact code-owned list
+pypdf==6.14.2
 ```
 
-`ApprovedNarrativeContext` exposes only claim IDs whose exact canonical source-state predicate is currently true. Each active claim carries a code-owned section and exact evidence-key tuple. Validation requires:
+## Authority and lineage
+
+Rendering requires both exact factory-owned objects:
 
 ```text
-claim_id is active for this canonical ReportDomainModel
-section matches the claim contract
-provider evidence_keys exactly equal the code-owned evidence tuple
-all required evidence is present
-canonical anchors match exactly
+ReportDomainModel A
+ValidatedReportNarrative N
+N.approved_context.report_domain_model is A
 ```
 
-An unrelated but existing evidence key therefore cannot authorize a claim. A claim valid in another source state cannot be selected. Provider-created claim IDs are impossible because the schema uses a closed enum.
+A narrative from another report domain fails closed. Plain dictionaries, JSON views, fingerprints, copied/manual authority shells, caller score/financial/decision/confidence values, caller-authored chart values, caller templates, caller CSS, and caller prose are not rendering authority.
 
-Customer-facing narrative text is rendered **after** validation from deterministic code-owned templates. The provider cannot add a second assertion, synonym bypass, empirical claim, guarantee, certainty upgrade, unsupported transit/location statement, numeric invention, or arbitrary caveat because there is no free-form text surface in the provider schema.
+## Presentation policy
 
-## Deterministic fallback
+The versioned code-owned presentation policy defines consistent formatting for scores, currency, fractions displayed as percentages, already-percentage canonical fields, ratios/BEC, booleans/status labels, risk flags, and missing values.
 
-Provider/model unconfigured state, provider exception, incomplete/refused output, schema-invalid output, anchor mismatch, inactive claim, section mismatch, claim/evidence mismatch, or unavailable evidence activates a deterministic versioned fallback.
+The same canonical value uses the same policy wherever repeated. Chart annotations and table cells therefore share display formatting. Presentation rounding never feeds back into analytical authority.
 
-Fallback uses the same active closed-claim contract and the same code-owned templates. It does not calculate scores, thresholds, financial outcomes, confidence, readiness, or new business meaning.
+Missing values use the explicit `Not available` token. Missing mapping keys remain visibly unavailable rather than becoming zero, neutral, or positive.
 
-Invalid canonical report-domain authority remains a hard failure and is never converted into fallback success.
+## Charts
 
-## Versioned narrative contract
+Matplotlib builds deterministic in-memory SVG assets from canonical report values only. Current visualizations include:
 
-```text
-prompt version:   sitescore-narrative-prompt-v2
-schema version:   sitescore-narrative-v2
-fallback version: sitescore-narrative-fallback-v2
-```
+- canonical category scores;
+- canonical conservative/base/optimistic revenue scenarios.
 
-The v2 change is the NARR53-H001 hardening: free-form provider prose was removed from all final-authority sections and replaced with a closed machine-checkable claim/state/evidence contract.
+No hidden normalization, stochastic data generation, external asset download, or caller-provided chart values are used.
+
+## Controlled templates and asset security
+
+The Jinja2 template and CSS are package-owned versioned assets. Jinja autoescaping remains enabled with strict undefined handling. Validated narrative strings enter the template only as escaped text/data.
+
+The renderer does not accept caller template source, caller CSS, arbitrary asset paths, remote HTTP(S) assets, `file://` assets, or network fonts. The WeasyPrint URL fetch boundary allows embedded `data:` assets only.
+
+## PDF rendering
+
+`render_report_pdf(...)` returns PDF bytes in memory. It creates no durable report identifier, storage key, database row, object-storage object, API resource, payment state, or delivery workflow.
+
+Invalid canonical authority, source/narrative mismatch, missing required package asset, chart generation failure, forbidden external asset access, WeasyPrint failure, or invalid PDF output raises an explicit render error. Failed rendering is never converted into empty/fake-valid PDF bytes.
 
 ## Current locked product limitation
 
@@ -87,15 +108,32 @@ Frozen COMB-005 remains not approved, so the real production analysis lifecycle 
 queued -> running -> not_score_ready
 ```
 
-FAZ 5.3 does not manufacture a scored report or narrative from that path. Positive scored narrative fixtures exist only in tests through the same upstream SCORE_READY test boundary used by the locked FAZ 5.2 tests.
+FAZ 5.4 does not manufacture a scored report/PDF from that path. Positive rendering fixtures use the established test-only upstream SCORE_READY substitution while still obtaining genuine factory-owned `ApplicationAnalysisResult -> ReportDomainModel -> ValidatedReportNarrative` authority.
 
 ## Still out of scope
 
-No HTML/CSS template, chart, PDF rendering, object storage, report resource, `report_id`, `analysis_id <-> report` binding, API route, database migration, payment, n8n, or email behavior is introduced here.
+FAZ 5.4 does **not** introduce:
+
+```text
+report_id
+analysis_id <-> durable report resource binding
+PostgreSQL report-resource tables
+S3/object storage
+storage_key
+report API routes
+payment/Stripe
+n8n
+email delivery
+commercial order workflow
+frontend application
+empirical validation
+FAZ 6+
+```
 
 See:
 
 - `docs/CHECKPOINT_5_2_CANONICAL_REPORT_DOMAIN.md`
 - `docs/CHECKPOINT_5_3_NARRATIVE_INSIGHT_AUTHORITY.md`
+- `docs/CHECKPOINT_5_4_VISUAL_REPORT_PDF_RENDERING.md`
 
 > Mathematically validated scoring engine; empirical validation pending.
