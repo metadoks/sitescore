@@ -129,6 +129,7 @@ payload = {
 with database.session() as session:
     with session.begin():
         session.add(ConsumerModel(consumer_id=consumer_id, name="live-authority", active=True, created_at=now))
+        session.flush()
         session.add(AnalysisModel(
             analysis_id=analysis_id, consumer_id=consumer_id, creation_request_id=uuid4(), api_version="v1",
             state="queued", request_payload=payload, request_hash="0"*64, idempotency_key="live-authority",
