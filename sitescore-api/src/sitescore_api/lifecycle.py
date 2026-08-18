@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -58,6 +59,28 @@ class AnalysisLifecycleBackend(Protocol):
     def retrieve(self, analysis_id: UUID, *, consumer_id: UUID) -> RetrievedAnalysisResource: ...
 
 
+def analysis_advisory_key(analysis_id: UUID) -> int:
+    """Stable server-owned advisory-lock key shared by worker and timeout writers."""
+
+    return int.from_bytes(sha256(analysis_id.bytes).digest()[:8], "big", signed=True)
+
+
+def try_analysis_timeout_authority(session: Session, analysis_id: UUID) -> bool:
+    """Claim this transaction's right to publish timeout when no worker owns execution.
+
+    The canonical worker holds the same key as a session-level advisory lock for its
+    entire execution attempt. Timeout writers use the transaction-level variant so a
+    live worker attempt and a public terminal timeout can never both own authority.
+    """
+
+    return bool(
+        session.execute(
+            text("SELECT pg_try_advisory_xact_lock(:key)"),
+            {"key": analysis_advisory_key(analysis_id)},
+        ).scalar_one()
+    )
+
+
 class PostgresAnalysisLifecycleBackend:
     def __init__(
         self,
@@ -106,6 +129,7 @@ class PostgresAnalysisLifecycleBackend:
                         started_at=None,
                         finished_at=None,
                         deadline_at=now + timedelta(seconds=self.deadline_seconds),
+                        canonical_success_at=None,
                         result_body=None,
                         readiness_body=None,
                         failure_code=None,
@@ -160,7 +184,12 @@ class PostgresAnalysisLifecycleBackend:
                 )
                 if row is None:
                     raise AnalysisNotFound()
-                if row.state not in TERMINAL_STATES and now >= row.deadline_at:
+                if (
+                    row.state not in TERMINAL_STATES
+                    and row.canonical_success_at is None
+                    and now >= row.deadline_at
+                    and try_analysis_timeout_authority(session, row.analysis_id)
+                ):
                     row.state = "timed_out"
                     row.updated_at = now
                     row.finished_at = now
@@ -194,6 +223,8 @@ def persist_not_score_ready(
     canonical = require_canonical_not_score_ready_outcome(outcome)
     if row.state in TERMINAL_STATES:
         return False
+    if row.canonical_success_at is not None:
+        return False
     if now >= row.deadline_at:
         row.state = "timed_out"
         row.finished_at = now
@@ -221,13 +252,17 @@ def persist_completed(
     canonical = require_canonical_completed_outcome(outcome)
     if row.state in TERMINAL_STATES:
         return False
-    if now >= row.deadline_at:
-        row.state = "timed_out"
-        row.finished_at = now
-        row.updated_at = now
-        row.failure_code = "analysis_deadline_exceeded"
-        row.failure_message = "analysis exceeded its server-owned deadline"
-        return False
+    if row.canonical_success_at is None:
+        if now >= row.deadline_at:
+            row.state = "timed_out"
+            row.finished_at = now
+            row.updated_at = now
+            row.failure_code = "analysis_deadline_exceeded"
+            row.failure_message = "analysis exceeded its server-owned deadline"
+            return False
+        row.canonical_success_at = now
+    elif row.canonical_success_at >= row.deadline_at:
+        raise ValueError("canonical success marker must precede the analysis deadline")
     row.state = "completed"
     row.result_body = canonical.result_body
     row.readiness_body = None

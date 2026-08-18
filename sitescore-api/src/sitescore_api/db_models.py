@@ -27,6 +27,7 @@ PUBLIC_STATES = (
     "timed_out",
 )
 TERMINAL_STATES = ("completed", "not_score_ready", "failed", "timed_out")
+REPORT_STATES = ("ready", "failed")
 
 
 class Base(DeclarativeBase):
@@ -79,6 +80,14 @@ class AnalysisModel(Base):
             "NOT (state IN ('queued','running') AND finished_at IS NOT NULL)",
             name="ck_nonterminal_not_finished",
         ),
+        CheckConstraint(
+            "canonical_success_at IS NULL OR canonical_success_at < deadline_at",
+            name="ck_canonical_success_before_deadline",
+        ),
+        CheckConstraint(
+            "canonical_success_at IS NULL OR state IN ('running','completed')",
+            name="ck_canonical_success_state",
+        ),
         Index("ix_analysis_consumer_analysis", "consumer_id", "analysis_id"),
         Index("ix_analysis_deadline", "state", "deadline_at"),
     )
@@ -99,9 +108,9 @@ class AnalysisModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # PostgreSQL JSONB normally serializes Python None as JSON literal `null`.
-    # Lifecycle state checks use SQL NULL semantics, so nullable terminal payload
-    # columns must explicitly persist Python None as SQL NULL.
+    canonical_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     result_body: Mapped[dict[str, object] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
@@ -129,3 +138,58 @@ class DispatchOutboxModel(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+class ReportModel(Base):
+    __tablename__ = "reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_id",
+            "report_artifact_version",
+            name="uq_reports_analysis_artifact_version",
+        ),
+        CheckConstraint("state IN ('ready','failed')", name="ck_report_state"),
+        CheckConstraint(
+            "(state = 'ready' AND content_sha256 IS NOT NULL AND char_length(content_sha256) = 64 "
+            "AND mime_type = 'application/pdf' AND filename IS NOT NULL AND byte_length > 0 "
+            "AND storage_key IS NOT NULL AND failure_code IS NULL AND failure_message IS NULL "
+            "AND narrative_generation_mode IS NOT NULL) OR "
+            "(state = 'failed' AND content_sha256 IS NULL AND mime_type IS NULL "
+            "AND filename IS NULL AND byte_length IS NULL AND storage_key IS NULL "
+            "AND failure_code IS NOT NULL)",
+            name="ck_report_state_coherence",
+        ),
+        Index("ix_reports_analysis", "analysis_id", "report_id"),
+    )
+
+    report_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    analysis_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("analyses.analysis_id", ondelete="CASCADE"), nullable=False
+    )
+    report_artifact_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    analysis_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    report_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_projection_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    narrative_prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    narrative_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    narrative_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    narrative_model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    narrative_generation_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    narrative_fallback_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    presentation_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    presentation_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    stylesheet_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    chart_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    renderer_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    filename: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    byte_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -10,6 +10,12 @@ from .db import Database
 from .dispatcher import CeleryOutboxDispatcher
 from .execution import CanonicalAnalysisExecutor, ExecutionEvidenceSource, MissingExecutionEvidenceSource
 from .lifecycle import PostgresAnalysisLifecycleBackend
+from .report_artifacts import (
+    PostgresReportArtifactBackend,
+    ReportArtifactGenerator,
+    ReportObjectStorage,
+    S3CompatibleObjectStorage,
+)
 from .settings import Settings
 from .worker import AnalysisWorkerService
 
@@ -39,6 +45,7 @@ class Runtime:
     celery_app: object
     dispatcher: CeleryOutboxDispatcher
     lifecycle: PostgresAnalysisLifecycleBackend
+    reports: PostgresReportArtifactBackend
     worker: AnalysisWorkerService
 
 
@@ -46,8 +53,9 @@ def build_runtime(
     settings: Settings | None = None,
     *,
     evidence_source: ExecutionEvidenceSource | None = None,
+    report_storage: ReportObjectStorage | None = None,
 ) -> Runtime:
-    """Build production runtime; evidence_source is an explicit in-process test seam only."""
+    """Build production runtime; explicit evidence/storage arguments are in-process test seams."""
 
     settings = settings or Settings.from_env()
     database = Database(settings.database_url)
@@ -58,6 +66,17 @@ def build_runtime(
         dispatcher,
         deadline_seconds=settings.analysis_deadline_seconds,
     )
+    storage = report_storage or S3CompatibleObjectStorage(
+        bucket=settings.report_storage_bucket,
+        region=settings.report_storage_region,
+        endpoint_url=settings.report_storage_endpoint_url,
+    )
+    reports = PostgresReportArtifactBackend(
+        database,
+        storage,
+        max_bytes=settings.report_max_bytes,
+    )
+    report_generator = ReportArtifactGenerator(storage, max_bytes=settings.report_max_bytes)
     executor = CanonicalAnalysisExecutor(evidence_source or _load_production_evidence_source())
-    worker = AnalysisWorkerService(database, executor)
-    return Runtime(settings, database, celery_app, dispatcher, lifecycle, worker)
+    worker = AnalysisWorkerService(database, executor, report_generator)
+    return Runtime(settings, database, celery_app, dispatcher, lifecycle, reports, worker)

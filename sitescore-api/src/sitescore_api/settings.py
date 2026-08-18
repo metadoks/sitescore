@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+_DEFAULT_REPORT_BUCKET = "sitescore" + "-reports"
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -13,6 +15,10 @@ class Settings:
     poll_retry_after_seconds: int = 3
     worker_soft_time_limit_seconds: int = 840
     worker_hard_time_limit_seconds: int = 900
+    report_storage_bucket: str = _DEFAULT_REPORT_BUCKET
+    report_storage_region: str = "us-east-1"
+    report_storage_endpoint_url: str | None = None
+    report_max_bytes: int = 10 * 1024 * 1024
 
     def __post_init__(self) -> None:
         for name in ("database_url", "broker_url", "api_key_pepper"):
@@ -25,11 +31,20 @@ class Settings:
             raise ValueError("broker_url must use Redis")
         if len(self.api_key_pepper.encode("utf-8")) < 32:
             raise ValueError("api_key_pepper must contain at least 32 UTF-8 bytes")
+        for name in ("report_storage_bucket", "report_storage_region"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be configured")
+        if self.report_storage_endpoint_url is not None:
+            endpoint = self.report_storage_endpoint_url.strip()
+            if not endpoint.startswith(("http://", "https://")):
+                raise ValueError("report_storage_endpoint_url must use http or https")
         for name in (
             "analysis_deadline_seconds",
             "poll_retry_after_seconds",
             "worker_soft_time_limit_seconds",
             "worker_hard_time_limit_seconds",
+            "report_max_bytes",
         ):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -48,6 +63,7 @@ class Settings:
         ]
         if missing:
             raise ValueError("missing required production configuration")
+        endpoint = os.getenv("SITESCORE_REPORT_STORAGE_ENDPOINT_URL")
         return cls(
             database_url=os.environ["SITESCORE_DATABASE_URL"],
             broker_url=os.environ["SITESCORE_BROKER_URL"],
@@ -56,4 +72,8 @@ class Settings:
             poll_retry_after_seconds=int(os.getenv("SITESCORE_POLL_RETRY_AFTER_SECONDS", "3")),
             worker_soft_time_limit_seconds=int(os.getenv("SITESCORE_WORKER_SOFT_LIMIT_SECONDS", "840")),
             worker_hard_time_limit_seconds=int(os.getenv("SITESCORE_WORKER_HARD_LIMIT_SECONDS", "900")),
+            report_storage_bucket=os.getenv("SITESCORE_REPORT_STORAGE_BUCKET", _DEFAULT_REPORT_BUCKET),
+            report_storage_region=os.getenv("SITESCORE_REPORT_STORAGE_REGION", "us-east-1"),
+            report_storage_endpoint_url=endpoint.strip() if endpoint and endpoint.strip() else None,
+            report_max_bytes=int(os.getenv("SITESCORE_REPORT_MAX_BYTES", str(10 * 1024 * 1024))),
         )

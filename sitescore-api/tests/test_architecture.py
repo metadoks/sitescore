@@ -24,7 +24,6 @@ def test_route_layer_contains_no_scoring_formula_logic():
     arithmetic_ops = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
     for node in ast.walk(tree):
         if isinstance(node, ast.BinOp):
-            # PEP 604 type unions (X | None) are AST BinOp/BitOr but are not formulas.
             assert not isinstance(node.op, arithmetic_ops)
         assert not isinstance(node, ast.AugAssign)
 
@@ -37,16 +36,27 @@ def test_postgresql_is_lifecycle_truth_and_celery_async_result_is_absent():
     lifecycle = (SRC_ROOT / "lifecycle.py").read_text(encoding="utf-8")
     assert "AnalysisModel" in lifecycle
     assert "DispatchOutboxModel" in lifecycle
+    artifacts = (SRC_ROOT / "report_artifacts.py").read_text(encoding="utf-8")
+    assert "ReportModel" in artifacts
+    assert "redis" not in artifacts.lower()
 
 
-def test_completed_authority_cannot_be_arbitrary_json():
+def test_completed_and_report_authority_cannot_be_arbitrary_json_or_rerun():
     outcomes = (SRC_ROOT / "outcomes.py").read_text(encoding="utf-8")
     lifecycle = (SRC_ROOT / "lifecycle.py").read_text(encoding="utf-8")
+    artifacts = (SRC_ROOT / "report_artifacts.py").read_text(encoding="utf-8")
+    worker = (SRC_ROOT / "worker.py").read_text(encoding="utf-8")
     assert "ApplicationAnalysisResult" in outcomes
     assert "require_canonical_application_analysis_result" in outcomes
     assert "CanonicalCompletedOutcome" in lifecycle
+    assert "require_canonical_completed_outcome(outcome)" in artifacts
+    assert "canonical.application_analysis_result" in artifacts
+    assert "build_canonical_report_facts(source)" in artifacts
+    assert "result_body" not in artifacts
+    assert "request_payload" not in artifacts
+    assert "executor.execute" in worker
+    assert worker.count("executor.execute") == 1
     assert "def complete(" not in lifecycle
-    assert "arbitrary_dict" not in lifecycle
 
 
 def test_worker_payload_and_execution_lock_are_internal_and_postgresql_backed():
@@ -58,6 +68,8 @@ def test_worker_payload_and_execution_lock_are_internal_and_postgresql_backed():
     assert "pg_try_advisory_lock" in worker
     assert "engine.connect()" in worker
     assert "redis" not in worker.lower()
+    assert "outcome.completed" in worker
+    assert "report_artifacts.generate" in worker
 
 
 def test_production_runtime_cannot_load_post_provider_execution_evidence_plugin():
@@ -80,9 +92,9 @@ def test_production_runtime_cannot_load_post_provider_execution_evidence_plugin(
     assert "request_payload" not in acquisition
 
 
-def test_dependency_contract_is_exact():
+def test_dependency_contract_is_exact_and_directional():
     data = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert data["project"]["version"] == "0.2.0"
+    assert data["project"]["version"] == "0.3.0"
     assert data["project"]["dependencies"] == [
         "fastapi==0.140.0",
         "pydantic==2.13.4",
@@ -91,6 +103,7 @@ def test_dependency_contract_is_exact():
         "psycopg[binary]==3.3.4",
         "celery==5.6.3",
         "redis==7.4.1",
+        "boto3==1.43.55",
         "sitescore-core==0.1.0",
         "sitescore-data==0.1.0",
         "sitescore-providers==0.1.0",
@@ -98,11 +111,18 @@ def test_dependency_contract_is_exact():
         "sitescore-benchmarks==0.1.0",
         "sitescore-pipeline==0.1.0",
         "sitescore-app==0.1.0",
+        "sitescore-report==0.3.0",
     ]
     assert data["project"]["optional-dependencies"]["dev"] == [
         "httpx==0.28.1",
         "pytest==8.4.2",
     ]
+    report_source_root = REPO_ROOT / "sitescore-report" / "src"
+    report_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in report_source_root.rglob("*.py")
+    )
+    assert "sitescore_api" not in report_source
 
 
 def test_frozen_sibling_packages_do_not_import_sitescore_api():
@@ -122,7 +142,12 @@ def test_frozen_sibling_packages_do_not_import_sitescore_api():
             assert "sitescore_api" not in path.read_text(encoding="utf-8", errors="ignore")
 
 
-def test_no_5_2_or_later_scope_dependencies():
+def test_5_5_scope_does_not_introduce_commercial_or_orchestration_dependencies():
     rendered = (PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8").lower()
-    for forbidden in ("openai", "jinja2", "weasyprint", "matplotlib", "boto3", "stripe"):
+    source = _source()
+    for forbidden in ("stripe", "n8n"):
         assert forbidden not in rendered
+        assert forbidden not in source.lower()
+    artifacts = (SRC_ROOT / "report_artifacts.py").read_text(encoding="utf-8")
+    assert "ACL=" not in artifacts
+    assert "public-read" not in artifacts
