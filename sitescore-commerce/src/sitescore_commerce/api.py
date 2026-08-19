@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from .checkout import CheckoutInvariantError, CheckoutProviderUnavailable, StripeCheckoutGateway
+from .automation_contracts import AutomationOrderResponse
 from .contracts import OrderCreateRequest, OrderCreateResponse
 from .db import CommerceStore, EventIdentityConflict, IdempotencyConflict, PersistenceUnavailable
+from .fulfillment import (
+    AutomationUnauthorized,
+    FulfillmentInvariantError,
+    FulfillmentNotFound,
+    FulfillmentService,
+    RefundProviderUnavailable,
+    SiteScoreProviderUnavailable,
+    build_fulfillment_service,
+)
 from .service import InvalidIdempotencyKey, OrderService
 from .settings import ConfigurationError, Settings
 from .webhook import (
@@ -35,15 +47,45 @@ async def _read_webhook_body(request: Request) -> bytes:
     return b"".join(chunks)
 
 
-def create_app(*, service: OrderService | None = None, webhook_service: PaymentWebhookService | None = None) -> FastAPI:
-    app = FastAPI(title="SiteScore Commerce API", version="0.2.0")
-    if service is None or webhook_service is None:
-        settings = Settings.from_env()
+def _automation_response(status: object) -> AutomationOrderResponse:
+    return AutomationOrderResponse(
+        order_id=status.order_id,
+        order_state=status.order_state,
+        payment_state=status.payment_state,
+        fulfillment_state=status.fulfillment_state,
+        retryable=status.retryable,
+        terminal=status.terminal,
+        next_action=status.next_action,
+    )
+
+
+def create_app(
+    *,
+    service: OrderService | None = None,
+    webhook_service: PaymentWebhookService | None = None,
+    fulfillment_service: FulfillmentService | None = None,
+) -> FastAPI:
+    app = FastAPI(title="SiteScore Commerce API", version="0.3.0")
+
+    settings: Settings | None = None
+    store: CommerceStore | None = None
+    # Preserve dependency-injected unit tests: only load environment when an unprovided
+    # production service actually needs construction.
+    if service is None or webhook_service is None or fulfillment_service is None:
+        try:
+            settings = Settings.from_env()
+        except ConfigurationError:
+            if service is None or webhook_service is None:
+                raise
+            settings = None
+    if settings is not None:
         store = CommerceStore(settings.database_url)
         if service is None:
             service = OrderService(settings, store, StripeCheckoutGateway(settings))
         if webhook_service is None:
             webhook_service = PaymentWebhookService(settings, store, StripeWebhookVerifier(settings), StripeCheckoutEvidenceGateway(settings))
+        if fulfillment_service is None:
+            fulfillment_service = build_fulfillment_service(settings, store)
 
     @app.exception_handler(InvalidIdempotencyKey)
     async def invalid_idempotency(_: Request, exc: InvalidIdempotencyKey) -> JSONResponse:
@@ -69,9 +111,30 @@ def create_app(*, service: OrderService | None = None, webhook_service: PaymentW
     async def reconciliation_provider_unavailable(_: Request, __: PaymentProviderUnavailable) -> JSONResponse:
         return _error(503, "payment_provider_unavailable", "payment provider reconciliation is unavailable")
 
+    @app.exception_handler(RefundProviderUnavailable)
+    async def refund_provider_unavailable(_: Request, __: RefundProviderUnavailable) -> JSONResponse:
+        return _error(503, "refund_provider_unavailable", "refund provider reconciliation is unavailable")
+
+    @app.exception_handler(SiteScoreProviderUnavailable)
+    async def sitescore_provider_unavailable(_: Request, exc: SiteScoreProviderUnavailable) -> JSONResponse:
+        status = 503 if exc.retryable else 502
+        return _error(status, "sitescore_provider_unavailable", "SiteScore fulfillment provider is unavailable")
+
     @app.exception_handler(CheckoutInvariantError)
     async def provider_invariant(_: Request, __: CheckoutInvariantError) -> JSONResponse:
         return _error(502, "checkout_provider_unavailable", "checkout provider response failed validation")
+
+    @app.exception_handler(FulfillmentInvariantError)
+    async def fulfillment_invariant(_: Request, __: FulfillmentInvariantError) -> JSONResponse:
+        return _error(409, "fulfillment_invariant_conflict", "fulfillment state failed a server authority invariant")
+
+    @app.exception_handler(FulfillmentNotFound)
+    async def fulfillment_not_found(_: Request, __: FulfillmentNotFound) -> JSONResponse:
+        return _error(404, "order_not_found", "order not found")
+
+    @app.exception_handler(AutomationUnauthorized)
+    async def automation_unauthorized(_: Request, __: AutomationUnauthorized) -> JSONResponse:
+        return _error(401, "automation_unauthorized", "automation authentication failed")
 
     @app.exception_handler(WebhookVerificationError)
     async def webhook_verification(_: Request, __: WebhookVerificationError) -> JSONResponse:
@@ -89,6 +152,8 @@ def create_app(*, service: OrderService | None = None, webhook_service: PaymentW
     def create_order(body: OrderCreateRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> OrderCreateResponse:
         if idempotency_key is None:
             raise InvalidIdempotencyKey("Idempotency-Key header is required")
+        if service is None:
+            raise ConfigurationError("order service is unavailable")
         return service.create_order(request=body, idempotency_key=idempotency_key)
 
     @app.post("/v1/webhooks/stripe", status_code=200)
@@ -96,6 +161,26 @@ def create_app(*, service: OrderService | None = None, webhook_service: PaymentW
         raw_body = await _read_webhook_body(request)
         if not stripe_signature:
             raise WebhookVerificationError("Stripe-Signature header is required")
+        if webhook_service is None:
+            raise ConfigurationError("webhook service is unavailable")
         return await run_in_threadpool(webhook_service.handle, raw_body=raw_body, signature=stripe_signature)
+
+    @app.post("/v1/automation/orders/{order_id}/advance", response_model=AutomationOrderResponse)
+    async def advance_order(request: Request, order_id: UUID, authorization: str | None = Header(default=None, alias="Authorization")) -> AutomationOrderResponse:
+        if fulfillment_service is None:
+            raise ConfigurationError("fulfillment service is unavailable")
+        fulfillment_service.authorize_automation(authorization)
+        if await request.body():
+            return _error(400, "request_validation_failed", "automation advance request body must be empty")
+        result = await run_in_threadpool(fulfillment_service.advance, order_id)
+        return _automation_response(result)
+
+    @app.get("/v1/automation/orders/{order_id}", response_model=AutomationOrderResponse)
+    async def get_automation_order(order_id: UUID, authorization: str | None = Header(default=None, alias="Authorization")) -> AutomationOrderResponse:
+        if fulfillment_service is None:
+            raise ConfigurationError("fulfillment service is unavailable")
+        fulfillment_service.authorize_automation(authorization)
+        result = await run_in_threadpool(fulfillment_service.status, order_id)
+        return _automation_response(result)
 
     return app
