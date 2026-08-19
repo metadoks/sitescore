@@ -5,14 +5,12 @@ HANDOFF_PROTOCOL_VERSION: 1.0
 AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: IMPLEMENTER CHAT
-
 CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.0
 CHECKPOINT_TITLE: Commerce / Order Domain + Stripe Checkout Foundation
 IMPLEMENTER_STATE: READY_FOR_REVIEW
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
-
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
 LIVE_MAIN_SHA_AT_HANDOFF: 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
@@ -23,7 +21,6 @@ PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
 HEAD_SHA: 8a4e358709ae7a662bf079722db042fb6e319ffd
-
 REVIEWER_STATE_SEEN: HARDENING_REQUIRED
 IMPLEMENTER_ACTION_SEEN: HARDEN
 REVIEWED_HEAD_SEEN: 6790cc2eccb858f80857103e99f9b5562e8db485
@@ -33,7 +30,6 @@ ADDITIONAL_REOPEN_REQUIRED: 0
 COM60-H001: ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER
 COM60-H002: ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
-
 VALIDATED_SHA: 7c5300784b0ccae33a42d1310b00678a91d08d7c
 VALIDATION_RUN_ID: 32240653815
 VALIDATION_JOB_ID: 96030230093
@@ -41,7 +37,6 @@ VALIDATION_CONCLUSION: SUCCESS
 TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-0-validation.yml REMOVAL
-
 SITESCORE_COMMERCE_CI_TESTS: 52 PASS
 SITESCORE_REPORT_TESTS: 24 PASS
 SITESCORE_API_TESTS: 105 PASS
@@ -54,7 +49,6 @@ DURABLE_STRIPE_OPERATION_REPLAY_CONFIG_DRIFT: PASS
 PROVIDER_SUCCESS_LOCAL_BIND_LOSS_RESTART_REPLAY: PASS
 SECRET_SCAN: PASS
 FROZEN_SCOPE_SCAN: PASS
-
 FAZ_3_STATUS_PRESERVED: FROZEN
 FAZ_4_STATUS_PRESERVED: FROZEN
 FAZ_5_STATUS_PRESERVED: FROZEN
@@ -71,30 +65,12 @@ Real PostgreSQL adversarial evidence `test_durable_checkout_replay_survives_rest
 
 ## COM60-H002 — addressed, Reviewer verification required
 
-Revision downgrade no longer drops the `commerce` schema containing Alembic's own version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 validation and the dedicated test passed the exact cycle:
-
-```text
-upgrade head -> downgrade base -> upgrade head
-```
-
-After downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade reconstructs the tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
+Revision downgrade no longer drops the `commerce` schema containing Alembic's own version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 validation and the dedicated test passed `upgrade head -> downgrade base -> upgrade head`. After downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade reconstructs the tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
 
 ## Fresh validation and final identity
 
-```text
-validated SHA:     7c5300784b0ccae33a42d1310b00678a91d08d7c
-final review HEAD: 8a4e358709ae7a662bf079722db042fb6e319ffd
-run/job:           32240653815 / 96030230093
-result:            SUCCESS
-commerce:          52 PASS
-frozen baseline:   1504 PASS
-combined:          1556 PASS
-```
+Validated SHA `7c5300784b0ccae33a42d1310b00678a91d08d7c`; final review HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd`; run/job `32240653815 / 96030230093`; result SUCCESS; commerce 52 PASS; frozen baseline 1504 PASS; combined 1556 PASS. Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan passed. The only validated-to-final delta is removal of the temporary validation workflow. Final PR #23 has 22 changed files, all under `sitescore-commerce/`. Live `main` remains the frozen FAZ 5 SHA.
 
-Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan also passed. The only validated-to-final delta is removal of the temporary validation workflow. Final PR #23 has 22 changed files, all under `sitescore-commerce/`. Live `main` remains the frozen FAZ 5 SHA.
-
-No payment-truth/webhook, paid transition/outbox, analysis/report dispatch, refund, n8n, Postmark, delivery, public download, reconciliation worker, or other 6.1+ subsystem was added.
-
-Implementer does not self-resolve the Reviewer blockers, does not authorize LOCK and does not merge. PR #23 remains OPEN. `START_6_1: NO`.
+No 6.1+ subsystem was added. Implementer does not self-resolve Reviewer blockers, authorize LOCK, or merge. PR #23 remains OPEN. `START_6_1: NO`.
 
 > Mathematically validated scoring engine; empirical validation pending.
