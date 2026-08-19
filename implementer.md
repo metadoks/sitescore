@@ -42,8 +42,8 @@ FROZEN_TOTAL_TESTS: 1504 PASS
 COMBINED_PYTEST_TOTAL: 1593 PASS
 
 LOCK_GATE_RESULT: PASS
-LOCK_MERGE_STATUS: IN_PROGRESS
+LOCK_MERGE_STATUS: READY_TO_EXECUTE
 START_6_2: NO
 ```
 
-User explicitly issued literal `LOCK`. Fresh pre-merge verification confirmed Reviewer READY_TO_LOCK, exact reviewed HEAD == live PR HEAD, live main == expected pre-lock main, PR #24 open/mergeable/non-draft/unmerged, blockers none, and all reopen/design/contract flags zero. Merge is being executed with exact-head protection. 6.2 is not authorized to start automatically.
+User explicitly issued literal `LOCK`. Fresh pre-merge verification confirmed Reviewer READY_TO_LOCK, exact reviewed HEAD == live PR HEAD, live main == expected pre-lock main, PR #24 open/mergeable/non-draft/unmerged, blockers none, and all reopen/design/contract flags zero. Merge is authorized only for exact head 719a17c4359524337f57298252a59ccb89dcd0aa. 6.2 is not authorized to start automatically.
