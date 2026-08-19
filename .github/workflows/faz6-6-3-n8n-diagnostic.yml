@@ -13,6 +13,7 @@ jobs:
       - name: Prove pinned version and import with visible diagnostics
         run: |
           set -euxo pipefail
+          echo N8N_DIAGNOSTIC_START=YES
           IMAGE=n8nio/n8n:2.33.4
           docker pull "$IMAGE" >/dev/null
           docker run --rm "$IMAGE" --version
