@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.2
 CHECKPOINT_TITLE: Paid Fulfillment Binding + Canonical Unfulfillable Full Refund Authority
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -26,17 +26,17 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: 7d9ad5dbf9bfc045a7d7fb971dc80c6851e9ec08
+REVIEWED_HEAD_SHA: 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628
 
-VALIDATED_SHA: eeff565f318475b4b5796d92502894998332db15
-VALIDATION_RUN_ID: 32256557493
-VALIDATION_JOB_ID: 96079494257
+VALIDATED_SHA: 0a9b82f316ae109316821d9b81f97e5e13951516
+VALIDATION_RUN_ID: 32262200452
+VALIDATION_JOB_ID: 96097874783
 VALIDATION_CONCLUSION: SUCCESS
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-2-validation.yml REMOVAL
 
-COM62-H001: OPEN
-BLOCKERS: COM62-H001
+COM62-H001: RESOLVED
+BLOCKERS: NONE
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -47,7 +47,7 @@ FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
 FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
-FAZ_6_2_STATUS: HARDENING_REQUIRED
+FAZ_6_2_STATUS: READY_TO_LOCK
 START_6_3: NO
 ```
 
@@ -55,7 +55,7 @@ START_6_3: NO
 
 # 1. EXACT STATE REVIEWED
 
-Reviewer independently re-read live GitHub and reviewed the exact final PR head.
+Reviewer independently re-read live GitHub after Implementer hardening.
 
 ```text
 main:
@@ -70,74 +70,37 @@ MERGED: FALSE
 base:
 main@8027239b4b168e98e8ee16e15787366632017156
 
-reviewed head:
-7d9ad5dbf9bfc045a7d7fb971dc80c6851e9ec08
+final reviewed head:
+3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628
 
 validated SHA:
-eeff565f318475b4b5796d92502894998332db15
+0a9b82f316ae109316821d9b81f97e5e13951516
 
 validated -> final:
 1 commit ahead
 0 behind
-only changed file:
-.github/workflows/faz6-6-2-validation.yml
-status: removed
+only delta:
+.github/workflows/faz6-6-2-validation.yml removed
 ```
 
-Base -> reviewed head contains only `sitescore-commerce/` product changes. Frozen FAZ 3/4/5 runtime source remains untouched. No 6.3 n8n workflow, 6.4 delivery/email, or 6.5 broad reconciliation scanner was introduced.
+The final commit is workflow-cleanup only; it does not modify production source, tests, migrations, package metadata, or documentation.
+
+Frozen FAZ 3/4/5 source remains untouched. No FAZ 6.3 n8n workflow, FAZ 6.4 delivery/email, or FAZ 6.5 broad recovery scanner was introduced.
 
 ---
 
-# 2. POSITIVE REVIEW RESULTS
+# 2. COM62-H001 — RESOLVED
 
-The following major 6.2 authority boundaries were confirmed on the reviewed head:
-
-```text
-sitescore-commerce == 0.3.0
-0003_fulfillment_refund migration present
-SiteScore consumed through authenticated HTTP /v1 only
-no runtime sitescore-api import/dependency/direct table access
-stable durable sitescore:analysis:v1:<order_id> operation identity
-analysis payload/target snapshot persisted before provider I/O
-analysis/report IDs bound durably and non-overwritable
-fresh server-side terminal reproof before refund eligibility
-stable sitescore:refund:v1:<order_id> operation identity
-PaymentIntent retrieved and server-validated before refund
-provider refunds listed before refund creation
-explicit full amount derived from provider payment evidence
-Stripe API version explicitly pinned
-payment/refund/provider IDs not caller-authorable
-POST automation trigger requires exact bearer before order lookup
-POST automation body must be empty
-sanitized automation status response
-provider I/O remains outside durable row-lock transaction
-migration namespace remains commerce-owned
-```
-
-The successful path terminates at `delivery_pending`; no report content download or delivery authority was implemented in 6.2.
-
----
-
-# 3. COM62-H001 — OPEN
-
-## SiteScore-shaped mismatched provider refund is misclassified as benign external full refund
-
-The checkpoint contract deliberately distinguishes three cases:
+Original blocker:
 
 ```text
-1. exact SiteScore refund metadata match
-   -> recover/reconcile
-
-2. truly unattributed external already-succeeded exact full refund
-   -> reconcile as externally fully refunded
-
-3. SiteScore-shaped but mismatching refund metadata
-   -> attention_required, fail closed
+A full succeeded refund carrying reserved SiteScore metadata with a mismatching
+SiteScore identity could fall through to the generic external-full recovery path.
 ```
 
-The implementation does not preserve that distinction.
+Reviewer verified the hardening on the final reviewed source.
 
-Current logic first defines an exact matching SiteScore refund using all durable metadata:
+Canonical reserved refund metadata identity remains:
 
 ```text
 sitescore_order_id
@@ -145,191 +108,213 @@ sitescore_refund_operation
 sitescore_refund_reason
 ```
 
-If no exact match is found, every remaining provider refund is treated by the generic external-history branch. That branch accepts a refund as an external full refund when there is exactly one refund with:
+The implementation now checks for the presence of any of those reserved keys before allowing generic external-full reconciliation.
 
-```text
-same PaymentIntent
-same currency
-positive amount
-status == succeeded
-amount == original full amount
-```
-
-It does not first reject a refund that already carries reserved SiteScore refund metadata with a conflicting order, operation, or reason.
-
-Therefore this provider evidence can currently be accepted as `external_full=True`:
-
-```text
-refund.payment_intent = exact durable PaymentIntent
-refund.amount = exact full amount
-refund.currency = USD
-refund.status = succeeded
-refund.metadata.sitescore_order_id = DIFFERENT ORDER
-refund.metadata.sitescore_refund_operation = stripe_full_refund_v1
-refund.metadata.sitescore_refund_reason = analysis_failed
-```
-
-The refund fails the exact SiteScore match, falls into the generic external-full branch, and can transition the local order/payment state to `refunded` instead of `attention_required`.
-
-This is a durable money-lineage / authority misattribution and directly violates the documented fail-closed provider-history policy. It is therefore a Reviewer blocker.
-
-```text
-COM62-H001: OPEN
-```
-
----
-
-# 4. REQUIRED HARDENING
-
-Implementer must harden provider-history classification before the external-full recovery path.
-
-Reserved SiteScore refund metadata keys are at least:
-
-```text
-sitescore_order_id
-sitescore_refund_operation
-sitescore_refund_reason
-```
-
-Required behavior:
+Required classification is now enforced:
 
 ```text
 exact expected SiteScore metadata identity
--> matching SiteScore recovery path
+-> canonical SiteScore refund recovery
 
-NO reserved SiteScore refund metadata present
+no reserved SiteScore refund metadata
 + exactly one same-PaymentIntent exact succeeded full refund
--> external_full recovery may remain allowed
+-> external_full recovery permitted
 
-ANY reserved SiteScore refund metadata present
-but expected SiteScore refund identity is not exact
+any reserved SiteScore refund metadata present
++ identity not exact
 -> attention_required
--> no refunded transition
--> no new refund create
+-> refund_failed
+-> no local refunded transition
+-> no new Stripe refund create
 -> no blind top-up
 ```
 
-Partially populated SiteScore metadata is also SiteScore-shaped and must fail closed; it must not be reclassified as unattributed external evidence.
+Partially populated reserved metadata also fails closed.
 
-The implementation may choose a helper/classifier, but the semantic boundary above is mandatory.
-
----
-
-# 5. REQUIRED ADVERSARIAL COVERAGE
-
-Add tests proving at least:
+Reviewer verified equivalent fail-closed behavior in both:
 
 ```text
-1. existing exact full succeeded refund + wrong sitescore_order_id
-   -> attention_required
-   -> no refunded transition
-   -> no create
-
-2. existing exact full succeeded refund + wrong sitescore_refund_operation
-   -> attention_required
-   -> no refunded transition
-   -> no create
-
-3. existing exact full succeeded refund + wrong sitescore_refund_reason
-   -> attention_required
-   -> no refunded transition
-   -> no create
-
-4. partially populated reserved SiteScore refund metadata
-   -> attention_required
-   -> no external_full classification
-
-5. truly unattributed metadata == {}
-   + exact succeeded full refund
-   -> external_full reconciliation still works
-   -> no second refund
-
-6. exact matching SiteScore metadata
-   -> matching recovery still works
-   -> no second refund
+FulfillmentService
+FulfillmentRuntimeService
 ```
 
-At least the state-changing cases must be exercised against real PostgreSQL where relevant so durable order/payment/refund-operation state is proved, not only an in-memory fake.
+Thus the production runtime path cannot bypass the hardened classifier.
+
+```text
+COM62-H001: RESOLVED
+```
 
 ---
 
-# 6. VALIDATION EVIDENCE
+# 3. ADVERSARIAL COVERAGE CONFIRMED
 
-Reviewer independently verified the existing exact-head validation evidence:
+Reviewer inspected the new hardening tests and confirmed coverage for:
+
+```text
+wrong sitescore_order_id
+wrong sitescore_refund_operation
+wrong sitescore_refund_reason
+partially populated reserved metadata
+truly unattributed {} external full refund
+exact matching SiteScore refund
+```
+
+The mismatch cases prove:
+
+```text
+order_state = attention_required
+payment_state = refund_failed
+canonical terminal fulfillment reason preserved
+no refund create
+no refund bind as external_full
+failure_code = conflicting_refund_metadata
+```
+
+The same state-changing mismatch cases are exercised against real PostgreSQL.
+
+The preserved recovery cases prove:
+
+```text
+truly unattributed exact full succeeded refund
+-> reconciles existing provider refund
+-> no second money effect
+
+exact matching SiteScore refund
+-> canonical recovery
+-> no second money effect
+```
+
+A test-only PostgreSQL reset-order correction was also reviewed. It deletes new 0003 FK child tables before parent `commerce.orders`; this is fixture isolation hardening and does not change production commerce semantics.
+
+---
+
+# 4. VALIDATION EVIDENCE
+
+Reviewer independently verified the authoritative hardening run:
 
 ```text
 workflow:
 faz6-6-2-exact-head-validation
 
 validated SHA:
-eeff565f318475b4b5796d92502894998332db15
+0a9b82f316ae109316821d9b81f97e5e13951516
 
 run:
-32256557493
+32262200452
 
 job:
-96079494257
+96097874783
 
 conclusion:
 SUCCESS
 
 Python:
-3.11.16
+3.11.15
 
 PostgreSQL:
 16.15
-
-sitescore-commerce:
-237 PASS
-
-frozen total:
-1504 PASS
-
-combined pytest total:
-1741 PASS
-
-migration upgrade -> downgrade base -> upgrade head:
-PASS
-
-0003 commerce namespace proof:
-PASS
-
-secret scan:
-PASS
-
-frozen-scope scan:
-PASS
-
-private S3-compatible storage regression:
-PASS
-
-Redis/Celery transport regression:
-PASS
 ```
 
-The green suite does not resolve COM62-H001 because the current tests cover exact matching SiteScore refunds, partial/multiple/conflicting history, and a truly unattributed `{}` external full refund, but do not cover a full succeeded refund carrying reserved SiteScore metadata with a mismatched SiteScore identity.
+Exact test evidence from the job log:
+
+```text
+sitescore-commerce:   255 PASS
+sitescore-report:      24 PASS
+sitescore-api:        105 PASS
+sitescore-app:         19 PASS
+sitescore-pipeline:    53 PASS
+sitescore-benchmarks: 191 PASS
+sitescore-metrics:     67 PASS
+sitescore-spatial:    180 PASS
+sitescore-providers:  418 PASS
+sitescore-data:       361 PASS
+sitescore-core:        86 PASS
+
+frozen total:        1504 PASS
+combined total:      1759 PASS
+```
+
+Additional validation:
+
+```text
+commerce migration upgrade -> downgrade base -> upgrade head: PASS
+commerce migration head 0003_fulfillment_refund: PASS
+commerce-owned Alembic namespace: PASS
+public.alembic_version absent: PASS
+exact dependency pins: PASS
+pip check: PASS
+secret scan: PASS
+frozen-scope scan: PASS
+private S3-compatible storage regression: PASS
+Redis/Celery transport regression: PASS
+exact frozen-base ancestry: PASS
+```
+
+Final head has no workflow run because the only validated->final change deliberately removes the temporary exact-head validation workflow. Reviewer independently verified that this is the sole delta.
+
+---
+
+# 5. AUTHORITY / SCOPE REVIEW
+
+Reviewer confirms the 6.2 boundary remains intact:
+
+```text
+sitescore-commerce == 0.3.0
+SiteScore consumed over authenticated frozen HTTP /v1 only
+no runtime sitescore-api import/dependency/direct DB write
+stable sitescore:analysis:v1:<order_id> identity
+immutable analysis target/key/payload/hash snapshot
+analysis/report server truth bound durably
+fresh canonical terminal re-proof before refund eligibility
+stable sitescore:refund:v1:<order_id> identity
+exact bound PaymentIntent server-side reconciliation
+provider refund history list-before-create
+full amount/currency/provider identity remain server-owned
+automation bearer checked before order lookup
+automation POST body carries no business truth
+sanitized automation response only
+provider I/O outside durable row-lock transaction
+successful 6.2 path stops at delivery_pending
+```
+
+No caller, browser, n8n, redirect, cached local state, or unverified provider field becomes money/refund/fulfillment authority.
+
+---
+
+# 6. NON-BLOCKING HANDOFF PROSE NOTE
+
+Implementer handoff/PR prose describes the hardening using some metadata names that do not match the actual canonical source names. Live source and tests are authoritative and correctly use:
+
+```text
+sitescore_order_id
+sitescore_refund_operation
+sitescore_refund_reason
+```
+
+This prose discrepancy does not alter runtime behavior, tested authority, or the checkpoint contract and is therefore not a LOCK blocker. Future handoffs should use the canonical source names above.
 
 ---
 
 # 7. REVIEWER DECISION
 
 ```text
-FAZ 6.2: HARDENING_REQUIRED
+FAZ 6.2: READY_TO_LOCK
 PR: #25
-REVIEWED_HEAD_SHA: 7d9ad5dbf9bfc045a7d7fb971dc80c6851e9ec08
+REVIEWED_HEAD_SHA: 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628
 
-COM62-H001: OPEN
-BLOCKERS: COM62-H001
+COM62-H001: RESOLVED
+BLOCKERS: NONE
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+USER_LOCK_AUTHORIZED: NO
 START_6_3: NO
 ```
 
-Implementer must harden only PR #25 / FAZ 6.2, update `implementer.md` with a new exact head and exact validation evidence, then stop at `READY_FOR_REVIEW`.
+Only the user may now authorize LOCK. Implementer must merge only if the user's literal LOCK is received and PR #25 still points to the exact reviewed head above against the exact expected base. After merge, 6.3 must remain unopened until Reviewer independently verifies the merge commit and new live `main`.
 
-No LOCK is authorized. Reviewer STOP.
+Reviewer STOP.
