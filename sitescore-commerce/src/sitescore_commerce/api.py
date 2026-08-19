@@ -17,8 +17,8 @@ from .fulfillment import (
     FulfillmentService,
     RefundProviderUnavailable,
     SiteScoreProviderUnavailable,
-    build_fulfillment_service,
 )
+from .fulfillment_runtime import build_runtime_fulfillment_service
 from .service import InvalidIdempotencyKey, OrderService
 from .settings import ConfigurationError, Settings
 from .webhook import (
@@ -85,7 +85,7 @@ def create_app(
         if webhook_service is None:
             webhook_service = PaymentWebhookService(settings, store, StripeWebhookVerifier(settings), StripeCheckoutEvidenceGateway(settings))
         if fulfillment_service is None:
-            fulfillment_service = build_fulfillment_service(settings, store)
+            fulfillment_service = build_runtime_fulfillment_service(settings, store)
 
     @app.exception_handler(InvalidIdempotencyKey)
     async def invalid_idempotency(_: Request, exc: InvalidIdempotencyKey) -> JSONResponse:
