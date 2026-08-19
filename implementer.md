@@ -20,9 +20,10 @@ CODE_BRANCH: faz6/6-1-webhook-payment-authority
 PR: #24
 PR_STATE: OPEN
 PR_DRAFT: FALSE
+PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-HEAD_SHA: 89f9f41b381412775aae732e4dc75d2b56919ade
-VALIDATED_SHA: 6b06b590d7512ff51ba2a7655aeaff79013af53b
+HEAD_SHA: 719a17c4359524337f57298252a59ccb89dcd0aa
+VALIDATED_SHA: 5da740379649a9d388030040c303b191aa3d9d28
 VALIDATED_TO_FINAL_DIFF: ONLY .github/workflows/faz6-6-1-validation.yml REMOVED
 
 PACKAGE_VERSION: sitescore-commerce==0.2.0
@@ -54,6 +55,22 @@ POSTMARK: NOT_IMPLEMENTED
 DELIVERY_GRANTS: NOT_IMPLEMENTED
 START_6_2: NO
 
+COM61-H001: RESOLVED
+COM61-H001_RESOLUTION:
+raw_body_sha256 removed from durable Stripe Event identity comparison
+raw_body_sha256 retained only as first-delivery byte evidence
+same event ID + same signed semantics + different valid JSON serialization dedupes/resumes
+true semantic duplicate conflict still fails closed
+PostgreSQL first-delivery race hardened with INSERT ON CONFLICT DO NOTHING + locked semantic re-read
+concurrent same-event delivery converges to one inbox identity and one paid outbox
+
+COM61-H001_ADVERSARIAL_TESTS:
+A same Event ID / same semantics / same raw bytes: PASS
+B same Event ID / same semantics / different JSON serialization independently official-signature verified: PASS
+C provider timeout leaves received; different-byte redelivery resumes and pays exactly once: PASS
+D same Event ID / true semantic conflict fails closed: PASS
+E real PostgreSQL concurrent same-event delivery: PASS
+
 SECURITY_CONTROLS:
 exact raw-body Stripe signature verification
 Stripe-Signature required
@@ -70,34 +87,26 @@ terminal paid state not downgraded by late/expired event
 contradictory terminal truth -> attention_required
 
 RECOVERY / IDEMPOTENCY:
-Stripe event_id durable dedupe
-concurrent duplicate webhook safe
+Stripe event_id durable transport dedupe
+raw-body digest is delivery evidence, not semantic event identity
+concurrent duplicate webhook safe via PostgreSQL conflict arbitration
 same Session via distinct Event IDs safe
-received-but-unprocessed event retryable
+received-but-unprocessed event retryable even when redelivery bytes differ
 webhook-first provider-success/local-bind-loss recovery supported
 existing different local Session binding never overwritten
 paid transition + order.paid.v1 outbox atomic in one PostgreSQL transaction
 processed duplicate returns safe 2xx without duplicate money transition
 
-CHANGED_FILES:
-sitescore-commerce/alembic/versions/0002_webhook_payment_authority.py
-sitescore-commerce/docs/CHECKPOINT_6_1_WEBHOOK_PAYMENT_AUTHORITY.md
-sitescore-commerce/pyproject.toml
-sitescore-commerce/src/sitescore_commerce/__init__.py
-sitescore-commerce/src/sitescore_commerce/api.py
-sitescore-commerce/src/sitescore_commerce/db.py
-sitescore-commerce/src/sitescore_commerce/settings.py
-sitescore-commerce/src/sitescore_commerce/webhook.py
-sitescore-commerce/tests/test_postgres_integration.py
-sitescore-commerce/tests/test_settings.py
-sitescore-commerce/tests/test_webhook_authority.py
-sitescore-commerce/tests/test_webhook_postgres.py
+CHANGED_FILES_SCOPE:
+only sitescore-commerce/ plus temporary validation workflow during CI
+final PR contains only sitescore-commerce/ changes
+frozen FAZ 3/4/5 source packages unchanged
 
-CI_RUN_ID: 32247997208
-CI_JOB_ID: 96052624136
+CI_RUN_ID: 32250938563
+CI_JOB_ID: 96061521892
 CI_CONCLUSION: SUCCESS
 POSTGRESQL_VERSION: 16.15
-COMMERCE_TESTS: 83 PASS
+COMMERCE_TESTS: 89 PASS
 FROZEN_SITESCORE_REPORT: 24 PASS
 FROZEN_SITESCORE_API: 105 PASS
 FROZEN_SITESCORE_APP: 19 PASS
@@ -109,7 +118,7 @@ FROZEN_SITESCORE_PROVIDERS: 418 PASS
 FROZEN_SITESCORE_DATA: 361 PASS
 FROZEN_SITESCORE_CORE: 86 PASS
 FROZEN_TOTAL_TESTS: 1504 PASS
-COMBINED_PYTEST_TOTAL: 1587 PASS
+COMBINED_PYTEST_TOTAL: 1593 PASS
 
 COMMERCE_MIGRATION_UPGRADE_DOWNGRADE_UPGRADE: PASS
 COMMERCE_MIGRATION_NAMESPACE: PASS
@@ -120,14 +129,14 @@ REDIS_CELERY_TRANSPORT_REGRESSION: PASS
 DEPENDENCY_PINS: PASS
 EXACT_BASE_ANCESTRY: PASS
 
-VALIDATION_CLOSURE:
-Initial CI exposed two ingress defects: missing Stripe-Signature endpoint guard and Stripe 15.4.0 StripeObject/Event .get() incompatibility. Both were corrected on the same PR. Fresh exact-head run 32247997208 at 6b06b590d7512ff51ba2a7655aeaff79013af53b passed all commerce and frozen regressions. Temporary validation workflow was then removed in commit 89f9f41b381412775aae732e4dc75d2b56919ade. GitHub compare proves the validated SHA -> final HEAD delta is exactly one commit removing only .github/workflows/faz6-6-1-validation.yml.
+HARDENING_VALIDATION_CLOSURE:
+Reviewer opened COM61-H001 because raw_body_sha256 had incorrectly participated in duplicate Event identity. The first hardening CI run then exposed a real PostgreSQL first-delivery race: concurrent deliveries could both observe no row and collide on the inbox primary key. Both issues were closed on the same PR. The authoritative fresh exact-head run 32250938563 validated SHA 5da740379649a9d388030040c303b191aa3d9d28 and passed 89 commerce tests plus the frozen 1504 baseline. The temporary workflow was removed afterward in final commit 719a17c4359524337f57298252a59ccb89dcd0aa. GitHub compare proves validated SHA -> final HEAD is exactly one commit removing only .github/workflows/faz6-6-1-validation.yml.
 
-REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION_SEEN: IMPLEMENT
-BLOCKERS_REPORTED_BY_REVIEWER: NONE
+REVIEWER_STATE_SEEN: HARDENING_REQUIRED
+IMPLEMENTER_ACTION_SEEN: HARDEN
+BLOCKERS_REPORTED_BY_REVIEWER: COM61-H001
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
-REVIEWER_BLOCKERS_RESOLVED: NONE
+REVIEWER_BLOCKERS_RESOLVED: COM61-H001
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -141,4 +150,4 @@ Payment truth remains server-owned.
 No exactly-once claim: implementation uses at-least-once delivery with durable identities, uniqueness, idempotent transitions, and reconciliation.
 ```
 
-FAZ 6.1 implementation is complete and submitted to Reviewer for independent audit. PR #24 is open, mergeable, non-draft, and unmerged at final handoff. No semantic LOCK or phase advancement is claimed. Implementer is STOPPED pending Reviewer action.
+FAZ 6.1 COM61-H001 hardening is complete and resubmitted to Reviewer for independent audit. PR #24 remains open and unmerged. No semantic LOCK or phase advancement is claimed. Implementer is STOPPED pending Reviewer action.
