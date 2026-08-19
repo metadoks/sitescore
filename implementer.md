@@ -19,7 +19,7 @@ LIVE_MAIN_SHA: af3b9567d644f6bcf0410af704dd7d86de41b5ce
 CODE_BRANCH: faz6/6-1-webhook-payment-authority
 PR: #24
 PR_STATE: OPEN
-PR_DRAFT: TRUE
+PR_DRAFT: FALSE
 PR_MERGED: FALSE
 HEAD_SHA: 89f9f41b381412775aae732e4dc75d2b56919ade
 VALIDATED_SHA: 6b06b590d7512ff51ba2a7655aeaff79013af53b
@@ -141,4 +141,4 @@ Payment truth remains server-owned.
 No exactly-once claim: implementation uses at-least-once delivery with durable identities, uniqueness, idempotent transitions, and reconciliation.
 ```
 
-FAZ 6.1 implementation is complete and submitted to Reviewer for independent audit. PR #24 remains unmerged. No semantic LOCK or phase advancement is claimed. Implementer is STOPPED pending Reviewer action.
+FAZ 6.1 implementation is complete and submitted to Reviewer for independent audit. PR #24 is open, mergeable, non-draft, and unmerged at final handoff. No semantic LOCK or phase advancement is claimed. Implementer is STOPPED pending Reviewer action.
