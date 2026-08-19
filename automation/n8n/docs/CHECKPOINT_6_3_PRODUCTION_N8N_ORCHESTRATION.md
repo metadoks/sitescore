@@ -24,7 +24,7 @@ The digest is resolved from the pulled exact 2.33.4 image in CI; floating `lates
 - human name: `SiteScore Order Paid Orchestration v1.0.0`
 - SiteScore business identity: `sitescore-order-paid-v1`
 - repository workflow version: `1.0.0`
-- workflow SHA-256: `5b4abd8cbc774633c26a93708992bc68ca396fabd8f1d573c648f73c113d448e`
+- workflow SHA-256: `162584b8fc1b16368ae16eeda7da5111827b7d21dd2ac51c6677c0ad465e46db`
 
 The sanitized GitHub JSON is durable workflow authority. The stable top-level n8n workflow `id` is required by n8n 2.33.4 import. A repository `versionId` is deliberately not pinned: n8n generates the runtime workflow-history version on import. n8n-generated version IDs are deployment metadata and are not SiteScore business identities.
 
@@ -94,19 +94,41 @@ GET /v1/automation/orders/{order_id}
 
 The workflow branches only on the sanitized commerce projection:
 
-- `advance` -> empty `POST /v1/automation/orders/{order_id}/advance` -> GET again
-- `refund` -> the same empty `/advance` trigger -> GET again; commerce re-proves refund authority
-- `wait` -> finite Wait -> GET again
+- `advance` -> empty `POST /v1/automation/orders/{order_id}/advance` -> finite poll-horizon check -> Wait -> authoritative GET again
+- `refund` -> the same empty `/advance` trigger -> the same finite horizon + Wait -> GET again; commerce re-proves refund authority
+- `wait` -> finite poll-horizon check -> Wait -> GET again
 - `delivery` -> stop cleanly at `delivery_pending`; FAZ 6.4 owns delivery
 - `none` or `terminal=true` -> stop with no business mutation
 
+There is no direct `Advance Commerce -> Get Commerce State` cycle. Every continuing cycle after `/advance` passes through `Within Poll Horizon?` and `Wait Before Poll` first. This is required because the frozen FAZ 6.2 commerce projection legitimately returns `next_action=advance` while paid fulfillment remains `analysis_pending`, `analysis_running`, or `report_pending`.
+
 n8n never sends analysis JSON/IDs, report IDs, paid flags, refund amount/reason, Stripe IDs, or fulfillment state.
+
+## N8N63-H001 hardening
+
+Reviewer identified that the original graph paced only `next_action=wait`. Real paid `analysis_pending` and `analysis_running` states return `next_action=advance`, so the old direct `Advance Commerce -> Get Commerce State` edge could busy-loop and bypass `SITESCORE_N8N_MAX_POLLS`.
+
+The hardened graph is:
+
+```text
+Advance Commerce
+-> Within Poll Horizon?
+   -> within horizon: Wait Before Poll -> Get Commerce State
+   -> horizon exceeded: Fail Poll Horizon
+```
+
+The same horizon node is also used for commerce `next_action=wait`. Therefore long-running analysis, report-pending continuation, and refund reconciliation cannot create an unpaced HTTP loop. Horizon exhaustion changes only the n8n execution outcome; it does not write a terminal commerce state. A later replay can continue from durable commerce truth.
 
 ## Retry, replay, and restart
 
 HTTP request nodes use bounded per-node retries. Polling uses `SITESCORE_N8N_POLL_SECONDS` and `SITESCORE_N8N_MAX_POLLS`; defaults are finite and no busy-loop is used. Reaching the execution polling horizon fails only the n8n execution and does not synthesize a terminal commerce state.
 
-Duplicate identical events, distinct event IDs for the same order, response-loss replay, and n8n restart during Wait all re-enter by reading current commerce durable state. n8n execution/static data is never business dedupe authority. Restart validation again waits for production-webhook registration rather than trusting `/healthz` alone.
+Duplicate identical events, distinct event IDs for the same order, response-loss replay, and n8n restart during a paced Wait all re-enter by reading current commerce durable state. n8n execution/static data is never business dedupe authority. Restart validation again waits for production-webhook registration rather than trusting `/healthz` alone.
+
+The runtime fault fixture also proves two uncertain transport cases against the actual native HTTP Request retry behavior:
+
+- a commerce GET returns an injected 5xx once, then recovers on retry and continues on the same order identity;
+- an `/advance` side effect becomes durable server-side, but the response is deliberately delayed beyond the node's 10-second timeout. The retry/replay observes the same durable order operation, with exactly one logical commerce side effect and no n8n-authored replacement identity.
 
 ## Error safety
 
@@ -122,10 +144,15 @@ Exact-head CI validates:
 - webhook auth and malformed/wrong-type rejection before commerce lookup;
 - authoritative GET before any advance;
 - empty-body `/advance` behavior;
-- duplicate same/different event convergence;
+- real paid `analysis_pending -> advance` for multiple paced cycles;
+- real paid `analysis_running -> advance`, including `report_pending -> advance`, with configured Wait between continuing cycles;
+- permanently nonterminal paid advance state stops at the configured poll horizon without fabricating commerce terminal truth;
+- restart during a paced real advance cycle converges from durable commerce state;
+- duplicate same-event and different-event same-order deliveries still converge after pacing;
+- injected commerce 5xx then native retry/recovery;
+- accepted-but-response-lost `/advance` timeout then same-operation retry/replay convergence;
 - delivery stop and all four canonical refund-guidance paths;
 - refund-pending Wait behavior;
-- persisted Wait restart/resume convergence;
 - sanitized export/static security checks and zero Code nodes;
 - commerce PostgreSQL tests and Alembic rollback/re-forward;
 - frozen 1504-test baseline, private S3 regression, and Redis/Celery transport regression.
