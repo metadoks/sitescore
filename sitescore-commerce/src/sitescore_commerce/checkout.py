@@ -10,6 +10,7 @@ from .contracts import ProductCode
 from .settings import Settings
 
 CATALOG_VERSION = "v1"
+CHECKOUT_OPERATION_VERSION = "stripe_checkout_v1"
 
 
 class CheckoutProviderUnavailable(RuntimeError):
@@ -30,6 +31,20 @@ class ProductCatalogEntry:
 
 
 @dataclass(frozen=True)
+class CheckoutOperation:
+    order_id: UUID
+    provider_idempotency_key: str
+    operation_version: str
+    product_code: ProductCode
+    catalog_version: str
+    stripe_price_id: str
+    quantity: int
+    customer_email: str
+    success_url: str
+    cancel_url: str
+
+
+@dataclass(frozen=True)
 class CheckoutResult:
     session_id: str
     url: str
@@ -40,7 +55,7 @@ class CheckoutResult:
 
 
 class CheckoutGateway(Protocol):
-    def create_checkout(self, *, order_id: UUID, email: str, entry: ProductCatalogEntry, provider_idempotency_key: str, success_url: str, cancel_url: str) -> CheckoutResult: ...
+    def create_checkout(self, *, operation: CheckoutOperation) -> CheckoutResult: ...
 
 
 def catalog_from_settings(settings: Settings) -> ProductCatalogEntry:
@@ -61,21 +76,25 @@ class StripeCheckoutGateway:
         self._client = StripeClient(settings.stripe_secret_key)
         self._api_version = settings.stripe_api_version
 
-    def create_checkout(self, *, order_id: UUID, email: str, entry: ProductCatalogEntry, provider_idempotency_key: str, success_url: str, cancel_url: str) -> CheckoutResult:
+    def create_checkout(self, *, operation: CheckoutOperation) -> CheckoutResult:
+        if operation.operation_version != CHECKOUT_OPERATION_VERSION:
+            raise CheckoutInvariantError("unsupported durable checkout operation version")
+        if operation.quantity != 1:
+            raise CheckoutInvariantError("checkout quantity invariant failed")
         params = {
             "mode": "payment",
             "ui_mode": "hosted",
             "payment_method_types": ["card"],
-            "line_items": [{"price": entry.stripe_price_id, "quantity": entry.quantity}],
-            "client_reference_id": str(order_id),
-            "customer_email": email,
-            "success_url": success_url,
-            "cancel_url": cancel_url,
-            "metadata": {"sitescore_order_id": str(order_id), "sitescore_product_code": entry.product_code.value, "sitescore_catalog_version": entry.catalog_version},
-            "payment_intent_data": {"metadata": {"sitescore_order_id": str(order_id), "sitescore_product_code": entry.product_code.value}},
+            "line_items": [{"price": operation.stripe_price_id, "quantity": operation.quantity}],
+            "client_reference_id": str(operation.order_id),
+            "customer_email": operation.customer_email,
+            "success_url": operation.success_url,
+            "cancel_url": operation.cancel_url,
+            "metadata": {"sitescore_order_id": str(operation.order_id), "sitescore_product_code": operation.product_code.value, "sitescore_catalog_version": operation.catalog_version},
+            "payment_intent_data": {"metadata": {"sitescore_order_id": str(operation.order_id), "sitescore_product_code": operation.product_code.value}},
         }
         try:
-            session = self._client.v1.checkout.sessions.create(params=params, options={"stripe_version": self._api_version, "idempotency_key": provider_idempotency_key})
+            session = self._client.v1.checkout.sessions.create(params=params, options={"stripe_version": self._api_version, "idempotency_key": operation.provider_idempotency_key})
         except Exception as exc:
             raise CheckoutProviderUnavailable("checkout provider is unavailable") from exc
         expires_at = None
@@ -86,16 +105,16 @@ class StripeCheckoutGateway:
         return CheckoutResult(session_id=str(getattr(session, "id", "")), url=str(getattr(session, "url", "")), expires_at=expires_at, mode=str(getattr(session, "mode", "")), client_reference_id=str(getattr(session, "client_reference_id", "")), metadata={str(k): str(v) for k, v in metadata.items()})
 
 
-def validate_checkout_result(result: CheckoutResult, *, order_id: UUID, entry: ProductCatalogEntry) -> None:
+def validate_checkout_result(result: CheckoutResult, *, operation: CheckoutOperation) -> None:
     if not result.session_id.startswith("cs_"):
         raise CheckoutInvariantError("checkout provider returned an invalid session identity")
     if not result.url.startswith("https://"):
         raise CheckoutInvariantError("checkout provider returned an invalid hosted URL")
     if result.mode != "payment":
         raise CheckoutInvariantError("checkout mode binding mismatch")
-    if result.client_reference_id != str(order_id):
+    if result.client_reference_id != str(operation.order_id):
         raise CheckoutInvariantError("checkout order binding mismatch")
-    expected = {"sitescore_order_id": str(order_id), "sitescore_product_code": entry.product_code.value, "sitescore_catalog_version": entry.catalog_version}
+    expected = {"sitescore_order_id": str(operation.order_id), "sitescore_product_code": operation.product_code.value, "sitescore_catalog_version": operation.catalog_version}
     for key, value in expected.items():
         if result.metadata.get(key) != value:
             raise CheckoutInvariantError("checkout metadata binding mismatch")
