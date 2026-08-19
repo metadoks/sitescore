@@ -8,22 +8,21 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.0
 CHECKPOINT_TITLE: Commerce / Order Domain + Stripe Checkout Foundation
-IMPLEMENTER_STATE: LOCK_EXECUTION
+IMPLEMENTER_STATE: LOCKED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
-LIVE_MAIN_SHA_AT_HANDOFF: 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
+PRE_LOCK_MAIN_SHA: 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
 CODE_BRANCH: faz6/6-0-commerce-order-checkout
 PR: #23
-PR_STATE_PRE_LOCK: OPEN
-PR_DRAFT_PRE_LOCK: FALSE
-PR_MERGEABLE_PRE_LOCK: TRUE
-PR_MERGED_PRE_LOCK: FALSE
-HEAD_SHA: 8a4e358709ae7a662bf079722db042fb6e319ffd
+PR_STATE: CLOSED
+PR_DRAFT: FALSE
+PR_MERGED: TRUE
+REVIEWED_HEAD_SHA: 8a4e358709ae7a662bf079722db042fb6e319ffd
+MERGE_COMMIT_SHA: af3b9567d644f6bcf0410af704dd7d86de41b5ce
+LIVE_MAIN_SHA_POST_LOCK: af3b9567d644f6bcf0410af704dd7d86de41b5ce
 REVIEWER_STATE_SEEN: READY_TO_LOCK
 IMPLEMENTER_ACTION_SEEN: LOCK_IF_USER_AUTHORIZED
-REVIEWED_HEAD_SEEN: 8a4e358709ae7a662bf079722db042fb6e319ffd
 COM60-H001: RESOLVED
 COM60-H002: RESOLVED
 BLOCKERS_REPORTED_BY_REVIEWER: NONE
@@ -47,10 +46,12 @@ FAZ_3_STATUS_PRESERVED: FROZEN
 FAZ_4_STATUS_PRESERVED: FROZEN
 FAZ_5_STATUS_PRESERVED: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
-FAZ_6_0_STATUS: LOCK_AUTHORIZED
+FAZ_6_0_STATUS: LOCKED
 START_6_1: NO
 ```
 
-User explicitly issued `LOCK` after Reviewer independently moved checkpoint 6.0 to `READY_TO_LOCK` for exact head `8a4e358709ae7a662bf079722db042fb6e319ffd`, with `COM60-H001` and `COM60-H002` resolved and `BLOCKERS: NONE`. Implementer verified live PR #23 is open, mergeable, non-draft, unmerged, exact head matches Reviewer, and live main remains expected frozen base `0e370940ee5c8c1253db72fa7e33078fb4ef3b2c` before merge.
+User explicitly issued `LOCK` after Reviewer independently approved exact head `8a4e358709ae7a662bf079722db042fb6e319ffd` with `READY_TO_LOCK`, `COM60-H001: RESOLVED`, `COM60-H002: RESOLVED`, and `BLOCKERS: NONE`.
 
-Merge is authorized only for PR #23 at exact expected head. No 6.1 work is authorized by this LOCK.
+Implementer re-verified PR #23 exact head and pre-lock main, then merged with GitHub's expected-head guard. Merge succeeded as `af3b9567d644f6bcf0410af704dd7d86de41b5ce`. Post-lock verification confirms PR #23 is closed and merged and live `main` equals that merge commit.
+
+FAZ 6.0 is LOCKED. This LOCK does not authorize beginning FAZ 6.1; `START_6_1: NO` remains in force until the next Reviewer/Implementer checkpoint instruction.
