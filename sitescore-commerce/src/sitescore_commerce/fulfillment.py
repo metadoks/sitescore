@@ -899,6 +899,10 @@ def _is_matching_refund(refund: RefundEvidence, operation: RefundOperation) -> b
     return all(refund.metadata.get(k) == v for k, v in operation.metadata.items())
 
 
+def _has_reserved_refund_metadata(refund: RefundEvidence, operation: RefundOperation) -> bool:
+    return bool(set(operation.metadata).intersection(refund.metadata))
+
+
 @dataclass
 class FulfillmentService:
     settings: Settings
@@ -1018,6 +1022,9 @@ class FulfillmentService:
             return
 
         if provider_refunds:
+            if any(_has_reserved_refund_metadata(r, operation) for r in provider_refunds):
+                self.store.mark_attention(order_id=order_id, code="conflicting_refund_metadata", refund_failure=True)
+                return
             valid_same_pi = [r for r in provider_refunds if r.payment_intent_id == operation.stripe_payment_intent_id and r.currency == operation.currency and r.amount > 0]
             if len(valid_same_pi) == 1 and valid_same_pi[0].status == "succeeded" and valid_same_pi[0].amount == operation.original_amount_received:
                 self.store.bind_refund(operation=operation, evidence=valid_same_pi[0], external_full=True)
