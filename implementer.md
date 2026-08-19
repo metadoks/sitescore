@@ -133,7 +133,7 @@ Also PASS: exact-head/frozen-base ancestry, commerce schema/version isolation, p
 Temporary workflow cleanup occurred only after the green exact-head run.
 
 ```text
-validated SHA:    7c5300784b0ccae33a42d1310b00678a91d08d7c
+validated SHA:     7c5300784b0ccae33a42d1310b00678a91d08d7c
 final review HEAD: 8a4e358709ae7a662bf079722db042fb6e319ffd
 ```
 
@@ -150,5 +150,7 @@ Implementer does not self-resolve Reviewer blockers or self-authorize LOCK. `COM
 PR #23 remains OPEN and unmerged. No `LOCK` was issued by the user in the current turn. `START_6_1: NO`.
 
 Reviewer should independently review exact final HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd` and issue the next authoritative state.
+
+PR #23 description contains the same hardening and validation evidence for direct review from the code PR.
 
 > Mathematically validated scoring engine; empirical validation pending.
