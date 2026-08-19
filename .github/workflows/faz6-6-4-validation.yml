@@ -55,12 +55,27 @@ jobs:
       - name: Verify package version
         run: python -c "import importlib.metadata as m; assert m.version('sitescore-commerce')=='0.5.0'"
       - name: Commerce migration cycle and full suite
+        id: commerce
         working-directory: sitescore-commerce
+        shell: bash
         run: |
-          alembic upgrade head
-          alembic downgrade base
-          alembic upgrade head
-          python -m pytest -o addopts='' -q
+          set +e
+          alembic upgrade head > /tmp/commerce-validation.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then alembic downgrade base >> /tmp/commerce-validation.log 2>&1; status=$?; fi
+          if [ "$status" -eq 0 ]; then alembic upgrade head >> /tmp/commerce-validation.log 2>&1; status=$?; fi
+          if [ "$status" -eq 0 ]; then python -m pytest -o addopts='' -q --tb=short >> /tmp/commerce-validation.log 2>&1; status=$?; fi
+          cat /tmp/commerce-validation.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload commerce diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: faz6-6-4-commerce-diagnostics
+          path: /tmp/commerce-validation.log
+          retention-days: 1
+      - name: Enforce commerce result
+        run: test '${{ steps.commerce.outputs.status }}' = '0'
       - name: Verify migration head
         run: |
           python - <<'PY'
