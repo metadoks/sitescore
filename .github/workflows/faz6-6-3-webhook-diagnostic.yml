@@ -1,0 +1,61 @@
+name: faz6-6-3-webhook-diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.event.pull_request.head.sha }}"}
+      - name: Diagnose published webhook statuses on n8n 2.33.4
+        run: |
+          set -euo pipefail
+          IMAGE=n8nio/n8n:2.33.4
+          docker pull "$IMAGE" >/dev/null
+          test "$(docker run --rm "$IMAGE" --version | tail -n1 | tr -d '\r')" = "2.33.4"
+          VOL="n8n-webhook-diag-${GITHUB_RUN_ID}"
+          CONTAINER="n8n-webhook-diag-${GITHUB_RUN_ID}"
+          TMP="$(mktemp -d)"
+          mkdir -p "$TMP/export" && chmod 777 "$TMP/export"
+          ENC=$(python -c 'import secrets; print(secrets.token_hex(32))')
+          INGRESS=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+          AUTO=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
+          echo "::add-mask::$ENC"; echo "::add-mask::$INGRESS"; echo "::add-mask::$AUTO"
+          cleanup(){ docker logs "$CONTAINER" 2>&1 | tail -n 200 || true; docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; if [[ -n "${FAKE_PID:-}" ]]; then kill "$FAKE_PID" >/dev/null 2>&1 || true; fi; docker volume rm "$VOL" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+          trap cleanup EXIT
+          docker volume create "$VOL" >/dev/null
+          docker run --rm -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOL:/home/node/.n8n" -v "$PWD/automation/n8n/workflows:/workflows:ro" "$IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
+          set +e
+          docker run --rm -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOL:/home/node/.n8n" "$IMAGE" publish:workflow --id=sitescoreOrderPaidV1
+          PUB=$?
+          set -e
+          echo "PUBLISH_EXIT=$PUB"
+          FAKE_COMMERCE_AUTOMATION_KEY="$AUTO" FAKE_COMMERCE_LOG_FILE="$TMP/fake.jsonl" python automation/n8n/tests/fake_commerce_server.py >"$TMP/fake.log" 2>&1 & FAKE_PID=$!
+          for _ in $(seq 1 30); do if curl -fsS http://127.0.0.1:18080/__stats >/dev/null 2>&1; then break; fi; sleep .2; done
+          docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5678:5678 \
+            -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_HOST=0.0.0.0 -e N8N_PORT=5678 -e N8N_PROTOCOL=http \
+            -e N8N_WEBHOOK_URL=http://127.0.0.1:5678/ -e N8N_SECURE_COOKIE=false \
+            -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false \
+            -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false -e COMMERCE_N8N_INGRESS_SECRET="$INGRESS" \
+            -e COMMERCE_AUTOMATION_API_KEY="$AUTO" -e SITESCORE_COMMERCE_AUTOMATION_BASE_URL=http://host.docker.internal:18080 \
+            -e SITESCORE_N8N_POLL_SECONDS=2 -e SITESCORE_N8N_MAX_POLLS=10 -v "$VOL:/home/node/.n8n" "$IMAGE" >/dev/null
+          for _ in $(seq 1 80); do if curl -fsS http://127.0.0.1:5678/healthz >/dev/null 2>&1; then break; fi; sleep .5; done
+          curl -fsS http://127.0.0.1:5678/healthz >/dev/null
+          URL=http://127.0.0.1:5678/webhook/sitescore-order-paid-v1
+          DELIVERY=00000000-0000-4000-8000-000000000001
+          PAYLOAD='{"event_id":"10000000-0000-4000-8000-000000000001","event_type":"order.paid.v1","order_id":"'"$DELIVERY"'","occurred_at":"2026-08-19T15:30:00Z"}'
+          echo '--- NO AUTH ---'
+          curl -sS -D "$TMP/noauth.headers" -o "$TMP/noauth.body" -H 'Content-Type: application/json' -X POST "$URL" -d "$PAYLOAD" || true
+          sed -n '1,10p' "$TMP/noauth.headers"; cat "$TMP/noauth.body"; echo
+          echo '--- WRONG AUTH ---'
+          curl -sS -D "$TMP/wrong.headers" -o "$TMP/wrong.body" -H 'Content-Type: application/json' -H 'Authorization: Bearer wrong-secret' -X POST "$URL" -d "$PAYLOAD" || true
+          sed -n '1,10p' "$TMP/wrong.headers"; cat "$TMP/wrong.body"; echo
+          echo '--- VALID AUTH ---'
+          curl -sS -D "$TMP/valid.headers" -o "$TMP/valid.body" -H 'Content-Type: application/json' -H "Authorization: Bearer $INGRESS" -X POST "$URL" -d "$PAYLOAD" || true
+          sed -n '1,10p' "$TMP/valid.headers"; cat "$TMP/valid.body"; echo
+          sleep 2
+          echo '--- FAKE COMMERCE STATS ---'
+          curl -fsS http://127.0.0.1:18080/__stats
