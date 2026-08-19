@@ -27,7 +27,7 @@ A browser redirect, Checkout URL, event type, event payment fields, metadata, ca
 - 300-second signature tolerance;
 - invalid/missing signatures -> 400 with no inbox/payment mutation;
 - oversized body -> 413 before webhook service invocation;
-- raw bodies are not persisted or logged; only SHA-256 is stored.
+- raw bodies are not persisted or logged; only SHA-256 evidence is stored.
 
 Required configuration: `STRIPE_WEBHOOK_SECRET`, `STRIPE_EXPECTED_LIVEMODE`, existing `STRIPE_SECRET_KEY`, and exact `STRIPE_API_VERSION=2026-07-29.dahlia`.
 
@@ -42,7 +42,15 @@ Correctly signed unsupported/async-payment events are durable `ignored` triggers
 
 ## Durable inbox
 
-`commerce.stripe_event_inbox` stores event identity, event/object types, API version, livemode, event-created timestamp, raw-body SHA-256, processing state, failure/attention code, timestamps, and attempt count. Duplicate event IDs converge to one logical identity; conflicting duplicate identity fails closed.
+`commerce.stripe_event_inbox` uses `stripe_event_id` as the durable transport dedupe identity and stores event/object type, API version, livemode, event-created timestamp, raw-body SHA-256 evidence, processing state, failure/attention code, timestamps, and attempt count.
+
+The raw-body SHA-256 is **delivery-byte evidence, not event identity**. The first accepted delivery digest is preserved for audit. Every redelivery is independently verified against its own exact raw bytes and `Stripe-Signature`; a semantically identical redelivery of the same Stripe Event ID may therefore have a different harmless JSON serialization without becoming an identity conflict. Essential signed semantics (event type, Checkout Session/object ID, API version, livemode, event-created timestamp) must still match or the duplicate fails closed.
+
+Thus:
+
+- same Event ID + same semantics + same bytes -> one inbox identity, retry-safe;
+- same Event ID + same semantics + different valid JSON bytes -> one inbox identity, attempt evidence increments, processed duplicates return safely and `received` events resume processing;
+- same Event ID + true semantic conflict -> `EventIdentityConflict`, no payment/order mutation.
 
 ## Server-side reconciliation
 
