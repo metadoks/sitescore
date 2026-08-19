@@ -94,6 +94,8 @@ def create_app(*, service: OrderService | None = None, webhook_service: PaymentW
     @app.post("/v1/webhooks/stripe", status_code=200)
     async def stripe_webhook(request: Request, stripe_signature: str | None = Header(default=None, alias="Stripe-Signature")) -> dict[str, str]:
         raw_body = await _read_webhook_body(request)
+        if not stripe_signature:
+            raise WebhookVerificationError("Stripe-Signature header is required")
         return await run_in_threadpool(webhook_service.handle, raw_body=raw_body, signature=stripe_signature)
 
     return app
