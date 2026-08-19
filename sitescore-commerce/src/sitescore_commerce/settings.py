@@ -41,6 +41,15 @@ def _validate_redirect_base(value: str, *, environment: str) -> str:
     return value.rstrip("?")
 
 
+def _parse_bool(name: str, value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+    if normalized in {"0", "false", "no"}:
+        return False
+    raise ConfigurationError(f"{name} must be true or false")
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -49,6 +58,8 @@ class Settings:
     success_url_base: str
     cancel_url_base: str
     environment: str = "production"
+    stripe_webhook_secret: str = ""
+    stripe_expected_livemode: bool = False
     stripe_api_version: str = STRIPE_API_VERSION
 
     @classmethod
@@ -66,5 +77,7 @@ class Settings:
             success_url_base=_validate_redirect_base(_require("COMMERCE_SUCCESS_URL_BASE"), environment=environment),
             cancel_url_base=_validate_redirect_base(_require("COMMERCE_CANCEL_URL_BASE"), environment=environment),
             environment=environment,
+            stripe_webhook_secret=_require("STRIPE_WEBHOOK_SECRET"),
+            stripe_expected_livemode=_parse_bool("STRIPE_EXPECTED_LIVEMODE", _require("STRIPE_EXPECTED_LIVEMODE")),
             stripe_api_version=STRIPE_API_VERSION,
         )
