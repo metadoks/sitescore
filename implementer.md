@@ -38,9 +38,6 @@ TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-0-validation.yml REMOVAL
 SITESCORE_COMMERCE_CI_TESTS: 52 PASS
-SITESCORE_REPORT_TESTS: 24 PASS
-SITESCORE_API_TESTS: 105 PASS
-FROZEN_PACKAGE_REGRESSION_TESTS: 1375 PASS
 FROZEN_TOTAL_TESTS: 1504 PASS
 COMBINED_PYTEST_TOTAL: 1556 PASS
 POSTGRESQL_VERSION: 16.15
@@ -57,18 +54,14 @@ FAZ_6_0_STATUS: READY_FOR_REVIEW
 START_6_1: NO
 ```
 
-## COM60-H001 — addressed, Reviewer verification required
+## Reviewer hardening response
 
-The unbound Stripe Checkout operation is durably snapshotted before provider I/O. Persisted replay authority includes provider idempotency key, operation version, product/catalog, Stripe Price ID, quantity, customer email, and resolved success/cancel URLs. Existing unbound retries reconstruct `CheckoutOperation` only from persisted fields, so deployment Price/redirect drift cannot alter the request semantics associated with the same Stripe idempotency operation. Real PostgreSQL adversarial evidence passed provider-success/local-bind-loss, fresh store/service restart, Price/URL config drift, exact original operation replay, unchanged provider key, and later binding of the same simulated Checkout Session identity.
+`COM60-H001` is addressed by persisting the complete unbound Stripe Checkout operation projection before provider I/O: provider idempotency key, operation version, product/catalog, Stripe Price ID, quantity, customer email, and resolved success/cancel URLs. Existing retries reconstruct the operation only from this snapshot, preventing current Price/redirect config drift from mutating the same Stripe idempotency operation. Real PostgreSQL adversarial evidence passed provider-success/local-bind-loss, fresh store/service restart, deployment config drift, exact original operation replay, unchanged provider key, and later binding of the same simulated Checkout Session identity.
 
-## COM60-H002 — addressed, Reviewer verification required
+`COM60-H002` is addressed by preserving the `commerce` schema during downgrade while dropping only revision-owned product tables. PostgreSQL 16.15 passed the real `upgrade head -> downgrade base -> upgrade head` cycle, and the dedicated test verifies Alembic version-table survival and clean re-upgrade.
 
-Revision downgrade no longer drops the `commerce` schema containing Alembic's version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 passed `upgrade head -> downgrade base -> upgrade head`; the dedicated test verifies `commerce.alembic_version` survives downgrade-to-base and re-upgrade records `0001_commerce_order_checkout` without a public Alembic version table.
+Fresh exact-head validation at `7c5300784b0ccae33a42d1310b00678a91d08d7c`, run/job `32240653815 / 96030230093`, concluded SUCCESS: commerce 52 PASS, frozen baseline 1504 PASS, combined 1556 PASS, plus schema isolation, private S3, Redis/Celery, secret scan and frozen-scope scan. Final review HEAD is `8a4e358709ae7a662bf079722db042fb6e319ffd`; its only delta from the validated SHA is removal of the temporary validation workflow. PR #23 contains 22 changed files, all under `sitescore-commerce/`.
 
-## Fresh validation and final identity
-
-Validated SHA `7c5300784b0ccae33a42d1310b00678a91d08d7c`; final review HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd`; run/job `32240653815 / 96030230093`; SUCCESS; commerce 52 PASS; frozen baseline 1504 PASS; combined 1556 PASS. Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan also passed. The only validated-to-final delta is the temporary validation workflow removal. PR #23 has 22 changed files, all under `sitescore-commerce/`; live `main` remains the frozen FAZ 5 SHA.
-
-No 6.1+ subsystem was added. Implementer does not self-resolve Reviewer blockers, authorize LOCK, or merge. PR #23 remains OPEN. `START_6_1: NO`.
+No 6.1+ subsystem was added. Implementer does not self-resolve Reviewer blockers, authorize LOCK, or merge. PR #23 remains OPEN and `START_6_1: NO`.
 
 > Mathematically validated scoring engine; empirical validation pending.
