@@ -71,13 +71,11 @@ FAZ_6_0_STATUS: READY_FOR_REVIEW
 START_6_1: NO
 ```
 
-## 1. Reviewer blocker closure attempt
+## Reviewer blocker closure attempt
 
 Reviewer requested hardening only for `COM60-H001` and `COM60-H002`. Implementer changed no frozen FAZ 3/4/5 runtime package and did not start FAZ 6.1.
 
 ### COM60-H001 — durable exact Stripe operation replay
-
-Addressed by making the unbound Stripe Checkout operation itself durable before provider I/O.
 
 `commerce.checkout_sessions` now persists the immutable operation projection required to replay the same Stripe idempotent operation across process restart and deployment configuration drift:
 
@@ -93,32 +91,15 @@ success_url
 cancel_url
 ```
 
-`OrderService` generates a server-owned candidate order UUID, resolves the initial Price/quantity/email/success/cancel operation against that order, and passes the entire snapshot into the first PostgreSQL transaction.
+`OrderService` authors the original snapshot before provider I/O. On retry it reconstructs `CheckoutOperation` exclusively from persisted fields; current deployment Price and redirect settings cannot mutate an existing unbound operation. `StripeCheckoutGateway` projects its request only from that durable operation, including the unchanged server-owned provider idempotency key.
 
-On retry, the service reloads the existing order and checkout-operation row and reconstructs `CheckoutOperation` exclusively from persisted fields. Current deployment Price or redirect settings are not consulted for an existing unbound operation.
-
-`StripeCheckoutGateway` now projects the provider request only from this durable `CheckoutOperation`, including the same server-owned provider idempotency key.
-
-The PostgreSQL adversarial test `test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss` proves:
-
-```text
-T1 order + checkout operation durable before provider call
-T2 provider success followed by forced local bind failure leaves replayable durable state
-T3 a new CommerceStore/service instance retries and binds the same returned Stripe Checkout Session identity
-T4 Price A / URLs A remain authoritative even after current config changes to Price B / URLs B
-T5 provider_idempotency_key is unchanged
-T6 the replayed CheckoutOperation equals the original CheckoutOperation
-```
-
-Same caller idempotency key + same payload also preserves the original durable operation snapshot when later callers run under changed deployment Price/redirect configuration.
+The real PostgreSQL test `test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss` proves provider-success/local-bind-loss recovery across a fresh store/service instance, unchanged provider operation identity, unchanged Price A / URLs A after config drift to Price B / URLs B, and later binding of the same simulated Checkout Session identity.
 
 ### COM60-H002 — safe Alembic downgrade
 
-Addressed by removing `DROP SCHEMA commerce CASCADE` from revision downgrade.
+The revision downgrade no longer executes `DROP SCHEMA commerce CASCADE`. It drops only revision-owned product tables while preserving the schema that hosts Alembic's own version table.
 
-Downgrade now drops only revision-owned commerce product tables in dependency-safe order and deliberately leaves schema `commerce` intact while Alembic manages `commerce.alembic_version`.
-
-Real PostgreSQL 16.15 validation executed:
+Real PostgreSQL 16.15 validation executed and passed:
 
 ```text
 alembic upgrade head
@@ -126,28 +107,17 @@ alembic downgrade base
 alembic upgrade head
 ```
 
-All three transitions succeeded. The dedicated test additionally verifies that after downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; the subsequent upgrade rebuilds the product tables and returns `commerce.alembic_version` to `0001_commerce_order_checkout` without creating a public Alembic version table.
+The dedicated rollback-cycle test verifies that after downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade rebuilds the product tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
 
-## 2. Fresh authoritative validation
-
-Exact validated code SHA:
+## Fresh authoritative validation
 
 ```text
-7c5300784b0ccae33a42d1310b00678a91d08d7c
-```
+validated SHA: 7c5300784b0ccae33a42d1310b00678a91d08d7c
+run:           32240653815
+job:           96030230093
+conclusion:    SUCCESS
+PostgreSQL:    16.15
 
-GitHub Actions:
-
-```text
-run: 32240653815
-job: 96030230093
-conclusion: SUCCESS
-PostgreSQL: 16.15
-```
-
-Pytest results:
-
-```text
 sitescore-commerce: 52 PASS
 sitescore-report:    24 PASS
 sitescore-api:       105 PASS
@@ -156,80 +126,29 @@ frozen total:        1504 PASS
 combined total:      1556 PASS
 ```
 
-The commerce suite explicitly executed and passed:
+Also PASS: exact-head/frozen-base ancestry, commerce schema/version isolation, private S3-compatible artifact regression, Redis/Celery execution transport, secret scan, and frozen-scope scan.
+
+## Validation cleanup / final review identity
+
+Temporary workflow cleanup occurred only after the green exact-head run.
 
 ```text
-test_upgrade_downgrade_base_upgrade_cycle_is_safe
-test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss
+validated SHA:    7c5300784b0ccae33a42d1310b00678a91d08d7c
+final review HEAD: 8a4e358709ae7a662bf079722db042fb6e319ffd
 ```
 
-Also re-proven:
+GitHub compare shows exactly one later commit and the only delta is removal of `.github/workflows/faz6-6-0-validation.yml`.
 
-```text
-exact PR-head checkout / frozen-base ancestry: PASS
-commerce schema/version isolation: PASS
-private S3-compatible artifact regression: PASS
-Redis/Celery execution transport: PASS
-secret scan: PASS
-frozen-scope scan: PASS
-```
+Final PR #23 contains exactly 22 changed files, all under `sitescore-commerce/`. Live `main` remains `0e370940ee5c8c1253db72fa7e33078fb4ef3b2c`.
 
-## 3. Validation cleanup / final review identity
+## Authority boundary / stop state
 
-Temporary validation workflow was removed only after the exact-head green run.
+Hardening does not add webhook/payment truth, paid transition/outbox, analysis/report dispatch, refund, n8n, Postmark, delivery grants, public download, or reconciliation workers. Checkout creation/browser redirect remains non-authoritative for payment.
 
-```text
-validated SHA:
-7c5300784b0ccae33a42d1310b00678a91d08d7c
+Implementer does not self-resolve Reviewer blockers or self-authorize LOCK. `COM60-H001` and `COM60-H002` are only `ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER`.
 
-final review HEAD:
-8a4e358709ae7a662bf079722db042fb6e319ffd
-```
+PR #23 remains OPEN and unmerged. No `LOCK` was issued by the user in the current turn. `START_6_1: NO`.
 
-GitHub compare proves exactly one commit between them and the only file delta is:
-
-```text
-REMOVED .github/workflows/faz6-6-0-validation.yml
-```
-
-Final PR #23 contains exactly 22 changed files, all under `sitescore-commerce/`. No frozen FAZ 3/4/5 runtime source is changed.
-
-Live `main` remains the expected frozen FAZ 5 SHA:
-
-```text
-0e370940ee5c8c1253db72fa7e33078fb4ef3b2c
-```
-
-## 4. Authority boundary preserved
-
-Hardening does not add payment truth or any 6.1+ capability.
-
-Still NOT implemented:
-
-```text
-Stripe webhook/payment authority
-paid transition
-paid outbox
-SiteScore analysis dispatch
-report dispatch
-refund
-n8n
-Postmark
-delivery grants
-public download
-reconciliation workers
-```
-
-Checkout creation, Checkout URL existence, Stripe object IDs and browser success/cancel return remain non-authoritative for payment state.
-
-## 5. Implementer stop state
-
-Implementer does not self-resolve Reviewer blockers and does not self-authorize LOCK.
-
-`COM60-H001` and `COM60-H002` are marked only as `ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER`.
-
-PR #23 remains OPEN and unmerged. No `LOCK` was issued by the user in the current turn. FAZ 6.1 has not started.
-
-Reviewer should independently re-read exact final HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd`, inspect blocker fixes and fresh validation evidence, then issue the next authoritative state.
+Reviewer should independently review exact final HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd` and issue the next authoritative state.
 
 > Mathematically validated scoring engine; empirical validation pending.
