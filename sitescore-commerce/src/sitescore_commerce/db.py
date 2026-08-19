@@ -109,7 +109,13 @@ class CommerceStore:
                 order_id = uuid4()
                 now = utcnow()
                 session.add(OrderRow(order_id=order_id, product_code=ProductCode.LOCATION_REPORT_V1.value, catalog_version=catalog_version, customer_email=request.customer_email, purchase_intent=request.model_dump(mode="json"), canonical_request_hash=request_hash, order_state=OrderState.PENDING_PAYMENT.value, payment_state=PaymentState.PENDING.value, fulfillment_state=FulfillmentState.NOT_STARTED.value, created_at=now, updated_at=now))
+                # No ORM relationships are defined between these persistence rows on purpose.
+                # Flush the parent explicitly so PostgreSQL FK ordering is deterministic,
+                # then flush the idempotency claim so concurrent losers fail before a
+                # checkout-operation row is authored. All three writes remain in one DB transaction.
+                session.flush()
                 session.add(OrderIdempotencyRow(key_digest=key_digest, canonical_request_hash=request_hash, order_id=order_id, created_at=now))
+                session.flush()
                 session.add(CheckoutSessionRow(order_id=order_id, provider_idempotency_key=self.provider_operation_key(order_id), catalog_version=catalog_version, product_code=ProductCode.LOCATION_REPORT_V1.value, stripe_price_id=price_id, created_at=now, updated_at=now))
                 return order_id
         except IdempotencyConflict:
