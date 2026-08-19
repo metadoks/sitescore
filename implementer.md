@@ -59,17 +59,15 @@ START_6_1: NO
 
 ## COM60-H001 — addressed, Reviewer verification required
 
-The unbound Stripe Checkout operation is now durably snapshotted before provider I/O. Persisted replay authority includes provider idempotency key, operation version, product/catalog, Stripe Price ID, quantity, customer email, and resolved success/cancel URLs. Existing unbound retries reconstruct `CheckoutOperation` only from that durable snapshot, so later deployment Price or redirect settings cannot change the provider request semantics associated with the same Stripe idempotency key.
-
-Real PostgreSQL adversarial evidence `test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss` passed: provider success followed by forced local bind loss, fresh store/service instance, Price/URL configuration drift, exact original operation replay, unchanged provider key, and later binding of the same simulated Checkout Session identity.
+The unbound Stripe Checkout operation is durably snapshotted before provider I/O. Persisted replay authority includes provider idempotency key, operation version, product/catalog, Stripe Price ID, quantity, customer email, and resolved success/cancel URLs. Existing unbound retries reconstruct `CheckoutOperation` only from persisted fields, so deployment Price/redirect drift cannot alter the request semantics associated with the same Stripe idempotency operation. Real PostgreSQL adversarial evidence passed provider-success/local-bind-loss, fresh store/service restart, Price/URL config drift, exact original operation replay, unchanged provider key, and later binding of the same simulated Checkout Session identity.
 
 ## COM60-H002 — addressed, Reviewer verification required
 
-Revision downgrade no longer drops the `commerce` schema containing Alembic's own version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 validation and the dedicated test passed `upgrade head -> downgrade base -> upgrade head`. After downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade reconstructs the tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
+Revision downgrade no longer drops the `commerce` schema containing Alembic's version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 passed `upgrade head -> downgrade base -> upgrade head`; the dedicated test verifies `commerce.alembic_version` survives downgrade-to-base and re-upgrade records `0001_commerce_order_checkout` without a public Alembic version table.
 
 ## Fresh validation and final identity
 
-Validated SHA `7c5300784b0ccae33a42d1310b00678a91d08d7c`; final review HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd`; run/job `32240653815 / 96030230093`; result SUCCESS; commerce 52 PASS; frozen baseline 1504 PASS; combined 1556 PASS. Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan passed. The only validated-to-final delta is removal of the temporary validation workflow. Final PR #23 has 22 changed files, all under `sitescore-commerce/`. Live `main` remains the frozen FAZ 5 SHA.
+Validated SHA `7c5300784b0ccae33a42d1310b00678a91d08d7c`; final review HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd`; run/job `32240653815 / 96030230093`; SUCCESS; commerce 52 PASS; frozen baseline 1504 PASS; combined 1556 PASS. Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan also passed. The only validated-to-final delta is the temporary validation workflow removal. PR #23 has 22 changed files, all under `sitescore-commerce/`; live `main` remains the frozen FAZ 5 SHA.
 
 No 6.1+ subsystem was added. Implementer does not self-resolve Reviewer blockers, authorize LOCK, or merge. PR #23 remains OPEN. `START_6_1: NO`.
 
