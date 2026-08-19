@@ -41,7 +41,7 @@ jobs:
       MPLCONFIGDIR: /tmp/sitescore-mplconfig
     steps:
       - uses: actions/checkout@v4
-        with: {ref: "${{ github.event.pull_request.head.sha }}", fetch-depth: 2}
+        with: {ref: "${{ github.event.pull_request.head.sha }}", fetch-depth: 0}
       - name: Verify exact PR head and frozen base ancestry
         run: |
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
