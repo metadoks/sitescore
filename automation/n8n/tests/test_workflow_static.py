@@ -24,6 +24,7 @@ def targets(workflow, name, output=0):
 
 def test_repository_workflow_identity_and_sha_are_stable_shape():
     workflow = load()
+    assert workflow["id"] == "sitescoreOrderPaidV1"
     assert workflow["name"] == "SiteScore Order Paid Orchestration v1.0.0"
     assert workflow["meta"]["sitescoreWorkflowVersion"] == "1.0.0"
     assert workflow["meta"]["sitescoreBusinessIdentity"] == "sitescore-order-paid-v1"
@@ -113,6 +114,9 @@ def test_wait_is_finite_configurable_and_poll_horizon_fails_without_business_mut
 def test_runtime_definition_pins_exact_n8n_and_only_narrow_business_credentials():
     text = RUNTIME.read_text(); assert "n8nio/n8n:2.33.4" in text
     for floating in ["n8nio/n8n:latest","n8nio/n8n:stable","n8nio/n8n:next","n8nio/n8n:beta"]: assert floating not in text
+    assert "N8N_WEBHOOK_URL:" in text
+    assert "WEBHOOK_URL:" not in text.replace("N8N_WEBHOOK_URL:", "")
+    assert 'N8N_USE_WORKFLOW_PUBLICATION_SERVICE: "false"' in text
     assert "COMMERCE_N8N_INGRESS_SECRET" in text and "COMMERCE_AUTOMATION_API_KEY" in text and "SITESCORE_COMMERCE_AUTOMATION_BASE_URL" in text
     lowered = text.lower()
     for forbidden in ["stripe_secret_key","stripe_webhook_secret","sitescore_api_service_key","postmark","postgresql://","redis://","aws_secret","s3_"]: assert forbidden not in lowered
