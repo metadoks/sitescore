@@ -20,14 +20,14 @@ from .settings import Settings
 
 
 class RuntimeDeliveryService(DeliveryService):
-    """Production wrapper that commits retry exhaustion before any later exception.
+    """Production wrapper for durable retry exhaustion and terminal replay.
 
-    The base store still enforces the same upper bound while preparing an attempt.
-    This preflight makes the normal production path persist the terminal delivery
-    failure in its own transaction, so no exception rollback can erase it.
+    Provider I/O is never re-entered after durable fulfillment success or a
+    durable delivery-failed attention state. Retry exhaustion is committed in
+    its own transaction before returning to orchestration.
     """
 
-    def _commit_retry_exhaustion_if_needed(self, order_id: UUID) -> bool:
+    def _terminal_or_commit_retry_exhaustion(self, order_id: UUID) -> bool:
         try:
             with self.store.session_factory.begin() as session:
                 order = session.execute(
@@ -35,8 +35,10 @@ class RuntimeDeliveryService(DeliveryService):
                 ).scalar_one_or_none()
                 if order is None:
                     raise FulfillmentNotFound("order not found")
-                if order.order_state in {OrderState.FULFILLED.value, OrderState.ATTENTION_REQUIRED.value}:
-                    return False
+                if order.order_state == OrderState.FULFILLED.value:
+                    return True
+                if order.order_state == OrderState.ATTENTION_REQUIRED.value and order.fulfillment_state == FulfillmentState.DELIVERY_FAILED.value:
+                    return True
                 accepted = session.execute(
                     select(DeliveryAttemptRow.delivery_attempt_id)
                     .where(DeliveryAttemptRow.order_id == order_id, DeliveryAttemptRow.status == "provider_accepted")
@@ -62,7 +64,7 @@ class RuntimeDeliveryService(DeliveryService):
     def deliver(self, order_id: UUID) -> None:
         if self.store.converge_known_acceptance(order_id):
             return
-        if self._commit_retry_exhaustion_if_needed(order_id):
+        if self._terminal_or_commit_retry_exhaustion(order_id):
             return
         super().deliver(order_id)
 
