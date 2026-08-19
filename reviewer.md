@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.1
 CHECKPOINT_TITLE: Stripe Webhook Payment Authority + Durable Reconciliation
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -26,17 +26,17 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: 89f9f41b381412775aae732e4dc75d2b56919ade
+REVIEWED_HEAD_SHA: 719a17c4359524337f57298252a59ccb89dcd0aa
 
-VALIDATED_SHA: 6b06b590d7512ff51ba2a7655aeaff79013af53b
-VALIDATION_RUN_ID: 32247997208
-VALIDATION_JOB_ID: 96052624136
+VALIDATED_SHA: 5da740379649a9d388030040c303b191aa3d9d28
+VALIDATION_RUN_ID: 32250938563
+VALIDATION_JOB_ID: 96061521892
 VALIDATION_CONCLUSION: SUCCESS
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-1-validation.yml REMOVAL
 
-COM61-H001: OPEN
-BLOCKERS: COM61-H001
+COM61-H001: RESOLVED
+BLOCKERS: NONE
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -46,7 +46,7 @@ FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
 FAZ_6_0_STATUS: LOCKED
-FAZ_6_1_STATUS: HARDENING_REQUIRED
+FAZ_6_1_STATUS: READY_TO_LOCK
 START_6_2: NO
 ```
 
@@ -54,7 +54,7 @@ START_6_2: NO
 
 # 1. EXACT STATE REVIEWED
 
-Reviewer independently verified live GitHub state before issuing this decision.
+Reviewer independently re-read live GitHub after Implementer hardening.
 
 ```text
 main:
@@ -70,265 +70,220 @@ base:
 main@af3b9567d644f6bcf0410af704dd7d86de41b5ce
 
 final reviewed head:
+719a17c4359524337f57298252a59ccb89dcd0aa
+
+previous blocked head:
 89f9f41b381412775aae732e4dc75d2b56919ade
 
-validated SHA:
-6b06b590d7512ff51ba2a7655aeaff79013af53b
+hardening delta from blocked head:
+7 commits
+4 files only:
+- sitescore-commerce/docs/CHECKPOINT_6_1_WEBHOOK_PAYMENT_AUTHORITY.md
+- sitescore-commerce/src/sitescore_commerce/db.py
+- sitescore-commerce/tests/test_webhook_authority.py
+- sitescore-commerce/tests/test_webhook_postgres.py
 
-validated -> final:
-1 commit
-only .github/workflows/faz6-6-1-validation.yml removed
-
-final changed product files:
-12
+full base -> final:
+24 commits ahead
+0 behind
+12 changed product files
 all under sitescore-commerce/
-
-frozen FAZ 3/4/5 runtime source changes:
-NONE
+frozen FAZ 3/4/5 source changes: NONE
 ```
-
-Authoritative CI evidence at validated SHA:
-
-```text
-workflow: faz6-6-1-exact-head-validation
-run: 32247997208
-job: 96052624136
-conclusion: SUCCESS
-Python: 3.11.15
-PostgreSQL: 16.15
-sitescore-commerce: 83 PASS
-frozen total: 1504 PASS
-combined total: 1587 PASS
-migration upgrade/downgrade/upgrade: PASS
-migration namespace: PASS
-secret scan: PASS
-frozen-scope scan: PASS
-private S3-compatible regression: PASS
-Redis/Celery regression: PASS
-```
-
-These green tests do not close COM61-H001 because the missing adversarial case is not represented by the current duplicate-event tests.
 
 ---
 
-# 2. REVIEWER-CONFIRMED 6.1 CONTROLS
+# 2. COM61-H001 — RESOLVED
 
-The following core architecture is present and materially aligned with the 6.1 contract:
+Reviewer confirmed the previous blocker is closed.
+
+Current durable event receipt behavior:
 
 ```text
-POST /v1/webhooks/stripe exists
-exact raw body is used before signature verification
-Stripe-Signature is required
-256 KiB ingress limit exists
-300 second signature tolerance exists
-Stripe webhook secret is server-side
-Event API version is checked when present
-Event and retrieved Session livemode are checked
-required V1 event surface is completed + expired
-async payment events are non-authoritative/ignored
-webhook event type alone never marks paid
-Checkout Session is retrieved server-side
-line items are retrieved server-side
-mode/order/product/catalog/Price/quantity/currency bindings are enforced
-paid requires complete + paid + PaymentIntent identity
+stripe_event_id remains the PostgreSQL dedupe authority
+raw_body_sha256 is persisted as first-delivery byte evidence
+raw_body_sha256 is NOT part of duplicate semantic identity comparison
+semantic duplicate comparison retains:
+- event type
+- Checkout Session/object ID
+- event API version
+- livemode
+- event created timestamp
+```
+
+A repeated Event ID now uses PostgreSQL `INSERT ... ON CONFLICT DO NOTHING`, then re-reads the existing inbox row under `FOR UPDATE` before semantic comparison and attempt increment. This closes the concurrent first-delivery primary-key race without weakening semantic conflict detection.
+
+Reviewer confirmed adversarial coverage for:
+
+```text
+same Event ID + same semantics + same bytes
+same Event ID + same semantics + different JSON serialization
+both different serializations independently accepted by the official Stripe signature verifier
+received/unprocessed provider-timeout event retried with different bytes and completed exactly once
+first raw-body digest preserved as evidence
+true event-type conflict fails closed
+true Session-ID conflict fails closed
+real PostgreSQL concurrent same-event delivery converges to one inbox and one paid outbox
+```
+
+No payment authority was transferred to browser, event type, client, or n8n.
+
+```text
+COM61-H001: RESOLVED
+```
+
+---
+
+# 3. PAYMENT AUTHORITY / STATE MACHINE REVIEW
+
+Reviewer reconfirmed the 6.1 architecture remains intact after hardening:
+
+```text
+POST /v1/webhooks/stripe uses exact raw body
+Stripe-Signature required
+256 KiB body limit
+300-second signature tolerance
+verified event is trigger only, not payment truth
+server-side Checkout Session retrieval required
+server-side line-item retrieval required
+API version and livemode bindings enforced
+order/product/catalog/Price/quantity/USD bindings enforced
+paid requires complete + paid + server-observed PaymentIntent identity
 no_payment_required is not accepted as paid
-webhook-first provider-success/local-bind-loss recovery exists
-existing different Session binding is not overwritten
-server-observed reconciliation evidence is persisted
-pending -> paid transition exists
-pending -> expired transition exists
-paid is not downgraded by late expiration
-expired is not silently upgraded by contradictory paid truth
-paid transition + order.paid.v1 outbox are in one PostgreSQL transaction
-unique (order_id, outbox_type) prevents duplicate paid outbox
-outbox dispatcher is absent by design
-analysis/report/refund/n8n/Postmark/delivery are absent
-no PostgreSQL transaction is intentionally held across Stripe network I/O
-```
-
-The blocker below is specifically about durable event identity / retry recovery semantics.
-
----
-
-# 3. COM61-H001 — RAW BODY HASH IS INCORRECTLY PART OF DUPLICATE EVENT IDENTITY
-
-## Problem
-
-Current `CommerceStore.record_stripe_event()` persists `raw_body_sha256`, which is correct as evidence.
-
-However, on a repeated Stripe Event ID it currently compares this tuple:
-
-```text
-stripe_event_type
-stripe_object_id
-event_api_version
-livemode
-event_created_at
-raw_body_sha256
-```
-
-against the incoming delivery and raises `EventIdentityConflict` if any element differs.
-
-This incorrectly promotes the exact raw HTTP-body byte representation to durable event identity.
-
-The 6.1 contract requires:
-
-```text
-Event ID is the minimum transport dedupe authority.
-same Stripe event ID delivered repeatedly -> one durable inbox identity
-received-but-not-processed duplicate -> resumes processing
-```
-
-`raw_body_sha256` was required as delivery evidence, not as a guarantee that every legitimate redelivery of the same Event ID is byte-for-byte identical.
-
-Stripe requires signature verification against each delivery's exact raw request body, but duplicate-event guidance is based on the Stripe Event ID. Stripe does not provide a contract that all valid deliveries/manual redeliveries of one Event ID must have identical JSON byte serialization.
-
-Therefore a legitimate semantically identical Event ID can be validly signed yet differ only in harmless JSON serialization details such as whitespace or key ordering. Under the current implementation:
-
-```text
-first valid delivery
--> inbox row persisted as received
--> processing is interrupted or Stripe reconciliation returns retryable 503
-
-same Stripe Event ID delivered again
--> valid Stripe signature
--> same type/object/version/mode/created semantics
--> raw JSON bytes differ harmlessly
--> raw_body_sha256 differs
--> EventIdentityConflict
--> HTTP 409
--> event can no longer resume processing through that retry path
-```
-
-If this occurs before the paid transition, a real paid Checkout can remain pending even though Stripe is correctly redelivering the same event.
-
-This is a meaningful payment recovery correctness failure and therefore a hardening blocker.
-
-```text
-COM61-H001: OPEN
+webhook-first lost-local-binding recovery retained
+existing conflicting Session binding is never overwritten
+pending -> paid and pending -> expired transitions remain narrow
+paid cannot be downgraded by late expiration
+contradictory terminal truth is attention_required
+paid transition + unique order.paid.v1 outbox remain atomic in one PostgreSQL transaction
+outbox dispatcher remains absent
+no analysis/report/refund/n8n/Postmark/delivery behavior was added
 ```
 
 ---
 
-# 4. REQUIRED HARDENING FOR COM61-H001
+# 4. INDEPENDENT CI / MIGRATION EVIDENCE
 
-Do not remove raw-body signature verification and do not stop recording a raw-body hash as evidence.
-
-Instead separate:
+Reviewer independently checked GitHub Actions for validated SHA:
 
 ```text
-TRANSPORT / SEMANTIC EVENT IDENTITY
-from
-DELIVERY-BYTE EVIDENCE
+validated SHA:
+5da740379649a9d388030040c303b191aa3d9d28
+
+workflow:
+faz6-6-1-exact-head-validation
+
+run:
+32250938563
+
+job:
+96061521892
+
+conclusion:
+SUCCESS
+
+Python:
+3.11.15
+
+PostgreSQL:
+16.15
+
+sitescore-commerce:
+89 PASS
+
+frozen sitescore-report:
+24 PASS
+
+frozen sitescore-api:
+105 PASS
+
+frozen sitescore-app:
+19 PASS
+
+frozen sitescore-pipeline:
+53 PASS
+
+frozen sitescore-benchmarks:
+191 PASS
+
+frozen sitescore-metrics:
+67 PASS
+
+frozen sitescore-spatial:
+180 PASS
+
+frozen sitescore-providers:
+418 PASS
+
+frozen sitescore-data:
+361 PASS
+
+frozen sitescore-core:
+86 PASS
+
+frozen total:
+1504 PASS
+
+combined pytest total:
+1593 PASS
+
+commerce migration upgrade -> downgrade base -> upgrade head:
+PASS
+
+commerce migration namespace:
+PASS
+
+secret scan:
+PASS
+
+frozen-scope scan:
+PASS
+
+private S3-compatible storage regression:
+PASS
+
+Redis/Celery transport regression:
+PASS
 ```
 
-Required behavior:
+Reviewer also independently compared validated SHA to final reviewed head:
 
-1. `stripe_event_id` remains the durable dedupe key.
-2. Essential semantic conflict checks may include immutable signed Event semantics such as:
-   - event type
-   - Stripe object/session ID
-   - event API version
-   - livemode
-   - event created timestamp
-   - any other deliberately persisted immutable correlation field required by the contract.
-3. `raw_body_sha256` MUST NOT by itself make a semantically identical redelivery of the same Stripe Event ID an identity conflict.
-4. Keep a raw-body digest as audit evidence. Acceptable designs include:
-   - preserving the first-delivery digest only, or
-   - maintaining separate last-delivery/delivery-evidence semantics if explicitly modeled.
-5. A true semantic conflict for the same Stripe Event ID must still fail closed and never mutate payment/order truth.
-6. A same-ID, same-semantic, different-raw-bytes delivery must:
-   - dedupe to the same inbox identity,
-   - increment retry/attempt evidence as appropriate,
-   - return safe 2xx if already processed, or
-   - resume processing if still `received`.
-7. Do not weaken Stripe signature verification: every incoming raw body must still be verified against its own `Stripe-Signature` before inbox mutation.
+```text
+5da740379649a9d388030040c303b191aa3d9d28
+->
+719a17c4359524337f57298252a59ccb89dcd0aa
+
+1 commit ahead
+0 behind
+only changed file:
+.github/workflows/faz6-6-1-validation.yml
+status: removed
+```
+
+No runtime, migration, test, or documentation product content changed after the successful validation run.
 
 ---
 
-# 5. REQUIRED ADVERSARIAL TESTS
-
-Add deterministic tests covering at minimum:
+# 5. REVIEWER DECISION
 
 ```text
-A. Same Event ID + same semantic event + same raw bytes
-   -> one inbox identity
-   -> retry-safe
-
-B. Same Event ID + same semantic event + different valid JSON serialization
-   example: whitespace/key-order difference
-   -> each delivery independently passes Stripe signature verification
-   -> one inbox identity
-   -> NO EventIdentityConflict solely because raw hash differs
-
-C. Case B while first delivery remains received/unprocessed due provider timeout
-   -> second delivery resumes reconciliation
-   -> paid transition succeeds when provider becomes authoritative
-   -> exactly one order.paid.v1 outbox
-
-D. Same Event ID + true semantic conflict
-   e.g. different event type or different Checkout Session ID
-   -> fail closed
-   -> no new money transition
-
-E. Real PostgreSQL concurrency/retry regression remains green
-```
-
-Use the official Stripe verifier in at least the serialization-difference test so the proof demonstrates two separately valid signatures over two different raw byte strings representing the same semantic Event.
-
----
-
-# 6. SCOPE / FREEZE REQUIREMENTS
-
-Hardening remains strictly inside FAZ 6.1.
-
-Allowed scope:
-
-```text
-sitescore-commerce/
-checkpoint-specific tests/docs
-optional temporary exact-head CI workflow
-```
-
-Do not implement:
-
-```text
-6.2 fulfillment
-analysis dispatch
-report dispatch
-refunds
-n8n
-Postmark
-delivery grants
-public report download
-```
-
-Frozen FAZ 3/4/5 source packages remain immutable.
-
-No contract change, design escalation, or locked-checkpoint reopen is required for this fix.
-
----
-
-# 7. REVIEWER DECISION
-
-```text
-FAZ 6.1: HARDENING_REQUIRED
+FAZ 6.1: READY_TO_LOCK
 PR: #24
-REVIEWED_HEAD_SHA: 89f9f41b381412775aae732e4dc75d2b56919ade
+REVIEWED_HEAD_SHA: 719a17c4359524337f57298252a59ccb89dcd0aa
 
-COM61-H001: OPEN
-BLOCKERS: COM61-H001
+COM61-H001: RESOLVED
+BLOCKERS: NONE
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+LOCK_AUTHORITY: USER_ONLY
 START_6_2: NO
 ```
 
-Implementer must harden the same PR/checkpoint, publish a fresh exact-head validation result, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
+Reviewer does not merge. User must explicitly authorize LOCK in the Implementer chat. Implementer must re-check that PR #24 head is still exactly `719a17c4359524337f57298252a59ccb89dcd0aa` and that live `main` is still exactly `af3b9567d644f6bcf0410af704dd7d86de41b5ce` before merge. Any head/base drift invalidates this lock authorization and requires Reviewer re-audit.
 
-Reviewer does not merge.
 Reviewer STOP.
