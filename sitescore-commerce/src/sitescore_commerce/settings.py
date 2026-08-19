@@ -54,6 +54,18 @@ def _validate_sitescore_base(value: str, *, environment: str) -> str:
     return normalized
 
 
+def _validate_sitescore_service_key(value: str) -> str:
+    if not value.startswith("ssk1_"):
+        raise ConfigurationError("SITESCORE_API_SERVICE_KEY has an invalid frozen API token format")
+    body = value[len("ssk1_"):]
+    key_id, sep, secret = body.partition(".")
+    if not sep or not key_id or not secret or any(ch.isspace() for ch in value):
+        raise ConfigurationError("SITESCORE_API_SERVICE_KEY has an invalid frozen API token format")
+    if len(secret.encode("utf-8")) < 24:
+        raise ConfigurationError("SITESCORE_API_SERVICE_KEY secret is too short")
+    return value
+
+
 def _parse_bool(name: str, value: str) -> bool:
     normalized = value.strip().lower()
     if normalized in {"1", "true", "yes"}:
@@ -118,7 +130,7 @@ class Settings:
             stripe_expected_livemode=_parse_bool("STRIPE_EXPECTED_LIVEMODE", _require("STRIPE_EXPECTED_LIVEMODE")),
             stripe_api_version=STRIPE_API_VERSION,
             sitescore_api_base_url=_validate_sitescore_base(_require("SITESCORE_API_BASE_URL"), environment=environment),
-            sitescore_api_service_key=_validate_secret("SITESCORE_API_SERVICE_KEY", _require("SITESCORE_API_SERVICE_KEY")),
+            sitescore_api_service_key=_validate_sitescore_service_key(_require("SITESCORE_API_SERVICE_KEY")),
             sitescore_api_target_id=sitescore_target_id,
             sitescore_api_timeout_seconds=_parse_timeout(os.getenv("SITESCORE_API_TIMEOUT_SECONDS", "10")),
             commerce_automation_api_key=_validate_secret("COMMERCE_AUTOMATION_API_KEY", _require("COMMERCE_AUTOMATION_API_KEY"), minimum=24),
