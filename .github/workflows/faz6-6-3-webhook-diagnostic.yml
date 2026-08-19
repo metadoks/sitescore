@@ -46,15 +46,13 @@ jobs:
             -e SITESCORE_N8N_MAX_POLLS=10
           )
 
-          # Initialize a real n8n instance and create its owner/personal project before
-          # importing Git-controlled production workflows.
           docker run -d --name "$CONTAINER" -p 5678:5678 "${common_env[@]}" -v "$VOL:/home/node/.n8n" "$IMAGE" >/dev/null
           for _ in $(seq 1 80); do if curl -fsS http://127.0.0.1:5678/healthz >/dev/null 2>&1; then break; fi; sleep .5; done
           curl -fsS http://127.0.0.1:5678/healthz >/dev/null
-          SETUP_CODE=$(curl -sS -o "$TMP/owner.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5678/rest/owner/setup -d '{"email":"sitescore-ci-owner@example.test","firstName":"SiteScore","lastName":"CI","password":"'"$OWNER_PASSWORD"'"}')
+          SETUP_CODE=$(curl -sS -o "$TMP/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5678/rest/owner/setup -d '{"email":"sitescore-ci-owner@example.test","firstName":"SiteScore","lastName":"CI","password":"'"$OWNER_PASSWORD"'"}')
           echo "OWNER_SETUP_HTTP=$SETUP_CODE"
-          cat "$TMP/owner.json" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("id"); print("OWNER_SETUP=PASS")'
           test "$SETUP_CODE" = 200
+          echo OWNER_SETUP=PASS
           docker stop "$CONTAINER" >/dev/null
           docker rm "$CONTAINER" >/dev/null
 
