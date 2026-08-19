@@ -30,7 +30,7 @@ def reset_db():
     command.upgrade(cfg(),"head")
     engine=sa.create_engine(DATABASE_URL)
     with engine.begin() as conn:
-        for table in ("outbox_events","stripe_event_inbox","checkout_sessions","order_idempotency","orders"):
+        for table in ("refund_operations","refund_eligibility","fulfillment_bindings","outbox_events","stripe_event_inbox","checkout_sessions","order_idempotency","orders"):
             conn.execute(sa.text(f"DELETE FROM commerce.{table}"))
 
 def make_order(store, *, bound=True):
