@@ -30,7 +30,7 @@ jobs:
       COMMERCE_SUCCESS_URL_BASE: https://commerce.example.test/success
       COMMERCE_CANCEL_URL_BASE: https://commerce.example.test/cancel
       SITESCORE_API_BASE_URL: https://sitescore-api.example.test
-      SITESCORE_API_SERVICE_KEY: test-sitescore-service-key-not-real
+      SITESCORE_API_SERVICE_KEY: ssk1_ci-key-id.ci-service-secret-not-real-0123456789
       SITESCORE_API_TARGET_ID: ci-frozen-api-v1
       SITESCORE_API_TIMEOUT_SECONDS: "10"
       COMMERCE_AUTOMATION_API_KEY: test-automation-key-not-real-0123456789
