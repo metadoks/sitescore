@@ -53,15 +53,21 @@ def upgrade() -> None:
         sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id"), primary_key=True),
         sa.Column("stripe_checkout_session_id", sa.String(255), nullable=True),
         sa.Column("provider_idempotency_key", sa.String(255), nullable=False),
+        sa.Column("operation_version", sa.String(64), nullable=False),
         sa.Column("catalog_version", sa.String(32), nullable=False),
         sa.Column("product_code", sa.String(64), nullable=False),
         sa.Column("stripe_price_id", sa.String(255), nullable=False),
+        sa.Column("quantity", sa.Integer(), nullable=False),
+        sa.Column("customer_email", sa.String(320), nullable=False),
+        sa.Column("success_url", sa.Text(), nullable=False),
+        sa.Column("cancel_url", sa.Text(), nullable=False),
         sa.Column("checkout_url", sa.Text(), nullable=True),
         sa.Column("checkout_expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("stripe_checkout_session_id", name="uq_checkout_sessions_stripe_id"),
         sa.UniqueConstraint("provider_idempotency_key", name="uq_checkout_sessions_provider_key"),
+        sa.CheckConstraint("quantity = 1", name="ck_checkout_sessions_quantity_v1"),
         sa.CheckConstraint("(stripe_checkout_session_id IS NULL AND checkout_url IS NULL) OR (stripe_checkout_session_id IS NOT NULL AND checkout_url IS NOT NULL)", name="ck_checkout_sessions_binding_pair"),
         schema="commerce",
     )
@@ -71,4 +77,6 @@ def downgrade() -> None:
     op.drop_table("checkout_sessions", schema="commerce")
     op.drop_table("order_idempotency", schema="commerce")
     op.drop_table("orders", schema="commerce")
-    op.execute("DROP SCHEMA IF EXISTS commerce")
+    # Intentionally preserve the commerce schema because Alembic's own
+    # version table lives at commerce.alembic_version while the revision
+    # transition is being processed. A later upgrade safely reuses it.
