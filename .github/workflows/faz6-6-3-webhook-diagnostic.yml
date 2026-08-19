@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.pull_request.head.sha }}"}
-      - name: Inspect n8n publish and webhook registration state
+      - name: Prove owner setup before import enables production webhook registration
         run: |
           set -euo pipefail
           IMAGE=n8nio/n8n:2.33.4
@@ -19,73 +19,72 @@ jobs:
           VOL="n8n-webhook-diag-${GITHUB_RUN_ID}"
           CONTAINER="n8n-webhook-diag-${GITHUB_RUN_ID}"
           TMP="$(mktemp -d)"
-          chmod 777 "$TMP"
           ENC=$(python -c 'import secrets; print(secrets.token_hex(32))')
           INGRESS=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
           AUTO=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
-          echo "::add-mask::$ENC"; echo "::add-mask::$INGRESS"; echo "::add-mask::$AUTO"
+          OWNER_PASSWORD='SiteScoreCiOwner42!'
+          echo "::add-mask::$ENC"; echo "::add-mask::$INGRESS"; echo "::add-mask::$AUTO"; echo "::add-mask::$OWNER_PASSWORD"
           cleanup(){ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; if [[ -n "${FAKE_PID:-}" ]]; then kill "$FAKE_PID" >/dev/null 2>&1 || true; fi; docker volume rm "$VOL" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
           trap cleanup EXIT
           docker volume create "$VOL" >/dev/null
+
+          common_env=(
+            -e N8N_ENCRYPTION_KEY="$ENC"
+            -e N8N_HOST=0.0.0.0
+            -e N8N_PORT=5678
+            -e N8N_PROTOCOL=http
+            -e N8N_WEBHOOK_URL=http://127.0.0.1:5678/
+            -e N8N_SECURE_COOKIE=false
+            -e N8N_DIAGNOSTICS_ENABLED=false
+            -e N8N_VERSION_NOTIFICATIONS_ENABLED=false
+            -e N8N_PERSONALIZATION_ENABLED=false
+            -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+            -e COMMERCE_N8N_INGRESS_SECRET="$INGRESS"
+            -e COMMERCE_AUTOMATION_API_KEY="$AUTO"
+            -e SITESCORE_COMMERCE_AUTOMATION_BASE_URL=http://host.docker.internal:18080
+            -e SITESCORE_N8N_POLL_SECONDS=2
+            -e SITESCORE_N8N_MAX_POLLS=10
+          )
+
+          # Initialize a real n8n instance and create its owner/personal project before
+          # importing Git-controlled production workflows.
+          docker run -d --name "$CONTAINER" -p 5678:5678 "${common_env[@]}" -v "$VOL:/home/node/.n8n" "$IMAGE" >/dev/null
+          for _ in $(seq 1 80); do if curl -fsS http://127.0.0.1:5678/healthz >/dev/null 2>&1; then break; fi; sleep .5; done
+          curl -fsS http://127.0.0.1:5678/healthz >/dev/null
+          SETUP_CODE=$(curl -sS -o "$TMP/owner.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5678/rest/owner/setup -d '{"email":"sitescore-ci-owner@example.test","firstName":"SiteScore","lastName":"CI","password":"'"$OWNER_PASSWORD"'"}')
+          echo "OWNER_SETUP_HTTP=$SETUP_CODE"
+          cat "$TMP/owner.json" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("id"); print("OWNER_SETUP=PASS")'
+          test "$SETUP_CODE" = 200
+          docker stop "$CONTAINER" >/dev/null
+          docker rm "$CONTAINER" >/dev/null
+
           docker run --rm -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOL:/home/node/.n8n" -v "$PWD/automation/n8n/workflows:/workflows:ro" "$IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
-          set +e
           docker run --rm -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOL:/home/node/.n8n" "$IMAGE" publish:workflow --id=sitescoreOrderPaidV1
-          PUB=$?
-          set -e
-          echo "PUBLISH_EXIT=$PUB"
-          copy_db(){ local out="$1"; docker run --rm --user 0 --entrypoint sh -v "$VOL:/data:ro" -v "$TMP:/out" "$IMAGE" -c "cp /data/database.sqlite /out/$out && chmod 644 /out/$out"; }
-          inspect_db(){ local db="$1" label="$2"; python - "$TMP/$db" "$label" <<'PY'
-          import sqlite3,sys,json
-          db,label=sys.argv[1:]
-          con=sqlite3.connect(db); con.row_factory=sqlite3.Row
-          print(f'--- DB {label} ---')
-          tables=[r[0] for r in con.execute("select name from sqlite_master where type='table' order by name")]
-          interesting=[t for t in tables if any(k in t.lower() for k in ('workflow','webhook','activation','publication'))]
-          print('TABLES='+json.dumps(interesting))
-          for t in interesting:
-              try:
-                  count=con.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]
-                  print(f'COUNT {t}={count}')
-              except Exception as e: print(f'COUNT_ERROR {t}={e}')
-          for t in ['workflow_entity','workflow_history','webhook_entity','workflow_published_version','workflow_publication_trigger_status','workflow_publication_outbox']:
-              if t not in tables: continue
-              cols=[r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
-              print(f'COLUMNS {t}='+json.dumps(cols))
-              rows=con.execute(f'SELECT * FROM "{t}" LIMIT 10').fetchall()
-              for row in rows:
-                  d=dict(row)
-                  for k,v in list(d.items()):
-                      if isinstance(v,str) and len(v)>500: d[k]=v[:500]+'...'
-                  print(f'ROW {t}='+json.dumps(d,default=str,sort_keys=True))
-          con.close()
-          PY
-          }
-          copy_db pre.sqlite
-          inspect_db pre.sqlite PRE_START
+
           FAKE_COMMERCE_AUTOMATION_KEY="$AUTO" FAKE_COMMERCE_LOG_FILE="$TMP/fake.jsonl" python automation/n8n/tests/fake_commerce_server.py >"$TMP/fake.log" 2>&1 & FAKE_PID=$!
           for _ in $(seq 1 30); do if curl -fsS http://127.0.0.1:18080/__stats >/dev/null 2>&1; then break; fi; sleep .2; done
-          docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5678:5678 \
-            -e N8N_ENCRYPTION_KEY="$ENC" -e N8N_HOST=0.0.0.0 -e N8N_PORT=5678 -e N8N_PROTOCOL=http \
-            -e WEBHOOK_URL=http://127.0.0.1:5678/ -e N8N_SECURE_COOKIE=false -e N8N_LOG_LEVEL=debug \
-            -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false \
-            -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false -e COMMERCE_N8N_INGRESS_SECRET="$INGRESS" \
-            -e COMMERCE_AUTOMATION_API_KEY="$AUTO" -e SITESCORE_COMMERCE_AUTOMATION_BASE_URL=http://host.docker.internal:18080 \
-            -e SITESCORE_N8N_POLL_SECONDS=2 -e SITESCORE_N8N_MAX_POLLS=10 -v "$VOL:/home/node/.n8n" "$IMAGE" >/dev/null
+          docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5678:5678 "${common_env[@]}" -v "$VOL:/home/node/.n8n" "$IMAGE" >/dev/null
           for _ in $(seq 1 80); do if curl -fsS http://127.0.0.1:5678/healthz >/dev/null 2>&1; then break; fi; sleep .5; done
           curl -fsS http://127.0.0.1:5678/healthz >/dev/null
           sleep 2
-          echo '--- STARTUP LOG FILTER ---'
+          echo '--- STARTUP ACTIVATION LOGS ---'
           docker logs "$CONTAINER" 2>&1 | grep -Ei 'workflow|webhook|activat|publish|trigger|error|warn' | tail -n 300 || true
+
           URL=http://127.0.0.1:5678/webhook/sitescore-order-paid-v1
           DELIVERY=00000000-0000-4000-8000-000000000001
           PAYLOAD='{"event_id":"10000000-0000-4000-8000-000000000001","event_type":"order.paid.v1","order_id":"'"$DELIVERY"'","occurred_at":"2026-08-19T15:30:00Z"}'
-          echo '--- LIVE WEBHOOK ---'
-          curl -sS -D "$TMP/headers" -o "$TMP/body" -H 'Content-Type: application/json' -H "Authorization: Bearer $INGRESS" -X POST "$URL" -d "$PAYLOAD" || true
-          sed -n '1,12p' "$TMP/headers"; cat "$TMP/body"; echo
-          echo '--- FAKE COMMERCE STATS ---'
-          curl -fsS http://127.0.0.1:18080/__stats; echo
-          docker stop "$CONTAINER" >/dev/null
-          echo '--- POST-STOP LOG FILTER ---'
-          docker logs "$CONTAINER" 2>&1 | grep -Ei 'workflow|webhook|activat|publish|trigger|error|warn' | tail -n 400 || true
-          copy_db post.sqlite
-          inspect_db post.sqlite POST_START_STOP
+          CODE=$(curl -sS -o "$TMP/body" -w '%{http_code}' -H 'Content-Type: application/json' -H "Authorization: Bearer $INGRESS" -X POST "$URL" -d "$PAYLOAD")
+          echo "VALID_WEBHOOK_HTTP=$CODE"
+          cat "$TMP/body"; echo
+          test "$CODE" = 202
+          sleep 1
+          curl -fsS http://127.0.0.1:18080/__stats > "$TMP/stats.json"
+          python - "$TMP/stats.json" "$DELIVERY" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); order=sys.argv[2]
+          r=[x for x in d['requests'] if order in x['path']]
+          assert r and r[0]['method']=='GET',r
+          assert all(x['auth_valid'] for x in r),r
+          assert not [x for x in r if x['method']=='POST'],r
+          print('CONFIGURED_INSTANCE_WEBHOOK=PASS')
+          PY
