@@ -19,6 +19,7 @@ jobs:
           VOL="n8n-webhook-diag-${GITHUB_RUN_ID}"
           CONTAINER="n8n-webhook-diag-${GITHUB_RUN_ID}"
           TMP="$(mktemp -d)"
+          chmod 777 "$TMP"
           ENC=$(python -c 'import secrets; print(secrets.token_hex(32))')
           INGRESS=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
           AUTO=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')
@@ -32,7 +33,7 @@ jobs:
           PUB=$?
           set -e
           echo "PUBLISH_EXIT=$PUB"
-          copy_db(){ local out="$1"; docker run --rm --entrypoint sh -v "$VOL:/data:ro" -v "$TMP:/out" "$IMAGE" -c "cp /data/database.sqlite /out/$out"; }
+          copy_db(){ local out="$1"; docker run --rm --user 0 --entrypoint sh -v "$VOL:/data:ro" -v "$TMP:/out" "$IMAGE" -c "cp /data/database.sqlite /out/$out && chmod 644 /out/$out"; }
           inspect_db(){ local db="$1" label="$2"; python - "$TMP/$db" "$label" <<'PY'
           import sqlite3,sys,json
           db,label=sys.argv[1:]
