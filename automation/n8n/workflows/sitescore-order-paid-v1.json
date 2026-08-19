@@ -72,7 +72,7 @@
     "Refund Requested?":{"main":[[{"node":"Advance Commerce","type":"main","index":0}],[{"node":"Wait Requested?","type":"main","index":0}]]},
     "Wait Requested?":{"main":[[{"node":"Within Poll Horizon?","type":"main","index":0}],[{"node":"No Action?","type":"main","index":0}]]},
     "No Action?":{"main":[[{"node":"Stop No Action","type":"main","index":0}],[{"node":"Fail Unexpected Action","type":"main","index":0}]]},
-    "Advance Commerce":{"main":[[{"node":"Get Commerce State","type":"main","index":0}]]},
+    "Advance Commerce":{"main":[[{"node":"Within Poll Horizon?","type":"main","index":0}]]},
     "Within Poll Horizon?":{"main":[[{"node":"Wait Before Poll","type":"main","index":0}],[{"node":"Fail Poll Horizon","type":"main","index":0}]]},
     "Wait Before Poll":{"main":[[{"node":"Get Commerce State","type":"main","index":0}]]}
   },
