@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -45,7 +44,7 @@ def test_delivery_automation_requires_same_bearer_and_empty_body_and_exposes_no_
     assert c.post(f"/v1/automation/orders/{oid}/deliver",headers={"Authorization":"Bearer automation-secret"},json={"report_id":str(uuid4())}).status_code==400
     response=c.post(f"/v1/automation/orders/{oid}/deliver",headers={"Authorization":"Bearer automation-secret"},content=b"")
     assert response.status_code==200 and d.delivered==[oid]
-    assert response.json()=={"order_id":str(oid),"order_state":"fulfilled","payment_state":"paid","fulfillment_state":"completed","retryable":False,"terminal":True,"next_action":"none"}
+    assert response.json()=={"api_version":"v1","order_id":str(oid),"order_state":"fulfilled","payment_state":"paid","fulfillment_state":"completed","retryable":False,"terminal":True,"next_action":"none"}
     text=response.text.lower()
     for forbidden in ["token","recipient","postmark","report_id","messageid","download_url"]: assert forbidden not in text
 
