@@ -60,8 +60,8 @@ common_env=(
   -e COMMERCE_N8N_INGRESS_SECRET="$INGRESS_SECRET"
   -e COMMERCE_AUTOMATION_API_KEY="$AUTOMATION_KEY"
   -e SITESCORE_COMMERCE_AUTOMATION_BASE_URL=http://host.docker.internal:18080
-  -e SITESCORE_N8N_POLL_SECONDS=2
-  -e SITESCORE_N8N_MAX_POLLS=10
+  -e SITESCORE_N8N_POLL_SECONDS=1
+  -e SITESCORE_N8N_MAX_POLLS=5
 )
 
 wait_health(){
@@ -72,8 +72,7 @@ wait_health(){
   return 1
 }
 
-# A clean n8n instance must be initialized before CLI workflow import: the
-# importer assigns Git-controlled workflows to the owner personal project.
+# Clean n8n volumes need an owner/personal project before CLI import.
 docker run -d --name "$CONTAINER" -p 5678:5678 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
 SETUP_CODE=$(curl -sS -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5678/rest/owner/setup -d '{"email":"sitescore-ci-owner@example.test","firstName":"SiteScore","lastName":"CI","password":"'"$OWNER_PASSWORD"'"}')
@@ -82,7 +81,7 @@ echo N8N_INSTANCE_PROVISIONING=PASS
 docker stop "$CONTAINER" >/dev/null
 docker rm "$CONTAINER" >/dev/null
 
-# Import the sanitized repository artifact, then publish exactly that workflow.
+# Import and publish the sanitized repository authority.
 docker run --rm -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOLUME:/home/node/.n8n" -v "$ROOT/automation/n8n/workflows:/workflows:ro" "$IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json >/tmp/n8n63-import.log
 docker run --rm -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOLUME:/home/node/.n8n" -v "$EXPORT_DIR:/out" "$IMAGE" export:workflow --all --output=/out/workflows.json >/tmp/n8n63-export.log
 WORKFLOW_ID="$(python - "$EXPORT_DIR/workflows.json" <<'PY'
@@ -141,115 +140,222 @@ NOT_SCORE_READY=00000000-0000-4000-8000-000000000003
 ANALYSIS_FAILED=00000000-0000-4000-8000-000000000004
 ANALYSIS_TIMED_OUT=00000000-0000-4000-8000-000000000005
 REPORT_FAILED=00000000-0000-4000-8000-000000000006
-WAIT_ORDER=00000000-0000-4000-8000-000000000007
+ANALYSIS_PENDING=00000000-0000-4000-8000-000000000007
 ATTENTION=00000000-0000-4000-8000-000000000008
 EXPIRED=00000000-0000-4000-8000-000000000009
 REFUND_PENDING=00000000-0000-4000-8000-000000000010
+ANALYSIS_RUNNING=00000000-0000-4000-8000-000000000011
+PERMANENT_ADVANCE=00000000-0000-4000-8000-000000000012
+HTTP_5XX=00000000-0000-4000-8000-000000000013
+UNCERTAIN_RESPONSE=00000000-0000-4000-8000-000000000014
+RESTART_ADVANCE=00000000-0000-4000-8000-000000000015
+DUPLICATE_ADVANCE=00000000-0000-4000-8000-000000000016
 READINESS_PAYLOAD="$(make_payload 10000000-0000-4000-8000-00000000aa01 "$DELIVERY")"
 
 wait_webhook_ready(){
   local code=000
   for _ in $(seq 1 60); do
     code="$(post_code __none__ "$READINESS_PAYLOAD" || true)"
-    if [[ "$code" = 401 ]]; then
-      echo N8N_PRODUCTION_WEBHOOK_READY=PASS
-      return 0
-    fi
-    if [[ "$code" != 404 && "$code" != 000 ]]; then
-      echo "unexpected webhook readiness status: $code" >&2
-      return 1
-    fi
+    if [[ "$code" = 401 ]]; then echo N8N_PRODUCTION_WEBHOOK_READY=PASS; return 0; fi
+    if [[ "$code" != 404 && "$code" != 000 ]]; then echo "unexpected webhook readiness status: $code" >&2; return 1; fi
     sleep 1
   done
   echo "production webhook did not register before readiness deadline" >&2
   return 1
 }
 
-# /healthz becomes available before ActiveWorkflowManager has necessarily
-# registered production webhooks.  Security rejection (401) proves the live
-# route exists without touching commerce business state.
+assert_paced_order(){
+  local order="$1" minimum_posts="$2"
+  python - "$order" "$minimum_posts" <<'PY'
+import json,sys,urllib.request
+order=sys.argv[1]; minimum=int(sys.argv[2])
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+r=[x for x in d['requests'] if order in x['path']]
+posts=[(i,x) for i,x in enumerate(r) if x['method']=='POST']
+assert len(posts)>=minimum,(order,r)
+for i,p in posts:
+    later=next((x for x in r[i+1:] if x['method']=='GET'),None)
+    if later is not None:
+        assert later['at_monotonic']-p['at_monotonic']>=0.75,(order,p,later,r)
+assert all(x['body_len'] in (0,2) for x in r if x['method']=='POST'),(order,r)
+PY
+}
+
+# /healthz can precede active webhook registration; 401 proves protected route readiness.
 wait_webhook_ready
 
 test "$(post_code __none__ "$(make_payload 10000000-0000-4000-8000-000000000001 "$DELIVERY")")" = 401
 test "$(post_code wrong-secret "$(make_payload 10000000-0000-4000-8000-000000000002 "$DELIVERY")")" = 401
 test "$(post_code "$INGRESS_SECRET" '{"event_type":"order.paid.v1"}')" = 400
 test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000003 "$DELIVERY" order.fake.v1)")" = 400
-python - <<PY
+python - <<'PY'
 import json,urllib.request
 d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); assert d['requests']==[],d
 PY
 
+# Delivery boundary: authoritative GET only, no fulfillment mutation.
 delivery_payload="$(make_payload 10000000-0000-4000-8000-000000000010 "$DELIVERY")"
 test "$(post_code "$INGRESS_SECRET" "$delivery_payload")" = 202
 sleep 1
-python - <<PY
-import json,urllib.request
-o='$DELIVERY'; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+python - "$DELIVERY" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
 assert r and r[0]['method']=='GET',r
 assert not [x for x in r if x['method']=='POST'],r
 assert all(x['auth_valid'] for x in r),r
 PY
 
+# Normal advance is now always paced before the authoritative re-read.
 advance_payload="$(make_payload 10000000-0000-4000-8000-000000000020 "$ADVANCE")"
 test "$(post_code "$INGRESS_SECRET" "$advance_payload")" = 202
-sleep 2
-python - <<PY
-import json,urllib.request
-o='$ADVANCE'; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+sleep 3
+assert_paced_order "$ADVANCE" 1
+python - "$ADVANCE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
 assert [x['method'] for x in r][:3]==['GET','POST','GET'],r
-assert all(x['body_len'] in (0,2) for x in r if x['method']=='POST'),r
 assert d['logical_effects'][o]==1,d
 PY
 
-test "$(post_code "$INGRESS_SECRET" "$advance_payload")" = 202
-test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000021 "$ADVANCE")")" = 202
-sleep 1
-python - <<PY
-import json,urllib.request
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); assert d['logical_effects']['$ADVANCE']==1,d
+# Real FAZ 6.2 projection: paid analysis_pending keeps returning advance for several cycles.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000070 "$ANALYSIS_PENDING")")" = 202
+sleep 5
+assert_paced_order "$ANALYSIS_PENDING" 3
+python - "$ANALYSIS_PENDING" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+assert d['state'][o]['advance_calls']==3,d
+assert d['state'][o]['analysis_identity_mints']==1,d
 PY
+echo N8N_REAL_ANALYSIS_PENDING_PACING=PASS
 
-for order in "$NOT_SCORE_READY" "$ANALYSIS_FAILED" "$ANALYSIS_TIMED_OUT" "$REPORT_FAILED"; do
-  test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000030 "$order")")" = 202
-done
-sleep 2
-python - <<PY
-import json,urllib.request
-orders=['$NOT_SCORE_READY','$ANALYSIS_FAILED','$ANALYSIS_TIMED_OUT','$REPORT_FAILED']; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
-for o in orders:
- r=[x for x in d['requests'] if o in x['path']]
- assert r and r[0]['method']=='GET',(o,r)
- assert any(x['method']=='POST' and x['body_len'] in (0,2) for x in r),(o,r)
- assert d['logical_effects'][o]==1,(o,d)
-PY
-
-test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000040 "$REFUND_PENDING")")" = 202
+# Real paid analysis_running remains advance, then report_pending also remains advance.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000071 "$ANALYSIS_RUNNING")")" = 202
 sleep 6
-python - <<PY
-import json,urllib.request
-o='$REFUND_PENDING'; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+assert_paced_order "$ANALYSIS_RUNNING" 4
+python - "$ANALYSIS_RUNNING" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+assert d['state'][o]['advance_calls']==4,d
+assert d['state'][o]['analysis_identity_mints']==1,d
+PY
+echo N8N_REAL_ANALYSIS_RUNNING_REPORT_PACING=PASS
+
+# Same-event and different-event duplicate delivery may create duplicate transport executions,
+# but all executions use the same order identity and cannot mint a replacement analysis identity.
+dup_same="$(make_payload 10000000-0000-4000-8000-000000000080 "$DUPLICATE_ADVANCE")"
+test "$(post_code "$INGRESS_SECRET" "$dup_same")" = 202
+test "$(post_code "$INGRESS_SECRET" "$dup_same")" = 202
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000081 "$DUPLICATE_ADVANCE")")" = 202
+sleep 5
+python - "$DUPLICATE_ADVANCE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+assert d['state'][o]['analysis_identity_mints']==1,d
+assert d['state'][o]['advance_calls']>=3,d
+assert all(x['body_len'] in (0,2) for x in r if x['method']=='POST'),r
+PY
+echo N8N_DUPLICATE_REPLAY_CONVERGENCE=PASS
+
+# Canonical refund guidance still invokes only empty /advance and then paces re-observation.
+for order in "$NOT_SCORE_READY" "$ANALYSIS_FAILED" "$ANALYSIS_TIMED_OUT" "$REPORT_FAILED"; do
+  test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000090 "$order")")" = 202
+done
+sleep 4
+python - "$NOT_SCORE_READY" "$ANALYSIS_FAILED" "$ANALYSIS_TIMED_OUT" "$REPORT_FAILED" <<'PY'
+import json,sys,urllib.request
+orders=sys.argv[1:]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+for o in orders:
+    r=[x for x in d['requests'] if o in x['path']]
+    assert r and r[0]['method']=='GET',(o,r)
+    assert any(x['method']=='POST' and x['body_len'] in (0,2) for x in r),(o,r)
+    assert d['logical_effects'][o]==1,(o,d)
+PY
+
+# Refund-pending uses the same finite horizon/Wait path.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000091 "$REFUND_PENDING")")" = 202
+sleep 5
+python - "$REFUND_PENDING" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
 assert d['logical_effects'][o]==1,d
 assert sum(1 for x in r if x['method']=='GET')>=2,r
 PY
 
+# Terminal / attention states are read-only stops.
 for order in "$ATTENTION" "$EXPIRED"; do
-  test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000050 "$order")")" = 202
+  test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000092 "$order")")" = 202
 done
 sleep 1
 
-test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000060 "$WAIT_ORDER")")" = 202
-sleep .5
+# Restart while a real analysis_running advance cycle is sleeping. The persisted Wait or replay
+# resumes against commerce durable state and converges without a new analysis identity.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000100 "$RESTART_ADVANCE")")" = 202
+sleep .3
 docker stop "$CONTAINER" >/dev/null
 docker start "$CONTAINER" >/dev/null
 wait_health
 wait_webhook_ready
-sleep 6
-python - <<PY
-import json,urllib.request
-o='$WAIT_ORDER'; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
-assert sum(1 for x in r if x['method']=='GET')>=3,r
-assert not [x for x in r if x['method']=='POST'],r
+sleep 5
+assert_paced_order "$RESTART_ADVANCE" 3
+python - "$RESTART_ADVANCE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+assert d['state'][o]['advance_calls']==3,d
+assert d['state'][o]['analysis_identity_mints']==1,d
 PY
+echo N8N_REAL_ADVANCE_WAIT_RESTART=PASS
+
+# A real commerce 5xx is retried by the native HTTP node and converges on the same order.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000110 "$HTTP_5XX")")" = 202
+sleep 6
+python - "$HTTP_5XX" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+assert d['state'][o]['get_5xx_injected']==1,d
+assert sum(1 for x in r if x['method']=='GET')>=3,r
+assert d['logical_effects'][o]==1,d
+assert any(x['method']=='GET' and x['outcome']=='injected_5xx' for x in r),r
+PY
+echo N8N_COMMERCE_5XX_RECOVERY=PASS
+
+# The first /advance side effect becomes durable but its response is delayed beyond n8n's
+# 10-second timeout. Native retry/replay must discover the same durable operation, not mint one.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000120 "$UNCERTAIN_RESPONSE")")" = 202
+sleep 18
+python - "$UNCERTAIN_RESPONSE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+assert d['state'][o]['uncertain_post_injected']==1,d
+assert d['logical_effects'][o]==1,d
+assert sum(1 for x in r if x['method']=='POST')>=2,r
+assert any(x['method']=='POST' and x['outcome']=='accepted_response_delayed' for x in r),r
+assert all(x['body_len'] in (0,2) for x in r if x['method']=='POST'),r
+PY
+echo N8N_COMMERCE_TIMEOUT_REPLAY_CONVERGENCE=PASS
+
+# Permanently nonterminal paid advance state must hit the configured execution horizon.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload 10000000-0000-4000-8000-000000000130 "$PERMANENT_ADVANCE")")" = 202
+sleep 8
+BEFORE="$(python - "$PERMANENT_ADVANCE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats'))
+print(d['state'][o]['advance_calls'])
+assert d['state'][o]['analysis_identity_mints']==1,d
+PY
+)"
+sleep 2
+AFTER="$(python - "$PERMANENT_ADVANCE" <<'PY'
+import json,sys,urllib.request
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); print(d['state'][o]['advance_calls'])
+PY
+)"
+test "$BEFORE" = "$AFTER"
+test "$AFTER" -ge 5
+test "$AFTER" -le 6
+assert_paced_order "$PERMANENT_ADVANCE" 5
+# Static graph proves the false horizon edge is Stop And Error; runtime proves traffic stops.
+echo N8N_REAL_ADVANCE_POLL_HORIZON=PASS
 
 RUNTIME_OK=1
 echo N8N_WORKFLOW_IMPORT=PASS
