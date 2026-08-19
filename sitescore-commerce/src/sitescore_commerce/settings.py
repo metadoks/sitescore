@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -67,7 +68,7 @@ def _parse_timeout(value: str) -> float:
         parsed = float(value)
     except ValueError as exc:
         raise ConfigurationError("SITESCORE_API_TIMEOUT_SECONDS must be numeric") from exc
-    if parsed <= 0 or parsed > 60:
+    if not math.isfinite(parsed) or parsed <= 0 or parsed > 60:
         raise ConfigurationError("SITESCORE_API_TIMEOUT_SECONDS must be >0 and <=60")
     return parsed
 
