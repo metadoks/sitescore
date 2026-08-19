@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
@@ -106,6 +106,7 @@ class CommerceStore:
     def get_or_create_order(
         self,
         *,
+        candidate_order_id: UUID,
         key_digest: str,
         request: OrderCreateRequest,
         catalog_version: str,
@@ -123,7 +124,7 @@ class CommerceStore:
                     if existing.canonical_request_hash != request_hash:
                         raise IdempotencyConflict("idempotency key was already used with a different request")
                     return existing.order_id
-                order_id = uuid4()
+                order_id = candidate_order_id
                 now = utcnow()
                 session.add(OrderRow(order_id=order_id, product_code=ProductCode.LOCATION_REPORT_V1.value, catalog_version=catalog_version, customer_email=request.customer_email, purchase_intent=request.model_dump(mode="json"), canonical_request_hash=request_hash, order_state=OrderState.PENDING_PAYMENT.value, payment_state=PaymentState.PENDING.value, fulfillment_state=FulfillmentState.NOT_STARTED.value, created_at=now, updated_at=now))
                 # No ORM relationships are defined between these persistence rows on purpose.
