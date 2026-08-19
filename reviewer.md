@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.3
 CHECKPOINT_TITLE: Production n8n Orchestration Workflow
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -26,11 +26,11 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: e8649fd0d15f297643bdc128df7ea7fdcc55e74b
+REVIEWED_HEAD_SHA: 64887a560c4af492312e726f990363fc5010345d
 
-VALIDATED_SHA: e687767ebfd4825c448c279a5ff5c82c1e463e68
-VALIDATION_RUN_ID: 32279951225
-VALIDATION_JOB_ID: 96156101292
+VALIDATED_SHA: 786b0530ad9be7d0e0747f0eb72e6202c3e251c0
+VALIDATION_RUN_ID: 32295706699
+VALIDATION_JOB_ID: 96206386656
 VALIDATION_CONCLUSION: SUCCESS
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-3-validation.yml REMOVAL
@@ -39,10 +39,10 @@ N8N_RUNTIME_VERSION: 2.33.4
 N8N_CONTAINER_TAG: n8nio/n8n:2.33.4
 N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
 WORKFLOW_PATH: automation/n8n/workflows/sitescore-order-paid-v1.json
-WORKFLOW_SHA256: 5b4abd8cbc774633c26a93708992bc68ca396fabd8f1d573c648f73c113d448e
+WORKFLOW_SHA256: 162584b8fc1b16368ae16eeda7da5111827b7d21dd2ac51c6677c0ad465e46db
 
-N8N63-H001: OPEN
-BLOCKERS: N8N63-H001
+N8N63-H001: RESOLVED
+BLOCKERS: NONE
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -54,7 +54,7 @@ FAZ_6_STATUS: IN_PROGRESS
 FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
-FAZ_6_3_STATUS: HARDENING_REQUIRED
+FAZ_6_3_STATUS: READY_TO_LOCK
 START_6_4: NO
 ```
 
@@ -62,7 +62,7 @@ START_6_4: NO
 
 # 1. EXACT STATE REVIEWED
 
-Reviewer independently re-read live GitHub and reviewed the exact final PR head.
+Reviewer independently re-read live GitHub and reviewed the exact current PR head.
 
 ```text
 main:
@@ -77,11 +77,11 @@ MERGED: FALSE
 base:
 main@acc213ac52f980789164d9fedcd4e18deeefcf75
 
-reviewed head:
-e8649fd0d15f297643bdc128df7ea7fdcc55e74b
+reviewed final head:
+64887a560c4af492312e726f990363fc5010345d
 
 validated SHA:
-e687767ebfd4825c448c279a5ff5c82c1e463e68
+786b0530ad9be7d0e0747f0eb72e6202c3e251c0
 
 validated -> final:
 1 commit ahead
@@ -91,257 +91,154 @@ only changed file:
 status: removed
 ```
 
-Base -> reviewed head changes are confined to `automation/n8n/` and the minimum `sitescore-commerce` dispatcher/package/tests surface. Frozen FAZ 3/4/5 runtime source is untouched. No FAZ 6.4 delivery/Postmark/grant/fulfilled implementation and no FAZ 6.5 broad recovery scanner were introduced.
+The final product/test/runtime content is therefore the content that passed the exact-head validation run; the only post-validation change is removal of the temporary validation workflow.
+
+The prior blocker head `e8649fd0d15f297643bdc128df7ea7fdcc55e74b` to final head `64887a560c4af492312e726f990363fc5010345d` hardening delta is confined to five 6.3 files:
+
+```text
+automation/n8n/docs/CHECKPOINT_6_3_PRODUCTION_N8N_ORCHESTRATION.md
+automation/n8n/tests/fake_commerce_server.py
+automation/n8n/tests/runtime_smoke.sh
+automation/n8n/tests/test_workflow_static.py
+automation/n8n/workflows/sitescore-order-paid-v1.json
+```
+
+No frozen FAZ 3/4/5 source changed during hardening. No FAZ 6.4 delivery/Postmark/grant/fulfilled implementation and no FAZ 6.5 broad recovery scanner were introduced.
 
 ---
 
-# 2. POSITIVE REVIEW RESULTS
+# 2. N8N63-H001 — RESOLVED
 
-Reviewer confirmed the following major 6.3 boundaries on the exact reviewed head:
-
-```text
-sitescore-commerce == 0.4.0
-commerce migration head remains 0003_fulfillment_refund
-no schema migration added
-n8n runtime pinned to 2.33.4
-validated container digest captured
-workflow repository export has zero Code/Function nodes
-workflow contains no literal production secrets
-inbound commerce -> n8n transport uses COMMERCE_N8N_INGRESS_SECRET
-outbound n8n -> commerce uses distinct COMMERCE_AUTOMATION_API_KEY role
-n8n has no Stripe/SiteScore/Postmark/commerce-DB/Redis/S3 master credentials
-order.paid.v1 trigger payload is minimal server-owned identity only
-valid workflow first queries commerce automation authority before mutation
-only commerce automation GET and empty POST /advance are business HTTP calls
-report-ready / delivery_pending stops cleanly; no fulfilled fabrication
-outbox dispatcher performs n8n HTTP outside PostgreSQL transaction/row lock
-confirmed 2xx marks the same durable event published
-transport uncertainty/non-2xx leaves the event unpublished for replay
-multiple dispatchers may duplicate transport but retain one durable event identity
-```
-
-These are accepted positive results but do not override the blocker below.
-
----
-
-# 3. N8N63-H001 — OPEN
-
-## Long-running real commerce `advance` states bypass Wait/poll horizon and can busy-loop
-
-The frozen/live FAZ 6.2 commerce automation projection is authoritative.
-
-`FulfillmentStore.get_status()` maps business state as follows:
+The previous defect was the direct unpaced production loop:
 
 ```text
-delivery_pending -> next_action=delivery
-canonical refund states -> next_action=refund
-terminal / attention_required -> next_action=none
-otherwise, if payment_state=paid -> next_action=advance
-otherwise -> next_action=wait
-```
-
-Therefore these real paid fulfillment states return `next_action=advance`:
-
-```text
-not_started
-analysis_pending
-analysis_running
-report_pending
-```
-
-`POST /v1/automation/orders/{order_id}/advance` then performs the relevant one-step server-owned operation. In particular, for `analysis_pending` / `analysis_running`, it re-polls the exact bound SiteScore analysis and can legitimately return another paid `analysis_pending` / `analysis_running` state whose next action is again `advance`.
-
-The current n8n graph does not pace that path.
-
-Current exact workflow loop:
-
-```text
-Get Commerce State
--> Advance Requested?
--> Advance Commerce
+Advance Commerce
 -> Get Commerce State
 ```
 
-`Advance Commerce` connects directly back to `Get Commerce State`.
+while the frozen FAZ 6.2 commerce projection legitimately returns `next_action=advance` for paid `analysis_pending`, `analysis_running`, and `report_pending` states.
 
-The only branch that enters:
-
-```text
-Within Poll Horizon?
--> Wait Before Poll
--> Get Commerce State
-```
-
-is `next_action == wait`.
-
-This means a legitimate long-running production analysis can execute:
-
-```text
-GET commerce status       -> advance
-POST /advance             -> analysis still running
-GET commerce status       -> advance
-POST /advance             -> analysis still running
-GET commerce status       -> advance
-...
-```
-
-without entering `SITESCORE_N8N_POLL_SECONDS` Wait and without applying the `SITESCORE_N8N_MAX_POLLS` execution horizon.
-
-Consequences:
-
-```text
-unpaced commerce HTTP loop
-repeated immediate SiteScore analysis reconciliation
-potentially unbounded workflow execution while analysis remains running
-load amplification against commerce/SiteScore
-explicit 6.3 bounded polling contract bypass
-```
-
-This is not a cosmetic orchestration preference. It violates the checkpoint's required long-running analysis / bounded retry semantics and creates a concrete availability/recovery correctness path.
-
-```text
-N8N63-H001: OPEN
-```
-
----
-
-# 4. WHY CURRENT GREEN RUNTIME TEST MISSES THE BUG
-
-The n8n fake commerce fixture uses an artificial `WAIT` order whose `analysis_running` projection returns:
-
-```text
-next_action = wait
-```
-
-for its first reads.
-
-That does not match the real commerce projection, where a paid `analysis_running` order returns:
-
-```text
-next_action = advance
-```
-
-The current restart/Wait smoke therefore proves persistence for the artificial wait branch, but it does not prove the actual production long-running analysis path.
-
-The static test also currently asserts:
-
-```text
-Advance Commerce -> Get Commerce State
-```
-
-so it codifies rather than detects the unpaced loop.
-
-Green CI is therefore valid for the tested graph, but the tested fixture does not represent the production state projection at this critical point.
-
----
-
-# 5. REQUIRED HARDENING
-
-Implementer must harden PR #26 without widening checkpoint scope.
-
-Required semantic behavior:
-
-```text
-any continuing orchestration cycle after POST /advance
--> pass through the same finite poll-horizon control
--> Wait for configured SITESCORE_N8N_POLL_SECONDS
--> then GET authoritative commerce state again
-```
-
-A native-node shape equivalent to the following is acceptable:
+The exact final workflow now routes every continuing advance/refund operation through the finite pacing path:
 
 ```text
 Advance Commerce
 -> Within Poll Horizon?
-   -> if within horizon: Wait Before Poll -> Get Commerce State
-   -> if exceeded: Fail Poll Horizon
+   -> true: Wait Before Poll
+            -> Get Commerce State
+   -> false: Fail Poll Horizon
 ```
 
-The exact graph may differ, but mandatory invariants are:
+The direct `Advance Commerce -> Get Commerce State` edge is absent.
+
+`next_action=wait` uses the same finite horizon/Wait path. Delivery still stops at `delivery_pending`; terminal/none states stop without business mutation.
+
+This preserves the authoritative commerce boundary:
 
 ```text
-no direct unbounded Advance Commerce -> Get Commerce State cycle
-analysis_pending / analysis_running are paced
-report_pending continuing cycles are paced
-refund/reconciliation continuing cycles are paced where they remain nonterminal
-finite configured horizon applies to every continuing execution cycle
-no Code/Function node business logic
-no n8n-authored analysis/report/refund/payment/delivery truth
-horizon failure changes only workflow execution outcome, never commerce business state
-later replay can continue from commerce durable truth
+n8n does not author analysis truth
+n8n does not author report truth
+n8n does not author payment/refund truth
+n8n does not author delivery/fulfilled truth
+POST /advance remains empty
+commerce remains the state/decision authority
 ```
 
-Do not change the frozen 6.2 commerce truth contract merely to make the workflow test easier. The orchestration must adapt to the existing authoritative projection.
+The hardening therefore fixes the availability/recovery defect without reopening the frozen 6.2 contract.
+
+```text
+N8N63-H001: RESOLVED
+```
 
 ---
 
-# 6. REQUIRED ADVERSARIAL / RUNTIME PROOF FOR HARDENING
+# 3. PRODUCTION-REALISTIC ADVERSARIAL PROOF
 
-Add or correct runtime fixtures so they mirror actual commerce projection.
+Reviewer inspected the exact final fake-commerce/runtime tests. They now mirror the real 6.2 projection rather than the old artificial `analysis_running -> wait` behavior.
 
-At minimum prove:
-
-```text
-1. paid analysis_pending returns next_action=advance for multiple cycles
-   -> each continuing advance cycle is separated by configured Wait
-   -> no parallel/new analysis identity is authored
-
-2. paid analysis_running returns next_action=advance for multiple cycles
-   -> bounded paced polling
-   -> eventual transition can continue to report/delivery boundary
-
-3. a permanently nonterminal paid advance state
-   -> reaches SITESCORE_N8N_MAX_POLLS horizon
-   -> workflow fails/stops operationally
-   -> no fabricated terminal commerce state
-
-4. restart during a paced real advance cycle
-   -> resumes or replay converges from commerce durable state
-
-5. duplicate same-event and different-event same-order deliveries
-   -> still converge after pacing change
-
-6. actual commerce HTTP 5xx then recovery
-   -> native retry/replay behavior demonstrated
-   -> no duplicate business authority
-
-7. actual commerce HTTP timeout/uncertain response then recovery/replay
-   -> convergence demonstrated
-   -> no n8n-authored replacement identity
-```
-
-Items 6 and 7 were explicitly required by the 6.3 Reviewer contract but the current fake/runtime smoke does not inject those failures. They must be included in the hardening validation before the checkpoint can become READY_TO_LOCK.
-
-Preserve delivery boundary proof:
+The runtime proof includes:
 
 ```text
+paid analysis_pending -> advance across multiple paced cycles
+paid analysis_running -> advance across multiple paced cycles
+report_pending -> advance through the same paced path
+permanent nonterminal advance -> configured poll horizon stops traffic
+restart during paced advance -> durable-state convergence
+same-event duplicate delivery -> convergence
+different-event same-order delivery -> convergence
+commerce GET 5xx -> native retry/recovery
+accepted /advance side effect with response delayed beyond HTTP timeout -> retry/replay convergence
+canonical refund states -> empty /advance only, then paced re-observation
+refund_pending -> finite wait/poll path
 delivery_pending -> clean STOP
-no Postmark
-o delivery grant
-no fulfilled mutation
+attention/expired -> read-only stop
 ```
+
+The pacing test records monotonic request timestamps and requires a later GET after POST to be separated by the configured Wait interval. The permanently nonterminal fixture proves traffic stops at the finite horizon rather than busy-looping indefinitely.
+
+The uncertain-response fixture durably applies the one fake commerce logical side effect before delaying the HTTP response beyond the n8n node timeout; retry/replay then converges with one logical business effect.
 
 ---
 
-# 7. VALIDATION EVIDENCE REVIEWED
+# 4. WORKFLOW / AUTHORITY / SECRET BOUNDARIES
 
-Reviewer independently inspected the current exact-head validation evidence.
+Reviewer re-confirmed on the exact final head:
+
+```text
+n8n runtime pinned to 2.33.4
+zero Code/Function nodes
+native-node state machine only
+protected order.paid.v1 ingress
+COMMERCE_N8N_INGRESS_SECRET used only for inbound transport auth
+COMMERCE_AUTOMATION_API_KEY used for outbound commerce automation API
+only commerce automation GET and empty POST /advance are business HTTP calls
+no direct SiteScore API call from n8n
+no direct Stripe call from n8n
+no commerce PostgreSQL access from n8n
+no Postmark call
+no S3/private report access
+no Stripe/SiteScore/Postmark/DB/Redis/S3 master credentials in workflow
+no literal production secret in exported workflow
+minimal durable event_id/event_type/order_id/occurred_at trigger payload
+delivery_pending remains the FAZ 6.4 stop boundary
+```
+
+The already-reviewed minimum commerce outbox dispatcher remains unchanged by the hardening and retains the accepted semantics:
+
+```text
+at-least-once transport
+same durable outbox event identity
+HTTP outside PostgreSQL transaction/row lock
+confirmed 2xx -> mark published
+non-2xx/transport uncertainty -> remain unpublished for replay
+no exactly-once HTTP assumption
+```
+
+Commerce package remains `sitescore-commerce==0.4.0`; schema/migration head remains `0003_fulfillment_refund` with no new migration.
+
+---
+
+# 5. EXACT-HEAD CI / RUNTIME EVIDENCE
+
+Reviewer independently fetched the GitHub Actions run associated with validated SHA `786b0530ad9be7d0e0747f0eb72e6202c3e251c0`.
 
 ```text
 workflow:
 faz6-6-3-exact-head-validation
 
-validated SHA:
-e687767ebfd4825c448c279a5ff5c82c1e463e68
-
 run:
-32279951225
+32295706699
 
 job:
-96156101292
+96206386656
 
 conclusion:
 SUCCESS
+
+checkout SHA:
+786b0530ad9be7d0e0747f0eb72e6202c3e251c0
+
+base ancestry:
+acc213ac52f980789164d9fedcd4e18deeefcf75 -> validated SHA: PASS
 
 Python:
 3.11.15
@@ -358,53 +255,71 @@ n8n static repository suite:
 frozen FAZ 3/4/5:
 1504 PASS
 
-combined pytest count reported for package suites:
+combined package pytest count:
 1783 PASS
+```
 
-n8n runtime:
-2.33.4
+Exact n8n runtime evidence:
 
-validated image digest:
-n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+```text
+N8N_RUNTIME_VERSION=2.33.4
+N8N_VALIDATED_IMAGE_DIGEST=n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+WORKFLOW_SHA256=162584b8fc1b16368ae16eeda7da5111827b7d21dd2ac51c6677c0ad465e46db
 
-workflow SHA-256:
-5b4abd8cbc774633c26a93708992bc68ca396fabd8f1d573c648f73c113d448e
+N8N_REAL_ANALYSIS_PENDING_PACING=PASS
+N8N_REAL_ANALYSIS_RUNNING_REPORT_PACING=PASS
+N8N_DUPLICATE_REPLAY_CONVERGENCE=PASS
+N8N_REAL_ADVANCE_WAIT_RESTART=PASS
+N8N_COMMERCE_5XX_RECOVERY=PASS
+N8N_COMMERCE_TIMEOUT_REPLAY_CONVERGENCE=PASS
+N8N_REAL_ADVANCE_POLL_HORIZON=PASS
+N8N_WORKFLOW_IMPORT=PASS
+N8N_PUBLISH_STATE_PROOF=PASS
+N8N_WEBHOOK_AUTH=PASS
+N8N_ORCHESTRATION_INTEGRATION=PASS
+N8N_WAIT_RESTART=PASS
+```
 
-clean instance provisioning/import/publish: PASS
-production webhook auth: PASS
-runtime orchestration smoke: PASS
-Wait restart smoke: PASS
-commerce migration cycle: PASS
-commerce migration head unchanged at 0003: PASS
+Additional gates independently observed as successful:
+
+```text
+commerce Alembic upgrade/downgrade/re-upgrade: PASS
+commerce migration head remains 0003_fulfillment_refund: PASS
 secret scan: PASS
 frozen-scope scan: PASS
 private S3-compatible storage regression: PASS
-Redis/Celery transport regression: PASS
+Redis/Celery execution transport regression: PASS
+sitescore-report: 24 PASS
+sitescore-api: 105 PASS
+remaining frozen suites preserve the 1504 total: PASS
 ```
-
-This run remains useful positive evidence, but it does not close N8N63-H001 because its fake `analysis_running -> wait` projection differs from production commerce and does not exercise the actual `advance` loop. A new exact-head validation run is required after hardening.
 
 ---
 
-# 8. REVIEWER DECISION
+# 6. REVIEWER DECISION
+
+No remaining concrete architecture/security/correctness blocker was found on the exact final head.
 
 ```text
-FAZ 6.3: HARDENING_REQUIRED
+FAZ 6.3: READY_TO_LOCK
 PR: #26
-REVIEWED_HEAD_SHA: e8649fd0d15f297643bdc128df7ea7fdcc55e74b
+REVIEWED_HEAD_SHA: 64887a560c4af492312e726f990363fc5010345d
 
-N8N63-H001: OPEN
-BLOCKERS: N8N63-H001
+N8N63-H001: RESOLVED
+BLOCKERS: NONE
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+USER_LOCK_AUTHORIZED: NO
 START_6_4: NO
 ```
 
-Implementer must harden only PR #26 / FAZ 6.3, produce a new exact final head and exact-head CI evidence, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
+Reviewer has not merged PR #26 and has not authorized itself to do so.
 
-No LOCK is authorized. FAZ 6.4 remains closed. Reviewer STOP.
+Only a literal user `LOCK` sent to the Implementer chat may authorize Implementer to merge this exact reviewed head. Implementer must verify immediately before merge that PR #26 head is still exactly `64887a560c4af492312e726f990363fc5010345d` and that `main` has not drifted from the reviewed base. If either SHA differs, merge must stop and return to Reviewer.
+
+FAZ 6.4 remains closed. Reviewer STOP.
