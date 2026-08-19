@@ -16,9 +16,16 @@ def base_env(monkeypatch):
     monkeypatch.setenv("SITESCORE_API_TARGET_ID","production-v1")
     monkeypatch.setenv("SITESCORE_API_TIMEOUT_SECONDS","10")
     monkeypatch.setenv("COMMERCE_AUTOMATION_API_KEY","automation-key-test-0123456789")
+    monkeypatch.setenv("POSTMARK_SERVER_TOKEN","postmark-test-token-not-real")
+    monkeypatch.setenv("POSTMARK_FROM_EMAIL","reports@sitescore.example")
+    monkeypatch.setenv("POSTMARK_TEMPLATE_ALIAS","sitescore-report-v1")
+    monkeypatch.setenv("POSTMARK_TIMEOUT_SECONDS","10")
+    monkeypatch.setenv("COMMERCE_PUBLIC_BASE_URL","https://commerce.example")
 
 def test_production_redirects_and_version_pin(monkeypatch):
     base_env(monkeypatch); s=Settings.from_env(); assert s.stripe_api_version=="2026-07-29.dahlia" and s.stripe_expected_livemode is False and s.stripe_webhook_secret=="test-signing-secret"; assert s.sitescore_api_base_url=="https://sitescore.example" and s.sitescore_api_target_id=="production-v1" and s.sitescore_api_timeout_seconds==10 and s.sitescore_api_service_key.startswith("ssk1_")
+    assert s.postmark_from_email=="reports@sitescore.example" and s.postmark_template_alias=="sitescore-report-v1" and s.postmark_timeout_seconds==10
+    assert s.commerce_public_base_url=="https://commerce.example"
 
 @pytest.mark.parametrize("name,value",[("COMMERCE_SUCCESS_URL_BASE","https://user:pass@app.example/success"),("COMMERCE_CANCEL_URL_BASE","https://app.example/cancel#fragment"),("COMMERCE_SUCCESS_URL_BASE","https://app.example/success?paid=true"),("COMMERCE_CANCEL_URL_BASE","http://evil.example/cancel")])
 def test_unsafe_redirect_config_fails_closed(monkeypatch,name,value):
@@ -53,7 +60,22 @@ def test_sitescore_service_key_must_match_frozen_bearer_token_format(monkeypatch
     base_env(monkeypatch); monkeypatch.setenv("SITESCORE_API_SERVICE_KEY",value)
     with pytest.raises(ConfigurationError): Settings.from_env()
 
-@pytest.mark.parametrize("name",["SITESCORE_API_BASE_URL","SITESCORE_API_SERVICE_KEY","SITESCORE_API_TARGET_ID","COMMERCE_AUTOMATION_API_KEY"])
-def test_fulfillment_server_configuration_is_required(monkeypatch,name):
+@pytest.mark.parametrize("name",["SITESCORE_API_BASE_URL","SITESCORE_API_SERVICE_KEY","SITESCORE_API_TARGET_ID","COMMERCE_AUTOMATION_API_KEY","POSTMARK_SERVER_TOKEN","POSTMARK_FROM_EMAIL","POSTMARK_TEMPLATE_ALIAS","COMMERCE_PUBLIC_BASE_URL"])
+def test_server_configuration_is_required(monkeypatch,name):
     base_env(monkeypatch); monkeypatch.delenv(name)
+    with pytest.raises(ConfigurationError): Settings.from_env()
+
+@pytest.mark.parametrize("value",["http://commerce.example","https://user:pass@commerce.example","https://commerce.example/path","https://commerce.example?token=x","https://commerce.example/#x"])
+def test_public_download_origin_fails_closed(monkeypatch,value):
+    base_env(monkeypatch); monkeypatch.setenv("COMMERCE_PUBLIC_BASE_URL",value)
+    with pytest.raises(ConfigurationError): Settings.from_env()
+
+@pytest.mark.parametrize("value",["0","-1","61","nan","abc"])
+def test_postmark_timeout_is_bounded(monkeypatch,value):
+    base_env(monkeypatch); monkeypatch.setenv("POSTMARK_TIMEOUT_SECONDS",value)
+    with pytest.raises(ConfigurationError): Settings.from_env()
+
+@pytest.mark.parametrize("value",["bad alias","../template","","a"*101])
+def test_postmark_template_alias_is_bounded_safe_identity(monkeypatch,value):
+    base_env(monkeypatch); monkeypatch.setenv("POSTMARK_TEMPLATE_ALIAS",value)
     with pytest.raises(ConfigurationError): Settings.from_env()
