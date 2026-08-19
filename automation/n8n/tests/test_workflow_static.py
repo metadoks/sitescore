@@ -86,7 +86,7 @@ def test_only_commerce_automation_http_boundary_is_used():
     assert advance.get("sendBody") is not True and "bodyParameters" not in advance and "jsonBody" not in advance
 
 
-def test_state_machine_branches_only_on_commerce_projection():
+def test_state_machine_branches_only_on_commerce_projection_and_paces_every_advance_cycle():
     workflow = load()
     assert targets(workflow, "Get Commerce State") == ["Terminal State?"]
     assert targets(workflow, "Terminal State?", 0) == ["Stop Terminal"]
@@ -96,8 +96,10 @@ def test_state_machine_branches_only_on_commerce_projection():
     assert targets(workflow, "Refund Requested?", 0) == ["Advance Commerce"]
     assert targets(workflow, "Wait Requested?", 0) == ["Within Poll Horizon?"]
     assert targets(workflow, "No Action?", 0) == ["Stop No Action"]
-    assert targets(workflow, "Advance Commerce") == ["Get Commerce State"]
+    assert targets(workflow, "Advance Commerce") == ["Within Poll Horizon?"]
+    assert targets(workflow, "Within Poll Horizon?", 0) == ["Wait Before Poll"]
     assert targets(workflow, "Wait Before Poll") == ["Get Commerce State"]
+    assert "Get Commerce State" not in targets(workflow, "Advance Commerce")
     blob = json.dumps(workflow)
     for action in ["advance","refund","wait","delivery","none"]: assert action in blob
     for forbidden in ["analysis_id","report_id","refund_amount","refund_reason","payment_intent","paid=true","fulfilled"]: assert forbidden not in blob.lower()
@@ -109,6 +111,7 @@ def test_wait_is_finite_configurable_and_poll_horizon_fails_without_business_mut
     assert "SITESCORE_N8N_MAX_POLLS" in json.dumps(nodes["Within Poll Horizon?"])
     assert targets(workflow, "Within Poll Horizon?", 1) == ["Fail Poll Horizon"]
     assert nodes["Fail Poll Horizon"]["type"] == "n8n-nodes-base.stopAndError"
+    assert "durable commerce state unchanged" in nodes["Fail Poll Horizon"]["parameters"]["errorMessage"]
 
 
 def test_runtime_definition_pins_exact_n8n_and_only_narrow_business_credentials():
