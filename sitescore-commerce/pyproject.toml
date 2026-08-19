@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sitescore-commerce"
-version = "0.3.0"
-description = "SiteScore commerce, payment authority, fulfillment binding, and canonical refund boundary"
+version = "0.4.0"
+description = "SiteScore commerce, payment authority, fulfillment binding, refunds, and orchestration dispatch boundary"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.140.0",
@@ -21,6 +21,9 @@ dependencies = [
 test = [
   "pytest==8.4.2",
 ]
+
+[project.scripts]
+sitescore-commerce-dispatch-paid-outbox = "sitescore_commerce.dispatcher:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
