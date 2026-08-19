@@ -1,6 +1,6 @@
 {
   "id": "sitescoreOrderPaidV1",
-  "name": "SiteScore Order Paid Orchestration v1.0.0",
+  "name": "SiteScore Order Paid Orchestration v1.1.0",
   "nodes": [
     {
       "parameters": {"httpMethod":"POST","path":"sitescore-order-paid-v1","responseMode":"responseNode","options":{}},
@@ -30,7 +30,10 @@
       "parameters":{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"id":"10000000-0000-4000-8000-000000000010","leftValue":"={{ $json.next_action }}","rightValue":"delivery","operator":{"type":"string","operation":"equals"}}],"combinator":"and"},"options":{}},
       "id":"10000000-0000-4000-8000-000000000010","name":"Delivery Boundary?","type":"n8n-nodes-base.if","typeVersion":2.2,"position":[80,-120]
     },
-    {"parameters":{},"id":"10000000-0000-4000-8000-000000000011","name":"Stop At Delivery Pending","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[320,-300]},
+    {
+      "parameters":{"method":"POST","url":"={{ $env.SITESCORE_COMMERCE_AUTOMATION_BASE_URL + '/v1/automation/orders/' + $node[\"Order Paid Ingress\"].json.body.order_id + '/deliver' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.COMMERCE_AUTOMATION_API_KEY }}"}]},"options":{"timeout":10000}},
+      "id":"10000000-0000-4000-8000-000000000011","name":"Deliver Commerce","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[320,-300],"retryOnFail":true,"maxTries":3,"waitBetweenTries":2000
+    },
     {
       "parameters":{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":2},"conditions":[{"id":"10000000-0000-4000-8000-000000000012","leftValue":"={{ $json.next_action }}","rightValue":"advance","operator":{"type":"string","operation":"equals"}}],"combinator":"and"},"options":{}},
       "id":"10000000-0000-4000-8000-000000000012","name":"Advance Requested?","type":"n8n-nodes-base.if","typeVersion":2.2,"position":[320,-80]
@@ -67,7 +70,8 @@
     "Accept Trigger":{"main":[[{"node":"Get Commerce State","type":"main","index":0}]]},
     "Get Commerce State":{"main":[[{"node":"Terminal State?","type":"main","index":0}]]},
     "Terminal State?":{"main":[[{"node":"Stop Terminal","type":"main","index":0}],[{"node":"Delivery Boundary?","type":"main","index":0}]]},
-    "Delivery Boundary?":{"main":[[{"node":"Stop At Delivery Pending","type":"main","index":0}],[{"node":"Advance Requested?","type":"main","index":0}]]},
+    "Delivery Boundary?":{"main":[[{"node":"Deliver Commerce","type":"main","index":0}],[{"node":"Advance Requested?","type":"main","index":0}]]},
+    "Deliver Commerce":{"main":[[{"node":"Within Poll Horizon?","type":"main","index":0}]]},
     "Advance Requested?":{"main":[[{"node":"Advance Commerce","type":"main","index":0}],[{"node":"Refund Requested?","type":"main","index":0}]]},
     "Refund Requested?":{"main":[[{"node":"Advance Commerce","type":"main","index":0}],[{"node":"Wait Requested?","type":"main","index":0}]]},
     "Wait Requested?":{"main":[[{"node":"Within Poll Horizon?","type":"main","index":0}],[{"node":"No Action?","type":"main","index":0}]]},
@@ -79,7 +83,7 @@
   "pinData": {},
   "settings": {"executionOrder":"v1"},
   "staticData": null,
-  "meta": {"sitescoreWorkflowVersion":"1.0.0","sitescoreBusinessIdentity":"sitescore-order-paid-v1"},
+  "meta": {"sitescoreWorkflowVersion":"1.1.0","sitescoreBusinessIdentity":"sitescore-order-paid-v1"},
   "tags": [],
   "active": false
 }
