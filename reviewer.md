@@ -12,15 +12,16 @@ CURRENT_PHASE: FAZ 5
 CURRENT_CHECKPOINT: 5-FINAL
 CHECKPOINT_TITLE: Integrated Product Interface / Report Audit + Freeze Gate
 
-REVIEWER_STATE: READY_FOR_IMPLEMENTER
-IMPLEMENTER_ACTION: EXECUTE_5_FINAL_AUDIT
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
 CODE_BRANCH: faz5/5-final-integrated-product-audit
-PR: TBD_BY_IMPLEMENTER
+REVIEWED_HEAD_SHA: 50d24cb612339f9dd178aca6916eaa04f1c1b61f
+PR: #22
 
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
@@ -35,458 +36,272 @@ FAZ_5_STATUS: NOT_YET_FROZEN
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS: NONE_AT_CHECKPOINT_OPEN
-```
-
----
-
-# 1. FAZ 5.5 POST-LOCK VERIFICATION — PASSED
-
-Reviewer independently verified the literal user LOCK and resulting merge against live GitHub state.
-
-Authoritative pre-lock Reviewer approval was exact-SHA-specific:
-
-```text
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
-REVIEWED_HEAD_SHA: 99b5694aeb81b6e926255f6b70d68184ee030a35
-PR: #21
 BLOCKERS: NONE
-RPT55-H001..H006: RESOLVED
 ```
 
-Implementer handoff records:
+---
+
+# 1. EXACT LIVE STATE REVIEWED
+
+Reviewer independently re-read the authoritative 5-FINAL Reviewer/Implementer handoffs, live PR #22, live `main`, exact branch diff, all three 5-FINAL audit artifacts, representative locked runtime/API/report/security source, OpenAPI tests, authoritative exact-head CI, and validated-to-final closure.
 
 ```text
-USER_LOCK_AUTHORIZED: YES
-REVIEWED_AND_MERGED_HEAD_SHA: 99b5694aeb81b6e926255f6b70d68184ee030a35
-MERGE_COMMIT_SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+main: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+main vs expected base: IDENTICAL
+
+PR: #22
+state: OPEN
+merged: FALSE
+mergeable: TRUE
+draft: FALSE
+base SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+head SHA: 50d24cb612339f9dd178aca6916eaa04f1c1b61f
 ```
 
-Live GitHub independently proves:
+Exact base -> final candidate:
 
 ```text
-PR #21: CLOSED / MERGED
-PR head SHA: 99b5694aeb81b6e926255f6b70d68184ee030a35
-merge commit: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
-
-merge parent 1:
-7d6ddbdb94567761733ff540239d959096d98f61
-
-merge parent 2:
-99b5694aeb81b6e926255f6b70d68184ee030a35
-
-live main:
 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
+->
+50d24cb612339f9dd178aca6916eaa04f1c1b61f
+
+ahead_by: 7
+behind_by: 0
+changed files: 3
 ```
 
-Therefore the merged second parent is exactly the Reviewer-approved candidate, first parent is exactly the locked pre-5.5 main, and live main is exactly the resulting merge commit.
-
-Checkpoint decision:
+Only:
 
 ```text
-FAZ 5.5 — LOCKED
+AUTOMATION_CONSUMER_HANDOFF.md
+sitescore-api/docs/FAZ5_FINAL_INTEGRATED_PRODUCT_AUDIT.md
+sitescore-api/tests/test_faz5_final_freeze_gate.py
 ```
 
-No reopen is active.
+No product runtime source, dependency, migration, package version, frozen FAZ 3/4 source, locked `sitescore-report==0.3.0`, payment, Stripe, production n8n workflow, email, frontend/commercial orchestration, callback/webhook execution, or FAZ 6 implementation is introduced by 5-FINAL.
 
 ---
 
-# 2. OPEN ONLY 5-FINAL
+# 2. INTEGRATED AUTHORITY AUDIT — ACCEPTED
 
-5-FINAL is now the only authorized FAZ 5 checkpoint.
+Reviewer found no alternate analytical/report truth chain.
 
-It is an integrated audit / freeze-readiness gate, NOT a new product subsystem.
-
-Do not start FAZ 6.
-Do not add payment, Stripe, customer-email delivery, commercial orchestration, frontend account flows, callback/webhook execution, or an actual n8n workflow.
-Do not change frozen FAZ 3/4 semantics or locked 5.0-5.5 architecture unless the audit discovers a real blocker requiring explicit Reviewer reopen/decision.
-
-Authoritative base:
-
-```text
-main@8f757b81c0cb69e5e6be62f45e94ff9a57432cca
-```
-
-Implementer must create/use one 5-FINAL branch and one PR from this exact base:
-
-```text
-faz5/5-final-integrated-product-audit
-```
-
-Any hardening found during 5-FINAL stays on that same branch/PR.
-
----
-
-# 3. 5-FINAL PURPOSE
-
-The goal is to prove the entire FAZ 5 product-facing chain remains one coherent, authority-safe system from external request through durable report artifact.
-
-Audit the complete chain:
+The locked integrated chain remains:
 
 ```text
 external request
 -> /v1 API
--> Bearer auth / scopes
--> idempotent durable acceptance
--> PostgreSQL lifecycle / outbox
+-> scoped Bearer authentication
+-> PostgreSQL idempotent acceptance / lifecycle / outbox
 -> Celery worker
--> frozen FAZ 4 canonical acquisition + analysis
--> canonical terminal outcome
--> canonical report facts
--> report domain model
--> narrative authority boundary
--> deterministic presentation policy
--> HTML/CSS + charts
--> PDF rendering
--> private S3-compatible artifact
--> PostgreSQL report resource
--> authenticated report metadata/content API
-```
-
-This checkpoint must prove integration and freeze readiness, not introduce an alternative chain.
-
----
-
-# 4. MANDATORY AUTHORITY AUDIT
-
-Re-prove all of the following on the exact 5-FINAL candidate.
-
-## 4.1 External request / transport authority
-
-Caller-controlled JSON, headers, IDs, hashes, fingerprints, stored result bodies, transport flags, or report IDs must never gain internal analytical/report authority.
-
-The API must not:
-
-- calculate scoring math;
-- calculate benchmark/financial/decision/confidence semantics;
-- reconstruct canonical application analysis authority;
-- authorize scored completion from serialized values;
-- authorize report generation from `AnalysisModel.result_body`;
-- permit caller-provided storage key, hash, filename, score, confidence, decision or provenance authority.
-
-## 4.2 Worker / canonical-analysis authority
-
-Worker must remain the sole execution bridge into the frozen canonical analysis path.
-
-Verify:
-
-```text
-factory-owned acquisition
--> frozen readiness/application gate
--> exact canonical app result
--> guarded CanonicalCompletedOutcome / CanonicalNotScoreReadyOutcome
-```
-
-No duplicate app-side scoring orchestration, route-side core call, worker-side alternate score computation, or transport-to-core shortcut.
-
-`NOT_SCORE_READY` must remain not scored.
-`PIPELINE_ERROR` must not become empty success.
-Missing must not become zero.
-Unavailable must not become bad.
-Uncalibrated must not become calibrated.
-
-## 4.3 Report authority
-
-Re-prove exact identity chain:
-
-```text
-live CanonicalCompletedOutcome
--> exact factory-owned ApplicationAnalysisResult
+-> server-owned canonical acquisition
+-> frozen readiness/application analysis
+-> CanonicalCompletedOutcome | CanonicalNotScoreReadyOutcome
+-> exact live ApplicationAnalysisResult authority
 -> CanonicalReportFacts
 -> ReportDomainModel
 -> ValidatedReportNarrative
--> PresentationPolicy
+-> deterministic presentation
 -> PDF
--> PreparedReportArtifact
+-> private S3-compatible object
+-> PostgreSQL report resource
+-> authenticated metadata/content API
 ```
 
-No report scoring math.
-No narrative scoring/math authority.
-No report regeneration from stored JSON.
-No `POST /v1/reports` analysis rerun.
-No ID/fingerprint-only equivalence.
+Representative source re-audit confirmed:
 
-## 4.4 Durable lifecycle and artifact invariants
+- route layer exposes only the five locked V1 resource operations and contains no scoring formula path;
+- request UUID is server-generated and analysis/report UUIDs are server-generated;
+- four service scopes remain exactly `analysis:write`, `analysis:read`, `report:write`, `report:read`;
+- `POST /v1/reports` remains resolver-only and cannot rerun analysis or reconstruct report authority from JSON;
+- report generation still requires `CanonicalCompletedOutcome` and its exact live `application_analysis_result`;
+- stored `result_body`, request payload, IDs, hashes, fingerprints and `canonical_success_at` do not become report/scoring authority;
+- private object content is checked for durable length, MIME, SHA-256 and `%PDF-` signature before streaming;
+- Redis/Celery remain transport only, not durable public truth;
+- PostgreSQL remains durable consumer/lifecycle/report metadata truth;
+- terminal analysis states and report `ready|failed` state model remain unchanged from locked 5.5;
+- H001-H006 behavior is inherited exactly because 5-FINAL changes no locked runtime source and the complete API suite is rerun.
 
-Re-prove:
-
-- PostgreSQL is durable lifecycle/idempotency/report metadata truth;
-- Redis/Celery are transport only;
-- terminal analysis states are immutable;
-- timeout writers and worker execution coordination remain race-safe;
-- `analysis=completed` implies exactly one terminal current report resource;
-- report state is closed `ready|failed`;
-- different-report-id conflicts fail the actual unique analysis/version resource closed;
-- ambiguous commit reconciliation is non-destructive until durable truth is known;
-- ready metadata cannot point to bytes with wrong hash/length/MIME/PDF signature;
-- object compensation ordering cannot create known false-ready metadata;
-- report failure does not falsify genuine analytical success.
+No frozen contract or fixed-stack reopen is required.
 
 ---
 
-# 5. API / SECURITY / CONSUMER AUDIT
+# 3. API / SECURITY / CONSUMER AUDIT — ACCEPTED
 
-Re-prove V1 surface and ownership semantics.
-
-Expected analysis API:
+Runtime and durable consumer handoff agree on the V1 surface:
 
 ```text
 POST /v1/analyses
 GET  /v1/analyses/{analysis_id}
-```
-
-Expected report API:
-
-```text
 POST /v1/reports
 GET  /v1/reports/{report_id}
 GET  /v1/reports/{report_id}/content
 ```
 
-Expected scopes:
+Reviewer independently confirmed:
 
-```text
-analysis:write
-analysis:read
-report:write
-report:read
-```
-
-Audit:
-
-- scoped Bearer service API keys;
-- consumer ownership isolation;
-- foreign/missing resource non-disclosure behavior;
-- `Idempotency-Key + canonical request hash + DB uniqueness`;
-- concurrent same-key same-payload behavior;
-- same-key different-payload conflict;
-- analysis_id UUIDv4 server-generated;
-- request_id separate UUIDv4;
-- report_id server-generated;
-- safe errors with no credential/provider/traceback leakage;
-- OpenAPI exactly matches runtime routes/contracts;
+- scoped Bearer service-key auth;
+- exact four scopes;
+- `Idempotency-Key` on analysis creation;
+- server-generated request/analysis/report identities;
+- consumer-bound resource lookup;
+- foreign/missing resources fail without exposing private ownership data;
+- `Retry-After` is emitted for nonterminal analysis polling/acceptance where configured;
+- OpenAPI exact path surface matches runtime;
+- storage keys/buckets/internal task identifiers are absent from OpenAPI consumer contract;
+- report content is authenticated and integrity-verified;
 - V1 remains polling-only;
-- callback/webhook delivery remains NONE;
-- cancellation remains NOT_SUPPORTED unless previously locked otherwise.
+- no cancellation contract;
+- no callback/webhook contract.
 
 ---
 
-# 6. MIGRATION / INFRASTRUCTURE AUDIT
+# 4. AUTOMATION_CONSUMER_HANDOFF — ACCEPTED
 
-Fresh exact-head validation must exercise real infrastructure and all migrations through the final 5.5 schema:
-
-```text
-0001_faz5_1
--> 0002_faz5_5
--> 0003_faz5_5
-```
-
-Verify:
-
-- PostgreSQL migration success on a fresh database;
-- real Redis broker + real Celery worker;
-- `task_acks_late = true`;
-- `task_reject_on_worker_lost = true`;
-- Celery result backend disabled;
-- real timeout reconciliation task execution;
-- private S3-compatible object store integration;
-- no public object ACL;
-- PUT / HEAD / GET / DELETE integrity behavior;
-- dependency versions remain pinned/consistent with locked checkpoints.
-
-No paid OpenAI call is required. OpenAI narrative boundary may remain fake/deterministic in validation as already accepted, provided schema/fallback/provenance behavior remains covered.
-
----
-
-# 7. VISUAL / NARRATIVE / PDF CONSISTENCY AUDIT
-
-Audit the final customer-facing report path for semantic drift:
-
-- numeric facts rendered in PDF equal canonical report-domain values;
-- narrative cannot introduce unsupported numeric values or alter score/financial/decision truth;
-- deterministic fallback obeys the same typed narrative contract;
-- presentation tables/charts do not recompute analytical values;
-- missing/unavailable values remain visibly distinct from zero/bad;
-- score/decision/confidence/financial values remain bound to the exact analysis fingerprint and report provenance;
-- PDF bytes are bound to exact report metadata hash/length/MIME/signature;
-- template/stylesheet/chart/renderer/narrative versions remain recorded in metadata.
-
----
-
-# 8. REQUIRED DURABLE AUTOMATION CONSUMER HANDOFF
-
-5-FINAL must create or verify a durable repository document equivalent to:
+Root durable artifact exists:
 
 ```text
 AUTOMATION_CONSUMER_HANDOFF.md
 ```
 
-Use that exact filename unless a clearly existing canonical equivalent already exists and Reviewer can verify it contains all required material.
+It covers the required consumer material: `/v1`, analysis/report endpoints, Bearer auth/scopes, request/analysis/report identity semantics, asynchronous states, immutable terminals, Idempotency-Key behavior, uncertain POST retry, Retry-After polling, resolver-only reports, `ready|failed`, content integrity, ownership/non-disclosure, current COMB-005 `NOT_APPROVED` limitation and future orchestration boundaries.
 
-The handoff must document, at minimum:
-
-- exact FAZ 5 frozen candidate SHA / version context;
-- `/v1` API base contract;
-- analysis endpoints;
-- report endpoints;
-- Bearer authentication and four scopes;
-- request headers/body contracts;
-- request_id / analysis_id / report_id semantics;
-- asynchronous lifecycle states;
-- terminal-state behavior;
-- Idempotency-Key semantics;
-- uncertain POST transport retry behavior;
-- polling behavior and Retry-After where applicable;
-- no webhook/callback in V1;
-- report artifact resolution/content retrieval flow;
-- ready vs failed report semantics;
-- content integrity expectations;
-- consumer ownership/non-disclosure semantics;
-- current limitations, especially current COMB-005 production `not_score_ready` reality;
-- explicit boundary between SiteScore truth and future automation orchestration.
-
-It MUST explicitly state:
+It explicitly states:
 
 ```text
 n8n is an orchestration consumer, not scoring/report truth authority.
-```
-
-and:
-
-```text
 FAZ 5 does not contain the production n8n workflow itself.
 ```
 
-This document is a consumer handoff, not permission to implement n8n in 5-FINAL.
+The document correctly treats SiteScore API/PostgreSQL resources as durable truth and prohibits future automation from manufacturing scoring/readiness/report authority.
+
+The document records the exact locked base and package/artifact versions. It also explains that the containing Git commit cannot self-embed its own SHA; exact 5-FINAL candidate/freeze SHA is therefore recorded by the authoritative Git history and Reviewer/Implementer handoff. Reviewer accepts this as the only non-circular representation of the final candidate identity; post-LOCK verification must record the resulting exact merge/frozen SHA.
 
 ---
 
-# 9. REQUIRED TEST / AUDIT EVIDENCE
+# 5. 5-FINAL FREEZE-GATE TEST — ACCEPTED AS ADDITIVE EVIDENCE
 
-Implementer must add only tests/audit artifacts needed to prove the integrated freeze gate. Do not rewrite already locked implementation merely for style.
+`sitescore-api/tests/test_faz5_final_freeze_gate.py` adds five additive guard tests covering:
 
-At minimum re-run:
+1. closed V1 route/scopes and no route-side scoring arithmetic;
+2. directional worker/report authority and resultless Celery transport;
+3. migration/terminal state/advisory timeout authority anchors;
+4. automation handoff completeness/non-authority;
+5. integrated audit scope and FAZ 6 exclusions.
+
+Reviewer does not treat these static guards as substitutes for runtime validation. They are accepted because the full previously locked report/API/frozen suites also run unchanged on the exact candidate and real infrastructure is exercised.
+
+The earlier failed temporary CI run was only a new freeze-gate assertion using an incorrect helper name. The authoritative candidate binds to the actual locked H006 helpers and the final authoritative validation is green. No product runtime source was changed to make the freeze gate pass.
+
+---
+
+# 6. AUTHORITATIVE EXACT-HEAD VALIDATION — ACCEPTED
+
+Reviewer independently verified:
 
 ```text
-sitescore-report full suite
-sitescore-api full suite
-all frozen FAZ 3/4 regression suites
+validated SHA: 4b04b47aef0d6f678903b918fb35750d662c62a5
+workflow: faz5-5-final-exact-head-validation
+run: 32189304063
+job: 95879947270
+conclusion: SUCCESS
 ```
 
-The previous locked pre-5-FINAL baseline was:
+Exact checkout assertion passed for the validated SHA.
+
+Infrastructure/runtime evidence:
 
 ```text
-sitescore-report: 24 PASS
-sitescore-api:    100 PASS
+Python 3.11.15
+PostgreSQL 16.15
+migration 0001_faz5_1 -> 0002_faz5_5 -> 0003_faz5_5: PASS
+private pinned MinIO PUT/HEAD/GET/DELETE: PASS
+no public object ACL: PASS
+Redis 7.4.10: PASS
+real Celery 5.6.3 worker: PASS
+task_acks_late = true
+task_reject_on_worker_lost = true
+result backend = disabled://
+real sitescore_api.reconcile_timeouts task received and succeeded
+```
+
+Test evidence:
+
+```text
+sitescore-report:  24 PASS
+sitescore-api:    105 PASS
+app:               19 PASS
+pipeline:          53 PASS
+benchmarks:       191 PASS
+metrics:           67 PASS
+spatial:          180 PASS
+providers:        418 PASS
+data:             361 PASS
+core:              86 PASS
+---------------------------
 frozen baseline: 1375 PASS
-combined:        1499 PASS
+API + frozen:    1480 PASS
+TOTAL:           1504 PASS
 ```
 
-5-FINAL may legitimately increase test count. It must not decrease locked coverage without an explicit justified Reviewer decision.
-
-Fresh exact-head CI evidence must record:
-
-- validated SHA;
-- workflow/run/job IDs;
-- exact checkout assertion;
-- package test counts;
-- frozen regression count;
-- migration proof;
-- real Redis/Celery proof;
-- private object-store proof;
-- validated SHA -> final candidate closure.
-
-As in prior checkpoints, temporary validation workflow may be removed after successful exact-head validation only if the validated-to-final delta is provably only that workflow removal.
-
-Any product/test/doc/dependency/migration change after validation invalidates that validation.
+Locked coverage did not decrease; 5-FINAL adds five API audit/freeze tests.
 
 ---
 
-# 10. HARDENING RULE
+# 7. VALIDATED -> FINAL CLOSURE — ACCEPTED
 
-If Implementer discovers an actual 5-FINAL blocker while auditing, fix it on the same 5-FINAL branch/PR only if it remains inside already-approved FAZ 5 architecture.
-
-If a fix would require changing frozen FAZ 4 semantics:
+Reviewer independently compared:
 
 ```text
-CONTRACT_CHANGE_REQUIRED: 1
+4b04b47aef0d6f678903b918fb35750d662c62a5
+->
+50d24cb612339f9dd178aca6916eaa04f1c1b61f
 ```
 
-If a fix would require changing fixed FAZ 5 architecture/stack:
+Result:
 
 ```text
-DESIGN_DECISION_REVIEW_REQUIRED: 1
+ahead_by: 1
+changed files: 1
+only:
+.github/workflows/faz5-5-final-validation.yml
+status: REMOVED
 ```
 
-Then STOP for Reviewer instead of silently changing architecture.
-
-No silent stack substitution.
-No new public lifecycle states without Reviewer decision.
-No public regeneration endpoint.
-No payment/n8n/email/commercial workflow leakage.
+No product source, test, docs, dependency, migration, package version or audit semantics changed after authoritative validation.
 
 ---
 
-# 11. IMPLEMENTER HANDOFF REQUIRED
-
-When 5-FINAL implementation/audit work is complete, `implementer.md` must record:
+# 8. FINAL REVIEW DECISION
 
 ```text
-CURRENT_CHECKPOINT: 5-FINAL
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-EXPECTED_BASE_SHA: 8f757b81c0cb69e5e6be62f45e94ff9a57432cca
-CODE_BRANCH: faz5/5-final-integrated-product-audit
-PR: <number>
-CODE_HEAD_SHA: <exact final candidate>
-BLOCKERS_REPORTED_BY_IMPLEMENTER: <NONE or exact blockers>
-CONTRACT_CHANGE_REQUIRED: 0|1
-DESIGN_DECISION_REVIEW_REQUIRED: 0|1
-ADDITIONAL_REOPEN_REQUIRED: 0|1
-VALIDATED_SHA: <sha>
-VALIDATION_RUN_ID: <id>
-VALIDATION_JOB_ID: <id>
-VALIDATION_CONCLUSION: SUCCESS|...
-```
-
-Also record exact test counts and infrastructure evidence.
-
-Then STOP for Reviewer.
-
-Do not merge.
-Do not self-lock.
-
----
-
-# 12. FREEZE RULE
-
-5-FINAL is NOT locked merely because tests are green.
-
-Reviewer must independently inspect live GitHub, exact candidate head, integrated authority chain, consumer handoff, migrations, security/ownership behavior, real infrastructure evidence and final CI.
-
-Only Reviewer may set:
-
-```text
-REVIEWER_STATE: READY_TO_LOCK
+REVIEW_DECISION: READY_TO_LOCK
 IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
+REVIEWED_HEAD_SHA: 50d24cb612339f9dd178aca6916eaa04f1c1b61f
+PR: #22
+
+BLOCKERS: NONE
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+USER_LOCK_AUTHORIZED: NO
+MERGE: NO
+FAZ_5_STATUS: NOT_YET_FROZEN
+START_FAZ6: NO
 ```
 
-for an exact 5-FINAL SHA.
+This approval is exact-SHA-specific. Any PR #22 HEAD change invalidates READY_TO_LOCK and requires a new Reviewer pass.
 
-Only literal user `LOCK` may authorize the final merge/freeze.
+Reviewer does not merge and does not self-lock.
 
-Only after Reviewer post-LOCK verification may the project state become:
+The next authorized action is literal user `LOCK` in the Implementer chat. Implementer may merge only if the live PR head remains exactly `50d24cb612339f9dd178aca6916eaa04f1c1b61f`, `main` remains exactly the expected base, blockers remain none, and all lock gates remain satisfied.
+
+After merge, user must return to Reviewer with `Devam` for final post-LOCK verification. Only that verification may set:
 
 ```text
 FAZ_5_STATUS: FROZEN
 ```
 
-Until then:
-
-```text
-FAZ_5_STATUS: NOT_YET_FROZEN
-```
-
-Reviewer/Implementer must STOP before FAZ 6.
+Then STOP before FAZ 6.
 
 > Mathematically validated scoring engine; empirical validation pending.
