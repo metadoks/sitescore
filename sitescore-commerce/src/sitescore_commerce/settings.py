@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -54,6 +55,14 @@ def _validate_sitescore_base(value: str, *, environment: str) -> str:
     return normalized
 
 
+def _validate_public_base(value: str, *, environment: str) -> str:
+    parsed = urlparse(value)
+    normalized = _validate_http_base(value, environment=environment, label="commerce public base URL")
+    if parsed.path not in {"", "/"}:
+        raise ConfigurationError("commerce public base URL must not contain a path")
+    return normalized
+
+
 def _validate_sitescore_service_key(value: str) -> str:
     if not value.startswith("ssk1_"):
         raise ConfigurationError("SITESCORE_API_SERVICE_KEY has an invalid frozen API token format")
@@ -75,19 +84,38 @@ def _parse_bool(name: str, value: str) -> bool:
     raise ConfigurationError(f"{name} must be true or false")
 
 
-def _parse_timeout(value: str) -> float:
+def _parse_bounded_timeout(name: str, value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise ConfigurationError("SITESCORE_API_TIMEOUT_SECONDS must be numeric") from exc
+        raise ConfigurationError(f"{name} must be numeric") from exc
     if not math.isfinite(parsed) or parsed <= 0 or parsed > 60:
-        raise ConfigurationError("SITESCORE_API_TIMEOUT_SECONDS must be >0 and <=60")
+        raise ConfigurationError(f"{name} must be >0 and <=60")
     return parsed
+
+
+def _parse_timeout(value: str) -> float:
+    return _parse_bounded_timeout("SITESCORE_API_TIMEOUT_SECONDS", value)
 
 
 def _validate_secret(name: str, value: str, *, minimum: int = 16) -> str:
     if len(value.encode("utf-8")) < minimum:
         raise ConfigurationError(f"{name} is too short")
+    return value
+
+
+def _validate_email(name: str, value: str) -> str:
+    if len(value.encode("utf-8")) > 320 or any(ch.isspace() for ch in value):
+        raise ConfigurationError(f"{name} is malformed")
+    local, sep, domain = value.rpartition("@")
+    if not sep or not local or not domain or "." not in domain:
+        raise ConfigurationError(f"{name} is malformed")
+    return f"{local}@{domain.lower()}"
+
+
+def _validate_template_alias(value: str) -> str:
+    if re.fullmatch(r"[A-Za-z0-9._-]{1,100}", value) is None:
+        raise ConfigurationError("POSTMARK_TEMPLATE_ALIAS is malformed")
     return value
 
 
@@ -107,6 +135,11 @@ class Settings:
     sitescore_api_target_id: str = "unconfigured"
     sitescore_api_timeout_seconds: float = 10.0
     commerce_automation_api_key: str = ""
+    postmark_server_token: str = ""
+    postmark_from_email: str = "noreply@invalid.example"
+    postmark_template_alias: str = "sitescore-report-v1"
+    postmark_timeout_seconds: float = 10.0
+    commerce_public_base_url: str = "https://commerce.invalid"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -134,4 +167,9 @@ class Settings:
             sitescore_api_target_id=sitescore_target_id,
             sitescore_api_timeout_seconds=_parse_timeout(os.getenv("SITESCORE_API_TIMEOUT_SECONDS", "10")),
             commerce_automation_api_key=_validate_secret("COMMERCE_AUTOMATION_API_KEY", _require("COMMERCE_AUTOMATION_API_KEY"), minimum=24),
+            postmark_server_token=_validate_secret("POSTMARK_SERVER_TOKEN", _require("POSTMARK_SERVER_TOKEN"), minimum=16),
+            postmark_from_email=_validate_email("POSTMARK_FROM_EMAIL", _require("POSTMARK_FROM_EMAIL")),
+            postmark_template_alias=_validate_template_alias(_require("POSTMARK_TEMPLATE_ALIAS")),
+            postmark_timeout_seconds=_parse_bounded_timeout("POSTMARK_TIMEOUT_SECONDS", os.getenv("POSTMARK_TIMEOUT_SECONDS", "10")),
+            commerce_public_base_url=_validate_public_base(_require("COMMERCE_PUBLIC_BASE_URL"), environment=environment),
         )
