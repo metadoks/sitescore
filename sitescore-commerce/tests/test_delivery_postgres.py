@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -9,7 +9,6 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.exc import IntegrityError
 
 from conftest import valid_order
 from sitescore_commerce.checkout import CHECKOUT_OPERATION_VERSION
@@ -19,6 +18,7 @@ from sitescore_commerce.delivery import (
     DeliveryAttemptRow,
     DeliveryCapabilityUnavailable,
     DeliveryGrantRow,
+    DeliveryInvariantError,
     DeliveryService,
     DeliveryStore,
     DownloadPayload,
@@ -99,33 +99,29 @@ class FixedSiteScore:
         self.aid=aid; self.rid=rid; self.payload=payload; self.gets=0; self.contents=0
         import hashlib; self.digest=hashlib.sha256(payload).hexdigest()
     def get_report(self,*,base_url,report_id,analysis_id):
-        self.gets+=1
-        assert report_id==self.rid and analysis_id==self.aid
+        self.gets+=1; assert report_id==self.rid and analysis_id==self.aid
         return ReportResourceEvidence(self.rid,self.aid,"ready",self.digest,"application/pdf","report.pdf",len(self.payload))
     def get_content(self,*,base_url,evidence):
-        self.contents+=1
-        assert evidence.report_id==self.rid and evidence.analysis_id==self.aid
+        self.contents+=1; assert evidence.report_id==self.rid and evidence.analysis_id==self.aid
         return DownloadPayload(self.payload,"report.pdf",self.digest)
 
 
 class PostmarkFake:
     def __init__(self,outcomes): self.outcomes=list(outcomes); self.calls=[]
     def send(self,**kwargs):
-        self.calls.append(kwargs)
-        outcome=self.outcomes.pop(0)
+        self.calls.append(kwargs); outcome=self.outcomes.pop(0)
         if isinstance(outcome,Exception): raise outcome
         return outcome
 
 
-def accepted(recipient="customer@example.com",suffix=1):
+def accepted(recipient="Customer@example.com",suffix=1):
     return PostmarkAcceptance(str(UUID(int=suffix)),datetime(2026,8,20,tzinfo=timezone.utc),recipient)
 
 
 def test_0004_schema_is_digest_only_and_has_required_uniqueness():
     engine=sa.create_engine(DATABASE_URL); inspector=sa.inspect(engine)
     assert {"delivery_grants","delivery_attempts"} <= set(inspector.get_table_names(schema="commerce"))
-    grant_cols={c["name"] for c in inspector.get_columns("delivery_grants",schema="commerce")}
-    assert "token_digest" in grant_cols
+    grant_cols={c["name"] for c in inspector.get_columns("delivery_grants",schema="commerce")}; assert "token_digest" in grant_cols
     for forbidden in {"token","raw_token","encrypted_token","download_url","postmark_token"}: assert forbidden not in grant_cols
     attempt_cols={c["name"] for c in inspector.get_columns("delivery_attempts",schema="commerce")}
     for forbidden in {"token","raw_token","download_url","postmark_token"}: assert forbidden not in attempt_cols
@@ -138,27 +134,23 @@ def test_prepare_grant_persists_only_digest_and_exact_seven_day_expiry(monkeypat
     with store.session_factory() as session:
         grant=session.get(DeliveryGrantRow,attempt.grant_id); row=session.get(DeliveryAttemptRow,attempt.delivery_attempt_id)
         assert grant.token_digest==token_digest(raw) and raw not in grant.token_digest
-        assert grant.expires_at-grant.issued_at == __import__("datetime").timedelta(days=7)
-        assert row.recipient=="customer@example.com" and row.status=="prepared" and row.attempt_number==1
+        assert grant.expires_at-grant.issued_at == timedelta(days=7)
+        assert row.recipient=="Customer@example.com" and row.status=="prepared" and row.attempt_number==1
 
 
 def test_provider_acceptance_is_the_only_success_transition_and_known_replay_sends_once(monkeypatch):
     commerce=CommerceStore(DATABASE_URL); oid,aid,rid=ready_order(commerce); site=FixedSiteScore(aid,rid); post=PostmarkFake([accepted()]); service=DeliveryService(settings(),DeliveryStore(commerce),site,post)
-    monkeypatch.setattr("sitescore_commerce.delivery.generate_delivery_token",lambda:"B"*43)
-    service.deliver(oid)
+    monkeypatch.setattr("sitescore_commerce.delivery.generate_delivery_token",lambda:"B"*43); service.deliver(oid)
     with commerce.session_factory() as session:
         order=session.get(OrderRow,oid); attempt=session.query(DeliveryAttemptRow).filter_by(order_id=oid).one(); grant=session.get(DeliveryGrantRow,attempt.grant_id)
         assert (order.order_state,order.payment_state,order.fulfillment_state)==("fulfilled","paid","completed")
-        assert attempt.status=="provider_accepted" and attempt.provider_message_id is not None
-        assert grant.revoked_at is None
-    service.deliver(oid)
-    assert len(post.calls)==1
+        assert attempt.status=="provider_accepted" and attempt.provider_message_id is not None and grant.revoked_at is None
+    service.deliver(oid); assert len(post.calls)==1
 
 
 def test_uncertain_replay_creates_fresh_grant_keeps_previous_grant_valid_and_converges(monkeypatch):
     commerce=CommerceStore(DATABASE_URL); oid,aid,rid=ready_order(commerce); site=FixedSiteScore(aid,rid); post=PostmarkFake([PostmarkUncertain(),accepted(suffix=2)]); service=DeliveryService(settings(),DeliveryStore(commerce),site,post)
-    tokens=iter(["C"*43,"D"*43]); monkeypatch.setattr("sitescore_commerce.delivery.generate_delivery_token",lambda:next(tokens))
-    service.deliver(oid)
+    tokens=iter(["C"*43,"D"*43]); monkeypatch.setattr("sitescore_commerce.delivery.generate_delivery_token",lambda:next(tokens)); service.deliver(oid)
     with commerce.session_factory() as session:
         order=session.get(OrderRow,oid); attempts=session.query(DeliveryAttemptRow).filter_by(order_id=oid).all(); grants=session.query(DeliveryGrantRow).filter_by(order_id=oid).all()
         assert order.fulfillment_state=="delivery_pending" and order.payment_state=="paid"
@@ -168,10 +160,8 @@ def test_uncertain_replay_creates_fresh_grant_keeps_previous_grant_valid_and_con
         order=session.get(OrderRow,oid); attempts=session.query(DeliveryAttemptRow).filter_by(order_id=oid).order_by(DeliveryAttemptRow.attempt_number).all(); grants=session.query(DeliveryGrantRow).filter_by(order_id=oid).all()
         assert (order.order_state,order.payment_state,order.fulfillment_state)==("fulfilled","paid","completed")
         assert [x.status for x in attempts]==["provider_uncertain","provider_accepted"]
-        assert len(grants)==2 and len({g.token_digest for g in grants})==2 and all(g.revoked_at is None for g in grants)
-        assert {g.report_id for g in grants}=={rid}
-    assert service.download("C"*43).content==site.payload
-    assert service.download("D"*43).content==site.payload
+        assert len(grants)==2 and len({g.token_digest for g in grants})==2 and all(g.revoked_at is None for g in grants) and {g.report_id for g in grants}=={rid}
+    assert service.download("C"*43).content==site.payload; assert service.download("D"*43).content==site.payload
 
 
 def test_three_uncertain_attempts_exhaust_delivery_without_changing_payment_or_report_truth(monkeypatch):
@@ -183,8 +173,7 @@ def test_three_uncertain_attempts_exhaust_delivery_without_changing_payment_or_r
         assert (order.order_state,order.payment_state,order.fulfillment_state)==("attention_required","paid","delivery_failed")
         assert binding.analysis_id==aid and binding.analysis_state=="completed" and binding.report_id==rid and binding.report_state=="ready"
         assert len(attempts)==3 and all(a.status=="provider_uncertain" for a in attempts)
-    service.deliver(oid)
-    assert len(post.calls)==3
+    service.deliver(oid); assert len(post.calls)==3
 
 
 def test_rejected_retryable_keeps_delivery_action_but_nonretryable_fails_delivery_only(monkeypatch):
@@ -195,22 +184,18 @@ def test_rejected_retryable_keeps_delivery_action_but_nonretryable_fails_deliver
     service.deliver(oid); status=f.get_status(oid); assert status.next_action=="none" and status.order_state=="attention_required" and status.payment_state=="paid" and status.fulfillment_state=="delivery_failed"
 
 
-def test_grant_reuse_expiry_revocation_unknown_and_tampered_binding_fail_closed():
+def test_grant_reuse_revocation_unknown_and_tampered_binding_fail_closed():
     commerce=CommerceStore(DATABASE_URL); oid,aid,rid=ready_order(commerce); store=DeliveryStore(commerce); raw="J"*43; report=FixedSiteScore(aid,rid).get_report(base_url="x",report_id=rid,analysis_id=aid); attempt=store.prepare_attempt(order_id=oid,evidence=report,digest=token_digest(raw),template_alias="sitescore-report-v1")
-    assert store.resolve_grant(token_digest(raw)).report_id==rid
-    assert store.resolve_grant(token_digest(raw)).report_id==rid
+    assert store.resolve_grant(token_digest(raw)).report_id==rid; assert store.resolve_grant(token_digest(raw)).report_id==rid
     with pytest.raises(DeliveryCapabilityUnavailable): store.resolve_grant(token_digest("unknown"*7))
-    with store.session_factory.begin() as session:
-        grant=session.get(DeliveryGrantRow,attempt.grant_id); grant.revoked_at=grant.issued_at
+    with store.session_factory.begin() as session: session.get(DeliveryGrantRow,attempt.grant_id).revoked_at=session.get(DeliveryGrantRow,attempt.grant_id).issued_at
     with pytest.raises(DeliveryCapabilityUnavailable): store.resolve_grant(token_digest(raw))
     with store.session_factory.begin() as session:
         grant=session.get(DeliveryGrantRow,attempt.grant_id); grant.revoked_at=None; grant.report_id=uuid4()
     with pytest.raises(DeliveryCapabilityUnavailable): store.resolve_grant(token_digest(raw))
 
 
-def test_database_constraints_reject_duplicate_digest_and_provider_message_id():
-    commerce=CommerceStore(DATABASE_URL); oid,aid,rid=ready_order(commerce); store=DeliveryStore(commerce); site=FixedSiteScore(aid,rid); report=site.get_report(base_url="x",report_id=rid,analysis_id=aid)
-    first=store.prepare_attempt(order_id=oid,evidence=report,digest="a"*64,template_alias="sitescore-report-v1")
-    store.mark_dispatch_started(first.delivery_attempt_id); store.record_uncertain(first.delivery_attempt_id,code="uncertain")
-    with pytest.raises((IntegrityError,Exception)):
-        store.prepare_attempt(order_id=oid,evidence=report,digest="a"*64,template_alias="sitescore-report-v1")
+def test_database_constraints_reject_duplicate_digest():
+    commerce=CommerceStore(DATABASE_URL); oid,aid,rid=ready_order(commerce); store=DeliveryStore(commerce); report=FixedSiteScore(aid,rid).get_report(base_url="x",report_id=rid,analysis_id=aid)
+    first=store.prepare_attempt(order_id=oid,evidence=report,digest="a"*64,template_alias="sitescore-report-v1"); store.mark_dispatch_started(first.delivery_attempt_id); store.record_uncertain(first.delivery_attempt_id,code="uncertain")
+    with pytest.raises(DeliveryInvariantError): store.prepare_attempt(order_id=oid,evidence=report,digest="a"*64,template_alias="sitescore-report-v1")
