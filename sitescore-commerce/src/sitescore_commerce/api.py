@@ -3,13 +3,15 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .checkout import CheckoutInvariantError, CheckoutProviderUnavailable, StripeCheckoutGateway
 from .automation_contracts import AutomationOrderResponse
 from .contracts import OrderCreateRequest, OrderCreateResponse
 from .db import CommerceStore, EventIdentityConflict, IdempotencyConflict, PersistenceUnavailable
+from .delivery import DeliveryCapabilityUnavailable, DeliveryInvariantError, DeliveryService, DeliveryUpstreamUnavailable
+from .delivery_runtime import build_runtime_delivery_service
 from .fulfillment import (
     AutomationUnauthorized,
     FulfillmentInvariantError,
@@ -64,13 +66,15 @@ def create_app(
     service: OrderService | None = None,
     webhook_service: PaymentWebhookService | None = None,
     fulfillment_service: FulfillmentService | None = None,
+    delivery_service: DeliveryService | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="SiteScore Commerce API", version="0.3.0")
+    app = FastAPI(title="SiteScore Commerce API", version="0.5.0")
 
     settings: Settings | None = None
     store: CommerceStore | None = None
     # Preserve dependency-injected unit tests: only load environment when an unprovided
-    # production service actually needs construction.
+    # pre-6.4 production service actually needs construction. A separately injected
+    # delivery service never forces environment loading into legacy unit tests.
     if service is None or webhook_service is None or fulfillment_service is None:
         try:
             settings = Settings.from_env()
@@ -86,6 +90,8 @@ def create_app(
             webhook_service = PaymentWebhookService(settings, store, StripeWebhookVerifier(settings), StripeCheckoutEvidenceGateway(settings))
         if fulfillment_service is None:
             fulfillment_service = build_runtime_fulfillment_service(settings, store)
+        if delivery_service is None:
+            delivery_service = build_runtime_delivery_service(settings, store)
 
     @app.exception_handler(InvalidIdempotencyKey)
     async def invalid_idempotency(_: Request, exc: InvalidIdempotencyKey) -> JSONResponse:
@@ -120,6 +126,11 @@ def create_app(
         status = 503 if exc.retryable else 502
         return _error(status, "sitescore_provider_unavailable", "SiteScore fulfillment provider is unavailable")
 
+    @app.exception_handler(DeliveryUpstreamUnavailable)
+    async def delivery_upstream_unavailable(_: Request, exc: DeliveryUpstreamUnavailable) -> JSONResponse:
+        status = 503 if exc.retryable else 502
+        return _error(status, "delivery_upstream_unavailable", "delivery upstream verification is unavailable")
+
     @app.exception_handler(CheckoutInvariantError)
     async def provider_invariant(_: Request, __: CheckoutInvariantError) -> JSONResponse:
         return _error(502, "checkout_provider_unavailable", "checkout provider response failed validation")
@@ -127,6 +138,14 @@ def create_app(
     @app.exception_handler(FulfillmentInvariantError)
     async def fulfillment_invariant(_: Request, __: FulfillmentInvariantError) -> JSONResponse:
         return _error(409, "fulfillment_invariant_conflict", "fulfillment state failed a server authority invariant")
+
+    @app.exception_handler(DeliveryInvariantError)
+    async def delivery_invariant(_: Request, __: DeliveryInvariantError) -> JSONResponse:
+        return _error(409, "delivery_invariant_conflict", "delivery state failed a server authority invariant")
+
+    @app.exception_handler(DeliveryCapabilityUnavailable)
+    async def delivery_capability_unavailable(_: Request, __: DeliveryCapabilityUnavailable) -> JSONResponse:
+        return _error(404, "download_unavailable", "download is unavailable")
 
     @app.exception_handler(FulfillmentNotFound)
     async def fulfillment_not_found(_: Request, __: FulfillmentNotFound) -> JSONResponse:
@@ -175,6 +194,17 @@ def create_app(
         result = await run_in_threadpool(fulfillment_service.advance, order_id)
         return _automation_response(result)
 
+    @app.post("/v1/automation/orders/{order_id}/deliver", response_model=AutomationOrderResponse)
+    async def deliver_order(request: Request, order_id: UUID, authorization: str | None = Header(default=None, alias="Authorization")) -> AutomationOrderResponse:
+        if fulfillment_service is None or delivery_service is None:
+            raise ConfigurationError("delivery service is unavailable")
+        fulfillment_service.authorize_automation(authorization)
+        if await request.body():
+            return _error(400, "request_validation_failed", "automation delivery request body must be empty")
+        await run_in_threadpool(delivery_service.deliver, order_id)
+        result = await run_in_threadpool(fulfillment_service.status, order_id)
+        return _automation_response(result)
+
     @app.get("/v1/automation/orders/{order_id}", response_model=AutomationOrderResponse)
     async def get_automation_order(order_id: UUID, authorization: str | None = Header(default=None, alias="Authorization")) -> AutomationOrderResponse:
         if fulfillment_service is None:
@@ -182,5 +212,22 @@ def create_app(
         fulfillment_service.authorize_automation(authorization)
         result = await run_in_threadpool(fulfillment_service.status, order_id)
         return _automation_response(result)
+
+    @app.get("/d/{opaque_token}")
+    async def download_report(opaque_token: str) -> Response:
+        if delivery_service is None:
+            raise ConfigurationError("delivery service is unavailable")
+        payload = await run_in_threadpool(delivery_service.download, opaque_token)
+        return Response(
+            content=payload.content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{payload.filename}"',
+                "Cache-Control": "private, no-store",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+                "Content-SHA256": payload.content_sha256,
+            },
+        )
 
     return app
