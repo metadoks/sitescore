@@ -67,3 +67,20 @@ def test_refund_provider_success_local_bind_loss_recovers_same_refund_on_retry()
 def test_refund_retry_reuses_same_durable_operation_identity_after_pending_status():
     oid=uuid4(); aid=uuid4(); store=FakeStore(AutomationStatus(oid,"fulfillment_in_progress","paid","analysis_failed",True,False,"refund"),operation(oid,analysis_id=aid,analysis_state="failed")); ss=FakeSiteScore(); ss.analysis=AnalysisEvidence(aid,"failed"); rf=FakeRefunds(); rf.created_status="pending"; service,_,_=runtime(store,ss,rf); first=service.advance(oid); assert first.payment_state=="refund_pending"; created=[c[1] for c in rf.calls if c[0]=="create"]; assert len(created)==1
     rf.existing=(RefundEvidence("re_later",created[0].stripe_payment_intent_id,created[0].original_amount_received,"USD","succeeded",created[0].metadata),); second=service.advance(oid); assert second.order_state=="refunded"; assert len([c for c in rf.calls if c[0]=="create"])==1
+
+
+def test_matching_refund_plus_any_extra_provider_refund_fails_closed():
+    oid=uuid4(); aid=uuid4(); store=FakeStore(AutomationStatus(oid,"fulfillment_in_progress","paid","analysis_failed",True,False,"refund"),operation(oid,analysis_id=aid,analysis_state="failed")); ss=FakeSiteScore(); ss.analysis=AnalysisEvidence(aid,"failed"); rf=FakeRefunds(); service,_,_=runtime(store,ss,rf)
+    # Materialize the operation once to derive exact SiteScore metadata.
+    service.advance(oid); created=[c[1] for c in rf.calls if c[0]=="create"]; assert len(created)==1
+    store.current=AutomationStatus(oid,"fulfillment_in_progress","paid","analysis_failed",True,False,"refund")
+    exact=RefundEvidence("re_exact",created[0].stripe_payment_intent_id,1000,"USD","succeeded",created[0].metadata)
+    extra=RefundEvidence("re_extra",created[0].stripe_payment_intent_id,1,"USD","succeeded",{})
+    rf.existing=(exact,extra); rf.calls=[]; result=service.advance(oid); assert result.order_state=="attention_required" and result.payment_state=="refund_failed"; assert not any(c[0]=="create" for c in rf.calls)
+
+
+def test_full_refund_with_conflicting_sitescore_metadata_is_not_treated_as_external_full_refund():
+    oid=uuid4(); aid=uuid4(); store=FakeStore(AutomationStatus(oid,"fulfillment_in_progress","paid","analysis_failed",True,False,"refund"),operation(oid,analysis_id=aid,analysis_state="failed")); ss=FakeSiteScore(); ss.analysis=AnalysisEvidence(aid,"failed"); rf=FakeRefunds(); service,_,_=runtime(store,ss,rf)
+    # The metadata advertises SiteScore ownership but contradicts this order.
+    rf.existing=(RefundEvidence("re_conflict","pi_paid",1000,"USD","succeeded",{"sitescore_order_id":"wrong"}),)
+    result=service.advance(oid); assert result.order_state=="attention_required" and result.payment_state=="refund_failed"; assert not any(c[0]=="create" for c in rf.calls)
