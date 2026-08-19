@@ -55,11 +55,15 @@ def event_payload(*, event_id="evt_123", event_type="checkout.session.completed"
     }
 
 
-def signed(payload: dict, *, timestamp=None):
-    raw = json.dumps(payload, separators=(",", ":")).encode()
+def sign_raw(raw: bytes, *, timestamp=None):
     timestamp = int(time.time()) if timestamp is None else timestamp
     digest = hmac.new(SECRET.encode(), f"{timestamp}.".encode() + raw, hashlib.sha256).hexdigest()
-    return raw, f"t={timestamp},v1={digest}"
+    return f"t={timestamp},v1={digest}"
+
+
+def signed(payload: dict, *, timestamp=None):
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    return raw, sign_raw(raw, timestamp=timestamp)
 
 
 def test_official_stripe_signature_verifier_uses_exact_raw_body():
@@ -69,6 +73,17 @@ def test_official_stripe_signature_verifier_uses_exact_raw_body():
     assert verifier.verify(raw, signature).event_id == payload["id"]
     with pytest.raises(WebhookVerificationError):
         verifier.verify(raw + b" ", signature)
+
+
+def test_same_event_semantics_different_json_serialization_each_verify_independently():
+    payload = event_payload(event_id="evt_serialization")
+    raw_compact = json.dumps(payload, separators=(",", ":"), sort_keys=False).encode()
+    raw_pretty = json.dumps(payload, indent=2, sort_keys=True).encode()
+    assert raw_compact != raw_pretty
+    verifier = StripeWebhookVerifier(settings())
+    first = verifier.verify(raw_compact, sign_raw(raw_compact))
+    second = verifier.verify(raw_pretty, sign_raw(raw_pretty))
+    assert first == second
 
 
 def test_stale_stripe_signature_fails_tolerance():
@@ -87,12 +102,14 @@ class MemoryStore:
 
     def record_stripe_event(self, *, event, raw_body_sha256):
         old = self.events.get(event.event_id)
-        identity = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at, raw_body_sha256)
+        identity = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at)
         if old is None:
-            self.events[event.event_id] = {"identity": identity, "state": "received", "code": None}
+            self.events[event.event_id] = {"identity": identity, "raw_body_sha256": raw_body_sha256, "state": "received", "code": None, "attempts": 1}
         elif old["identity"] != identity:
             from sitescore_commerce.db import EventIdentityConflict
             raise EventIdentityConflict("conflict")
+        else:
+            old["attempts"] += 1
 
     def get_event_state(self, event_id):
         return self.events[event_id]["state"]
@@ -134,6 +151,16 @@ def authority_case(*, event_type="checkout.session.completed", api_version=STRIP
     store=MemoryStore(order,checkout); gateway=FixedGateway(evidence)
     svc=PaymentWebhookService(settings(livemode=event_livemode),store,FixedVerifier(envelope),gateway)
     return svc,store,gateway,evidence
+
+
+def test_same_event_same_semantics_different_raw_hash_dedupes_without_conflict():
+    svc,store,_,_=authority_case()
+    svc.handle(raw_body=b'{"a":1}',signature="sig")
+    svc.handle(raw_body=b'{ "a" : 1 }',signature="sig")
+    row=store.events["evt_authority"]
+    assert row["attempts"]==2
+    assert row["raw_body_sha256"]==hashlib.sha256(b'{"a":1}').hexdigest()
+    assert len(store.applied)==1
 
 
 def test_completed_event_is_trigger_not_truth_when_provider_unpaid():
@@ -192,6 +219,16 @@ def test_provider_timeout_leaves_inbox_retryable_received():
     svc,store,_,_=authority_case(); svc.evidence_gateway=FixedGateway(exc=PaymentProviderUnavailable("timeout"))
     with pytest.raises(PaymentProviderUnavailable): svc.handle(raw_body=b"x",signature="sig")
     assert store.events["evt_authority"]["state"]=="received" and store.applied==[]
+
+
+def test_provider_timeout_then_same_event_different_raw_bytes_resumes_and_pays():
+    svc,store,_,evidence=authority_case(); svc.evidence_gateway=FixedGateway(exc=PaymentProviderUnavailable("timeout"))
+    with pytest.raises(PaymentProviderUnavailable): svc.handle(raw_body=b'{"first":true}',signature="sig")
+    svc.evidence_gateway=FixedGateway(evidence)
+    assert svc.handle(raw_body=b'{ "first" : true }',signature="sig")=={"status":"accepted"}
+    assert store.events["evt_authority"]["attempts"]==2
+    assert store.events["evt_authority"]["state"]=="processed"
+    assert len(store.applied)==1
 
 
 def test_api_missing_signature_and_oversize_fail_before_service_mutation():
