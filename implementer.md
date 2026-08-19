@@ -22,8 +22,8 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-HEAD_SHA: 7d9ad5dbf9bfc045a7d7fb971dc80c6851e9ec08
-VALIDATED_SHA: eeff565f318475b4b5796d92502894998332db15
+HEAD_SHA: 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628
+VALIDATED_SHA: 0a9b82f316ae109316821d9b81f97e5e13951516
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DIFF: ONLY .github/workflows/faz6-6-2-validation.yml REMOVED
 
@@ -33,11 +33,23 @@ STRIPE_SDK_PIN: stripe==15.4.0
 STRIPE_API_VERSION: 2026-07-29.dahlia
 HTTPX_RUNTIME_PIN: httpx==0.28.1
 
-CI_RUN_ID: 32256557493
-CI_JOB_ID: 96079494257
+CI_RUN_ID: 32262200452
+CI_JOB_ID: 96097874783
 CI_CONCLUSION: SUCCESS
-COMMERCE_POSTGRESQL_FULL_SUITE: PASS
+COMMERCE_TESTS: 255 PASS
+COMMERCE_POSTGRESQL_FULL_SUITE: 255 PASS
+FROZEN_REPORT_TESTS: 24 PASS
+FROZEN_API_TESTS: 105 PASS
+FROZEN_APP_TESTS: 19 PASS
+FROZEN_PIPELINE_TESTS: 53 PASS
+FROZEN_BENCHMARKS_TESTS: 191 PASS
+FROZEN_METRICS_TESTS: 67 PASS
+FROZEN_SPATIAL_TESTS: 180 PASS
+FROZEN_PROVIDERS_TESTS: 418 PASS
+FROZEN_DATA_TESTS: 361 PASS
+FROZEN_CORE_TESTS: 86 PASS
 FROZEN_TOTAL_TESTS: 1504 PASS
+COMBINED_PYTEST_TOTAL: 1759 PASS
 POSTGRESQL_16_VALIDATION: PASS
 COMMERCE_MIGRATION_UPGRADE_DOWNGRADE_UPGRADE: PASS
 COMMERCE_MIGRATION_NAMESPACE: PASS
@@ -48,6 +60,37 @@ FROZEN_SCOPE_SCAN: PASS
 PRIVATE_S3_REGRESSION: PASS
 REDIS_CELERY_TRANSPORT_REGRESSION: PASS
 EXACT_BASE_ANCESTRY: PASS
+
+REVIEWER_HARDENING:
+REVIEWER_STATE_SEEN: HARDENING_REQUIRED
+IMPLEMENTER_ACTION_SEEN: HARDEN
+BLOCKERS_REPORTED_BY_REVIEWER: COM62-H001
+REVIEWER_BLOCKERS_RESOLVED: COM62-H001
+BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+
+COM62_H001_RESOLUTION:
+reserved SiteScore refund metadata is fail-closed
+any refund metadata containing any sitescore_* key is treated as SiteScore-shaped
+SiteScore-shaped metadata must exactly match durable refund identity before it can enter SiteScore recovery
+exact identity requires sitescore_order_id + sitescore_operation_version + sitescore_provider_idempotency_key to match the durable operation
+partial reserved metadata -> attention_required
+wrong sitescore_order_id -> attention_required
+wrong sitescore_operation_version -> attention_required
+wrong sitescore_provider_idempotency_key -> attention_required
+reserved metadata mismatch cannot fall through to unattributed external full refund acceptance
+truly unattributed empty metadata {} with one exact full succeeded refund remains the external-full recovery path
+exact matching SiteScore metadata remains the canonical SiteScore refund recovery path
+adversarial unit and real PostgreSQL state-changing tests cover the reserved-metadata mismatch classes plus both preserved recovery paths
+
+HARDENING_VALIDATION_FIXTURE_NOTE:
+first hardening CI candidate exposed a test-isolation failure after migration 0003: legacy webhook PostgreSQL reset deleted commerce.orders before new fulfillment/refund FK child tables
+production refund semantics were not the source of those failures
+legacy reset order was corrected to delete refund_operations, refund_eligibility, fulfillment_bindings before parent commerce.orders
+no production semantic behavior was changed by this fixture correction
+authoritative exact-head run after the fixture correction is CI_RUN_ID 32262200452 and is fully green
 
 FULFILLMENT_AUTHORITY:
 paid orders only
@@ -79,10 +122,10 @@ exact bound PaymentIntent re-retrieved and validated
 order/product metadata, livemode, positive amount_received and USD enforced
 refund provider history listed before create
 no refunds -> explicit full refund
-one matching SiteScore refund -> recover/reconcile
-one unattributed already-succeeded exact full refund -> reconcile without second refund
+one exact matching SiteScore refund -> recover/reconcile
+one truly unattributed already-succeeded exact full refund with no reserved SiteScore metadata -> reconcile without second refund
 partial/multiple/mixed/conflicting refund history -> attention_required, no blind top-up
-SiteScore-shaped mismatching refund metadata -> attention_required
+any SiteScore-shaped mismatching refund metadata -> attention_required
 succeeded -> refunded/refunded
 pending -> refund_pending
 requires_action -> attention_required + refund_pending
@@ -106,7 +149,7 @@ refund create response loss/local-bind-loss -> list-before-create matching-refun
 concurrent analysis triggers -> one durable analysis operation/binding
 concurrent refund triggers -> one local refund operation and one logical provider money effect through stable Stripe idempotency identity
 provider already fully refunded -> no second refund
-partial/conflicting provider state -> fail closed
+partial/conflicting/provider-identity-ambiguous state -> fail closed
 provider I/O occurs outside durable row-lock transaction
 AT_LEAST_ONCE_SEMANTICS: YES
 EXACTLY_ONCE_CLAIM: NO
@@ -119,13 +162,6 @@ POSTMARK_EMAIL: NOT_IMPLEMENTED
 BROAD_RECOVERY_SCANNER: NOT_IMPLEMENTED
 START_6_3: NO
 
-REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION_SEEN: IMPLEMENT
-BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
-
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
@@ -136,4 +172,4 @@ FAZ_6_2_STATUS: READY_FOR_REVIEW
 START_6_3: NO
 ```
 
-FAZ 6.2 implementation is complete and submitted for Reviewer audit. Authoritative validation run `32256557493` / job `96079494257` succeeded at exact validated SHA `eeff565f318475b4b5796d92502894998332db15`. The final review head `7d9ad5dbf9bfc045a7d7fb971dc80c6851e9ec08` is exactly one commit ahead and differs only by removal of the temporary validation workflow. PR #25 remains open, mergeable, non-draft, and unmerged against the unchanged frozen base/main `8027239b4b168e98e8ee16e15787366632017156`. No semantic LOCK, merge, or FAZ 6.3 start is claimed. Implementer is STOPPED pending Reviewer action.
+FAZ 6.2 reviewer hardening COM62-H001 is resolved and the checkpoint is resubmitted for Reviewer audit. The authoritative exact-head hardening validation run `32262200452` / job `96097874783` succeeded at SHA `0a9b82f316ae109316821d9b81f97e5e13951516` with 255 commerce tests PASS plus the frozen 1504-test baseline PASS, for 1759 pytest checks total. PostgreSQL 16 migration rollback/re-forward, commerce namespace, exact pins, `pip check`, secret/frozen-scope scans, private S3-compatible storage, Redis/Celery transport, and exact frozen-base ancestry all passed. The final review head `3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628` is exactly one commit ahead of the validated SHA and differs only by removal of the temporary `.github/workflows/faz6-6-2-validation.yml` workflow. PR #25 remains open, mergeable, non-draft, and unmerged against unchanged main `8027239b4b168e98e8ee16e15787366632017156`. No semantic LOCK, merge, or FAZ 6.3 start is claimed. Implementer is STOPPED pending Reviewer action.
