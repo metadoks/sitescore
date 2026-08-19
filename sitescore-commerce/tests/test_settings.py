@@ -12,13 +12,13 @@ def base_env(monkeypatch):
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET","test-signing-secret")
     monkeypatch.setenv("STRIPE_EXPECTED_LIVEMODE","false")
     monkeypatch.setenv("SITESCORE_API_BASE_URL","https://sitescore.example")
-    monkeypatch.setenv("SITESCORE_API_SERVICE_KEY","sitescore-service-key-test")
+    monkeypatch.setenv("SITESCORE_API_SERVICE_KEY","ssk1_test-key-id.test-service-secret-0123456789")
     monkeypatch.setenv("SITESCORE_API_TARGET_ID","production-v1")
     monkeypatch.setenv("SITESCORE_API_TIMEOUT_SECONDS","10")
     monkeypatch.setenv("COMMERCE_AUTOMATION_API_KEY","automation-key-test-0123456789")
 
 def test_production_redirects_and_version_pin(monkeypatch):
-    base_env(monkeypatch); s=Settings.from_env(); assert s.stripe_api_version=="2026-07-29.dahlia" and s.stripe_expected_livemode is False and s.stripe_webhook_secret=="test-signing-secret"; assert s.sitescore_api_base_url=="https://sitescore.example" and s.sitescore_api_target_id=="production-v1" and s.sitescore_api_timeout_seconds==10
+    base_env(monkeypatch); s=Settings.from_env(); assert s.stripe_api_version=="2026-07-29.dahlia" and s.stripe_expected_livemode is False and s.stripe_webhook_secret=="test-signing-secret"; assert s.sitescore_api_base_url=="https://sitescore.example" and s.sitescore_api_target_id=="production-v1" and s.sitescore_api_timeout_seconds==10 and s.sitescore_api_service_key.startswith("ssk1_")
 
 @pytest.mark.parametrize("name,value",[("COMMERCE_SUCCESS_URL_BASE","https://user:pass@app.example/success"),("COMMERCE_CANCEL_URL_BASE","https://app.example/cancel#fragment"),("COMMERCE_SUCCESS_URL_BASE","https://app.example/success?paid=true"),("COMMERCE_CANCEL_URL_BASE","http://evil.example/cancel")])
 def test_unsafe_redirect_config_fails_closed(monkeypatch,name,value):
@@ -46,6 +46,11 @@ def test_sitescore_target_config_fails_closed(monkeypatch,value):
 @pytest.mark.parametrize("value",["0","-1","61","nan","abc"])
 def test_sitescore_timeout_config_fails_closed(monkeypatch,value):
     base_env(monkeypatch); monkeypatch.setenv("SITESCORE_API_TIMEOUT_SECONDS",value)
+    with pytest.raises(ConfigurationError): Settings.from_env()
+
+@pytest.mark.parametrize("value",["plain-secret-not-a-token","ssk1_missing-dot","ssk1_.secret-secret-secret-secret","ssk1_key.","ssk1_key.short","ssk1_key.secret with whitespace 0123456789"])
+def test_sitescore_service_key_must_match_frozen_bearer_token_format(monkeypatch,value):
+    base_env(monkeypatch); monkeypatch.setenv("SITESCORE_API_SERVICE_KEY",value)
     with pytest.raises(ConfigurationError): Settings.from_env()
 
 @pytest.mark.parametrize("name",["SITESCORE_API_BASE_URL","SITESCORE_API_SERVICE_KEY","SITESCORE_API_TARGET_ID","COMMERCE_AUTOMATION_API_KEY"])
