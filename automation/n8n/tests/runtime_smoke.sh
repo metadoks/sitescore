@@ -11,8 +11,18 @@ CONTAINER="sitescore-n8n63-${RUN_TOKEN}"
 TMP_DIR="$(mktemp -d)"
 EXPORT_DIR="$TMP_DIR/export"
 FAKE_LOG="$TMP_DIR/fake-commerce.jsonl"
+RUNTIME_OK=0
 mkdir -p "$EXPORT_DIR"; chmod 777 "$EXPORT_DIR"
-cleanup(){ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; if [[ -n "${FAKE_PID:-}" ]]; then kill "$FAKE_PID" >/dev/null 2>&1 || true; fi; docker volume rm "$VOLUME" >/dev/null 2>&1 || true; rm -rf "$TMP_DIR"; }
+cleanup(){
+  if [[ "$RUNTIME_OK" != "1" ]] && docker inspect "$CONTAINER" >/dev/null 2>&1; then
+    echo "--- n8n container logs after runtime failure ---" >&2
+    docker logs "$CONTAINER" >&2 || true
+  fi
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "${FAKE_PID:-}" ]]; then kill "$FAKE_PID" >/dev/null 2>&1 || true; fi
+  docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+  rm -rf "$TMP_DIR"
+}
 trap cleanup EXIT
 ENC_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"; INGRESS_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"; AUTOMATION_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 docker pull "$IMAGE" >/dev/null
@@ -28,7 +38,32 @@ import json,sys
 p=json.load(open(sys.argv[1])); items=p if isinstance(p,list) else [p]; m=[x for x in items if x.get('name')=='SiteScore Order Paid Orchestration v1.0.0']; assert len(m)==1,m; print(m[0]['id'])
 PY
 )"; test -n "$WORKFLOW_ID"; echo "N8N_IMPORTED_WORKFLOW_ID_PRESENT=YES"
-docker run --rm -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOLUME:/home/node/.n8n" "$IMAGE" publish:workflow --id="$WORKFLOW_ID" | tee /tmp/n8n63-publish.log
+
+# n8n 2.33.4 can emit the documented successful publish messages and persist
+# activeVersionId, then return 1 during one-off CLI teardown on this clean SQLite
+# volume.  Never ignore that exit code blindly: prove the durable state written by
+# publish:workflow before starting the runtime, and then prove the live webhook.
+set +e
+docker run --rm -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOLUME:/home/node/.n8n" "$IMAGE" publish:workflow --id="$WORKFLOW_ID" 2>&1 | tee /tmp/n8n63-publish.log
+PUBLISH_EXIT=${PIPESTATUS[0]}
+set -e
+test "$PUBLISH_EXIT" = "0" || test "$PUBLISH_EXIT" = "1"
+echo "N8N_PUBLISH_CLI_EXIT=$PUBLISH_EXIT"
+docker run --rm -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -v "$VOLUME:/home/node/.n8n" -v "$EXPORT_DIR:/out" "$IMAGE" export:workflow --id="$WORKFLOW_ID" --output=/out/published.json >/tmp/n8n63-published-export.log
+python - "$EXPORT_DIR/published.json" "$WORKFLOW_ID" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1])); items=p if isinstance(p,list) else [p]
+assert len(items)==1,items
+w=items[0]
+assert w.get('id')==sys.argv[2],w
+assert w.get('active') is True,w
+assert isinstance(w.get('activeVersionId'),str) and w['activeVersionId'],w
+assert isinstance(w.get('versionId'),str) and w['versionId'],w
+assert w['activeVersionId']==w['versionId'],w
+print('N8N_PUBLISH_DURABLE_STATE=PASS')
+print('N8N_ACTIVE_VERSION_ID_PRESENT=YES')
+PY
+
 FAKE_COMMERCE_AUTOMATION_KEY="$AUTOMATION_KEY" FAKE_COMMERCE_LOG_FILE="$FAKE_LOG" python "$FAKE_SERVER" >/tmp/n8n63-fake-commerce.log 2>&1 & FAKE_PID=$!
 for _ in $(seq 1 30); do if curl -fsS http://127.0.0.1:18080/__stats >/dev/null 2>&1; then break; fi; sleep .2; done; curl -fsS http://127.0.0.1:18080/__stats >/dev/null
 docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5678:5678 -e N8N_ENCRYPTION_KEY="$ENC_KEY" -e N8N_HOST=0.0.0.0 -e N8N_PORT=5678 -e N8N_PROTOCOL=http -e WEBHOOK_URL=http://127.0.0.1:5678/ -e N8N_SECURE_COOKIE=false -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_VERSION_NOTIFICATIONS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false -e EXECUTIONS_DATA_SAVE_ON_ERROR=none -e EXECUTIONS_DATA_SAVE_ON_SUCCESS=none -e COMMERCE_N8N_INGRESS_SECRET="$INGRESS_SECRET" -e COMMERCE_AUTOMATION_API_KEY="$AUTOMATION_KEY" -e SITESCORE_COMMERCE_AUTOMATION_BASE_URL=http://host.docker.internal:18080 -e SITESCORE_N8N_POLL_SECONDS=2 -e SITESCORE_N8N_MAX_POLLS=10 -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/tmp/n8n63-container-id
@@ -79,4 +114,5 @@ python - <<PY
 import json,urllib.request
 o='$WAIT_ORDER'; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]; assert sum(1 for x in r if x['method']=='GET')>=3,r; assert not [x for x in r if x['method']=='POST'],r
 PY
-echo N8N_WORKFLOW_IMPORT=PASS; echo N8N_WEBHOOK_AUTH=PASS; echo N8N_ORCHESTRATION_INTEGRATION=PASS; echo N8N_WAIT_RESTART=PASS
+RUNTIME_OK=1
+echo N8N_WORKFLOW_IMPORT=PASS; echo N8N_PUBLISH_STATE_PROOF=PASS; echo N8N_WEBHOOK_AUTH=PASS; echo N8N_ORCHESTRATION_INTEGRATION=PASS; echo N8N_WAIT_RESTART=PASS
