@@ -57,9 +57,9 @@ class Settings:
     stripe_price_location_report_v1: str
     success_url_base: str
     cancel_url_base: str
-    stripe_webhook_secret: str = "whsec_test_placeholder"
-    stripe_expected_livemode: bool = False
     environment: str = "production"
+    stripe_webhook_secret: str = ""
+    stripe_expected_livemode: bool = False
     stripe_api_version: str = STRIPE_API_VERSION
 
     @classmethod
@@ -76,8 +76,8 @@ class Settings:
             stripe_price_location_report_v1=_validate_price_id(_require("STRIPE_PRICE_LOCATION_REPORT_V1")),
             success_url_base=_validate_redirect_base(_require("COMMERCE_SUCCESS_URL_BASE"), environment=environment),
             cancel_url_base=_validate_redirect_base(_require("COMMERCE_CANCEL_URL_BASE"), environment=environment),
+            environment=environment,
             stripe_webhook_secret=_require("STRIPE_WEBHOOK_SECRET"),
             stripe_expected_livemode=_parse_bool("STRIPE_EXPECTED_LIVEMODE", _require("STRIPE_EXPECTED_LIVEMODE")),
-            environment=environment,
             stripe_api_version=STRIPE_API_VERSION,
         )
