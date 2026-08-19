@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import UUID, uuid4
 
@@ -111,7 +111,7 @@ def send(fake: FakePostmark, **kwargs):
         order_id=UUID("00000000-0000-4000-8000-000000000001"),
         report_id=UUID("00000000-0000-4000-8000-000000000002"),
         download_url="https://commerce.example/d/transient-token-not-persisted",
-        expires_at=kwargs.get("expires_at") or __import__("datetime").datetime.datetime(2026,8,27,tzinfo=__import__("datetime").datetime.timezone.utc),
+        expires_at=kwargs.get("expires_at") or datetime(2026, 8, 27, tzinfo=timezone.utc),
     )
 
 
@@ -158,7 +158,7 @@ def test_postmark_non_200_and_timeout_are_not_fabricated_acceptance():
     try:
         gateway=PostmarkGateway(settings(postmark_timeout_seconds=.05),endpoint=slow.endpoint)
         with pytest.raises(PostmarkUncertain):
-            gateway.send(recipient="customer@example.com",order_id=uuid4(),report_id=uuid4(),download_url="https://commerce.example/d/x",expires_at=__import__("datetime").datetime.datetime.now(__import__("datetime").datetime.timezone.utc))
+            gateway.send(recipient="customer@example.com",order_id=uuid4(),report_id=uuid4(),download_url="https://commerce.example/d/x",expires_at=datetime.now(timezone.utc))
     finally: slow.close()
 
 
