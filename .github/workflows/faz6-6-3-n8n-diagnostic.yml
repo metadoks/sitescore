@@ -1,0 +1,38 @@
+name: faz6-6-3-n8n-diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.event.pull_request.head.sha }}"}
+      - name: Prove pinned version and import with visible diagnostics
+        run: |
+          set -euxo pipefail
+          IMAGE=n8nio/n8n:2.33.4
+          docker pull "$IMAGE" >/dev/null
+          docker run --rm "$IMAGE" --version
+          VOLUME="n8n-diagnostic-${GITHUB_RUN_ID}"
+          docker volume create "$VOLUME"
+          trap 'docker volume rm "$VOLUME" >/dev/null 2>&1 || true' EXIT
+          ENC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
+          docker run --rm \
+            -e N8N_ENCRYPTION_KEY="$ENC_KEY" \
+            -e N8N_DIAGNOSTICS_ENABLED=false \
+            -e N8N_VERSION_NOTIFICATIONS_ENABLED=false \
+            -v "$VOLUME:/home/node/.n8n" \
+            -v "$PWD/automation/n8n/workflows:/workflows:ro" \
+            "$IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
+          mkdir -p /tmp/n8n-export && chmod 777 /tmp/n8n-export
+          docker run --rm \
+            -e N8N_ENCRYPTION_KEY="$ENC_KEY" \
+            -e N8N_DIAGNOSTICS_ENABLED=false \
+            -e N8N_VERSION_NOTIFICATIONS_ENABLED=false \
+            -v "$VOLUME:/home/node/.n8n" \
+            -v /tmp/n8n-export:/out \
+            "$IMAGE" export:workflow --all --output=/out/workflows.json
+          cat /tmp/n8n-export/workflows.json
