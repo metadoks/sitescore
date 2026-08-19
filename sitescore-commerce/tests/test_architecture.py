@@ -19,7 +19,15 @@ def test_runtime_dependencies_are_exact_and_exclude_future_systems():
 
 def test_migrations_only_target_commerce_schema():
     for name in ["0001_commerce_order_checkout.py","0002_webhook_payment_authority.py","0003_fulfillment_refund.py"]:
-        text=(ROOT/"alembic"/"versions"/name).read_text(); assert 'schema="commerce"' in text; assert "sitescore_api" not in text; assert "api.alembic_version" not in text
+        text=(ROOT/"alembic"/"versions"/name).read_text()
+        assert 'schema="commerce"' in text
+        # Durable HTTP target snapshot column names may contain "sitescore_api";
+        # forbid actual frozen-schema/table references instead.
+        assert 'schema="public"' not in text
+        assert "sitescore_api." not in text
+        assert "api.alembic_version" not in text
+        assert 'ForeignKey("api.' not in text
+        assert 'ForeignKey("public.' not in text
 
 def test_6_2_runtime_does_not_access_frozen_tables_or_delivery_content():
     text="\n".join(p.read_text() for p in (ROOT/"src").rglob("*.py"))
