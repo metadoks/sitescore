@@ -68,6 +68,13 @@ class CheckoutEvidenceGateway(Protocol):
     def retrieve(self, session_id: str) -> StripeCheckoutEvidence: ...
 
 
+def _stripe_value(obj: Any, key: str, default: Any = None) -> Any:
+    try:
+        return obj[key]
+    except (KeyError, TypeError, AttributeError):
+        return default
+
+
 class StripeWebhookVerifier:
     def __init__(self, settings: Settings):
         self._secret = settings.stripe_webhook_secret
@@ -88,11 +95,13 @@ class StripeWebhookVerifier:
             event_id = str(event["id"])
             event_type = str(event["type"])
             created_at = datetime.fromtimestamp(int(event["created"]), tz=timezone.utc)
-            api_version = event.get("api_version")
-            api_version = str(api_version) if api_version is not None else None
+            api_version_raw = _stripe_value(event, "api_version")
+            api_version = str(api_version_raw) if api_version_raw is not None else None
             livemode = bool(event["livemode"])
-            object_id = str(data_object.get("id", "")) or None
-            candidate_order_id = data_object.get("client_reference_id") or (data_object.get("metadata") or {}).get("sitescore_order_id")
+            object_id_raw = _stripe_value(data_object, "id")
+            object_id = str(object_id_raw) if object_id_raw else None
+            metadata = _stripe_value(data_object, "metadata", {}) or {}
+            candidate_order_id = _stripe_value(data_object, "client_reference_id") or _stripe_value(metadata, "sitescore_order_id")
             candidate_order_id = str(candidate_order_id) if candidate_order_id else None
         except Exception as exc:
             raise WebhookVerificationError("verified Stripe event schema is malformed") from exc
