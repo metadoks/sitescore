@@ -10,13 +10,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.pull_request.head.sha }}"}
-      - name: Prove pinned version and import with visible diagnostics
+      - name: Probe exact n8n export metadata required by import
         run: |
           set -euxo pipefail
-          echo N8N_DIAGNOSTIC_START=YES
           IMAGE=n8nio/n8n:2.33.4
           docker pull "$IMAGE" >/dev/null
-          docker run --rm "$IMAGE" --version
+          test "$(docker run --rm "$IMAGE" --version | tail -n1 | tr -d '\r')" = "2.33.4"
+          python - <<'PY'
+          import json, uuid
+          source='automation/n8n/workflows/sitescore-order-paid-v1.json'
+          data=json.load(open(source))
+          data['id']='sitescoreOrderPaidV1'
+          data['versionId']=str(uuid.uuid5(uuid.NAMESPACE_URL,'sitescore-order-paid-v1@1.0.0'))
+          with open('/tmp/sitescore-order-paid-v1-probe.json','w') as f:
+              json.dump(data,f,separators=(',',':'))
+          print('PROBE_ID='+data['id'])
+          print('PROBE_VERSION_ID='+data['versionId'])
+          PY
           VOLUME="n8n-diagnostic-${GITHUB_RUN_ID}"
           docker volume create "$VOLUME"
           trap 'docker volume rm "$VOLUME" >/dev/null 2>&1 || true' EXIT
@@ -26,8 +36,8 @@ jobs:
             -e N8N_DIAGNOSTICS_ENABLED=false \
             -e N8N_VERSION_NOTIFICATIONS_ENABLED=false \
             -v "$VOLUME:/home/node/.n8n" \
-            -v "$PWD/automation/n8n/workflows:/workflows:ro" \
-            "$IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
+            -v /tmp/sitescore-order-paid-v1-probe.json:/workflow.json:ro \
+            "$IMAGE" import:workflow --input=/workflow.json
           mkdir -p /tmp/n8n-export && chmod 777 /tmp/n8n-export
           docker run --rm \
             -e N8N_ENCRYPTION_KEY="$ENC_KEY" \
@@ -36,4 +46,14 @@ jobs:
             -v "$VOLUME:/home/node/.n8n" \
             -v /tmp/n8n-export:/out \
             "$IMAGE" export:workflow --all --output=/out/workflows.json
-          cat /tmp/n8n-export/workflows.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/n8n-export/workflows.json'))
+          items=data if isinstance(data,list) else [data]
+          assert len(items)==1, items
+          item=items[0]
+          print('N8N_PROBE_IMPORT=PASS')
+          print('EXPORTED_ID='+str(item.get('id')))
+          print('EXPORTED_VERSION_ID='+str(item.get('versionId')))
+          print('EXPORTED_ACTIVE='+str(item.get('active')))
+          PY
