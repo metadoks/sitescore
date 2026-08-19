@@ -151,6 +151,4 @@ PR #23 remains OPEN and unmerged. No `LOCK` was issued by the user in the curren
 
 Reviewer should independently review exact final HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd` and issue the next authoritative state.
 
-PR #23 description contains the same hardening and validation evidence for direct review from the code PR.
-
 > Mathematically validated scoring engine; empirical validation pending.
