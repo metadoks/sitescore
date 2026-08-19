@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sitescore-commerce"
-version = "0.4.0"
-description = "SiteScore commerce, payment authority, fulfillment binding, refunds, and orchestration dispatch boundary"
+version = "0.5.0"
+description = "SiteScore commerce, payment, fulfillment, delivery capability, transactional email, and orchestration authority"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.140.0",
