@@ -12,6 +12,18 @@ jobs:
         with: {ref: "${{ github.event.pull_request.head.sha }}"}
       - name: Verify hardening artifact shape and hash
         run: |
-          python -m json.tool automation/n8n/workflows/sitescore-order-paid-v1.json >/dev/null
-          python -m pytest -q automation/n8n/tests/test_workflow_static.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('automation/n8n/workflows/sitescore-order-paid-v1.json')
+          w=json.loads(p.read_text())
+          def targets(name, output=0):
+              return [x['node'] for x in w['connections'].get(name,{}).get('main',[])[output]]
+          assert targets('Advance Commerce') == ['Within Poll Horizon?']
+          assert targets('Within Poll Horizon?',0) == ['Wait Before Poll']
+          assert targets('Within Poll Horizon?',1) == ['Fail Poll Horizon']
+          assert targets('Wait Before Poll') == ['Get Commerce State']
+          assert 'Get Commerce State' not in targets('Advance Commerce')
+          assert not any('code' in n['type'].lower() or 'function' in n['type'].lower() for n in w['nodes'])
+          PY
           echo "WORKFLOW_SHA256=$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')"
