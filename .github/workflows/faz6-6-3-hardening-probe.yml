@@ -1,0 +1,17 @@
+name: faz6-6-3-hardening-probe
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.event.pull_request.head.sha }}"}
+      - name: Verify hardening artifact shape and hash
+        run: |
+          python -m json.tool automation/n8n/workflows/sitescore-order-paid-v1.json >/dev/null
+          python -m pytest -q automation/n8n/tests/test_workflow_static.py
+          echo "WORKFLOW_SHA256=$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')"
