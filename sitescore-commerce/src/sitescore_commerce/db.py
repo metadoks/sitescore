@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint, create_engine, select
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -73,15 +73,21 @@ class CheckoutSessionRow(Base):
     __table_args__ = (
         UniqueConstraint("stripe_checkout_session_id", name="uq_checkout_sessions_stripe_id"),
         UniqueConstraint("provider_idempotency_key", name="uq_checkout_sessions_provider_key"),
+        CheckConstraint("quantity = 1", name="ck_checkout_sessions_quantity_v1"),
         CheckConstraint("(stripe_checkout_session_id IS NULL AND checkout_url IS NULL) OR (stripe_checkout_session_id IS NOT NULL AND checkout_url IS NOT NULL)", name="ck_checkout_sessions_binding_pair"),
         {"schema": SCHEMA},
     )
     order_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.order_id"), primary_key=True)
     stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    operation_version: Mapped[str] = mapped_column(String(64), nullable=False)
     catalog_version: Mapped[str] = mapped_column(String(32), nullable=False)
     product_code: Mapped[str] = mapped_column(String(64), nullable=False)
     stripe_price_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    customer_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    success_url: Mapped[str] = mapped_column(Text, nullable=False)
+    cancel_url: Mapped[str] = mapped_column(Text, nullable=False)
     checkout_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     checkout_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -97,7 +103,18 @@ class CommerceStore:
     def provider_operation_key(order_id: UUID) -> str:
         return f"sitescore:checkout:v1:{order_id}"
 
-    def get_or_create_order(self, *, key_digest: str, request: OrderCreateRequest, catalog_version: str, price_id: str) -> UUID:
+    def get_or_create_order(
+        self,
+        *,
+        key_digest: str,
+        request: OrderCreateRequest,
+        catalog_version: str,
+        price_id: str,
+        quantity: int,
+        operation_version: str,
+        checkout_success_url: str,
+        checkout_cancel_url: str,
+    ) -> UUID:
         request_hash = request.canonical_hash()
         try:
             with self.session_factory.begin() as session:
@@ -116,7 +133,20 @@ class CommerceStore:
                 session.flush()
                 session.add(OrderIdempotencyRow(key_digest=key_digest, canonical_request_hash=request_hash, order_id=order_id, created_at=now))
                 session.flush()
-                session.add(CheckoutSessionRow(order_id=order_id, provider_idempotency_key=self.provider_operation_key(order_id), catalog_version=catalog_version, product_code=ProductCode.LOCATION_REPORT_V1.value, stripe_price_id=price_id, created_at=now, updated_at=now))
+                session.add(CheckoutSessionRow(
+                    order_id=order_id,
+                    provider_idempotency_key=self.provider_operation_key(order_id),
+                    operation_version=operation_version,
+                    catalog_version=catalog_version,
+                    product_code=ProductCode.LOCATION_REPORT_V1.value,
+                    stripe_price_id=price_id,
+                    quantity=quantity,
+                    customer_email=request.customer_email,
+                    success_url=checkout_success_url,
+                    cancel_url=checkout_cancel_url,
+                    created_at=now,
+                    updated_at=now,
+                ))
                 return order_id
         except IdempotencyConflict:
             raise
