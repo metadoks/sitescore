@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID, insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -229,13 +229,27 @@ class CommerceStore:
             livemode=event.livemode,
             event_created_at=event.created_at,
             raw_body_sha256=raw_body_sha256,
+            processing_state="received",
+            failure_code=None,
+            received_at=now,
+            processed_at=None,
+            attempt_count=1,
         )
         try:
             with self.session_factory.begin() as session:
-                row = session.get(StripeEventInboxRow, event.event_id)
-                if row is None:
-                    session.add(StripeEventInboxRow(**values, processing_state="received", failure_code=None, received_at=now, processed_at=None, attempt_count=1))
+                inserted = session.execute(
+                    pg_insert(StripeEventInboxRow)
+                    .values(**values)
+                    .on_conflict_do_nothing(index_elements=[StripeEventInboxRow.stripe_event_id])
+                    .returning(StripeEventInboxRow.stripe_event_id)
+                ).scalar_one_or_none()
+                if inserted is not None:
                     return
+                row = session.execute(
+                    select(StripeEventInboxRow)
+                    .where(StripeEventInboxRow.stripe_event_id == event.event_id)
+                    .with_for_update()
+                ).scalar_one()
                 essential = (row.stripe_event_type, row.stripe_object_id, row.event_api_version, row.livemode, row.event_created_at)
                 incoming = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at)
                 if essential != incoming:
