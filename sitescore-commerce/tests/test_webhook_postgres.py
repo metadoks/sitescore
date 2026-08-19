@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ from sitescore_commerce.checkout import CHECKOUT_OPERATION_VERSION
 from sitescore_commerce.contracts import OrderCreateRequest
 from sitescore_commerce.db import CommerceStore, EventIdentityConflict, OutboxEventRow, OrderRow, StripeEventInboxRow
 from sitescore_commerce.settings import STRIPE_API_VERSION, Settings
-from sitescore_commerce.webhook import PaymentWebhookService, StripeCheckoutEvidence, StripeEventEnvelope, StripeLineItemEvidence
+from sitescore_commerce.webhook import PaymentProviderUnavailable, PaymentWebhookService, StripeCheckoutEvidence, StripeEventEnvelope, StripeLineItemEvidence
 
 DATABASE_URL=os.getenv("SITESCORE_COMMERCE_DATABASE_URL")
 pytestmark=pytest.mark.skipif(not DATABASE_URL,reason="requires real PostgreSQL")
@@ -51,8 +52,11 @@ class FixedVerifier:
     def __init__(self,event): self.event=event
     def verify(self,raw_body,signature): return self.event
 class FixedGateway:
-    def __init__(self,value): self.value=value; self.calls=0
-    def retrieve(self,session_id): self.calls+=1; return self.value
+    def __init__(self,value=None,exc=None): self.value=value; self.exc=exc; self.calls=0
+    def retrieve(self,session_id):
+        self.calls+=1
+        if self.exc: raise self.exc
+        return self.value
 
 def service(store,ev,evd): return PaymentWebhookService(settings(),store,FixedVerifier(ev),FixedGateway(evd))
 
@@ -72,6 +76,32 @@ def test_paid_transition_is_atomic_idempotent_and_one_outbox_across_duplicate_ev
     assert len(inbox)==2 and all(row.processing_state=="processed" for row in inbox)
     assert len(outbox)==1 and outbox[0].outbox_type=="order.paid.v1" and outbox[0].published_at is None
     assert outbox[0].payload=={"order_id":str(oid),"event_type":"order.paid.v1","payload_version":1}
+
+def test_same_event_same_semantics_different_raw_bytes_preserves_first_digest():
+    reset_db(); store=CommerceStore(DATABASE_URL); oid=make_order(store); ev=envelope(oid); evd=evidence(oid)
+    first=b'{"same":true}'
+    second=b'{ "same" : true }'
+    service(store,ev,evd).handle(raw_body=first,signature="sig")
+    service(store,ev,evd).handle(raw_body=second,signature="sig")
+    _,_,_,inbox,outbox=snapshot(store,oid)
+    assert len(inbox)==1 and inbox[0].attempt_count==2
+    assert inbox[0].raw_body_sha256==hashlib.sha256(first).hexdigest()
+    assert inbox[0].processing_state=="processed" and len(outbox)==1
+
+def test_received_retry_with_different_raw_bytes_resumes_and_pays_once():
+    reset_db(); store=CommerceStore(DATABASE_URL); oid=make_order(store); ev=envelope(oid); evd=evidence(oid)
+    first=b'{"retry":1}'
+    svc=PaymentWebhookService(settings(),store,FixedVerifier(ev),FixedGateway(exc=PaymentProviderUnavailable("timeout")))
+    with pytest.raises(PaymentProviderUnavailable): svc.handle(raw_body=first,signature="sig")
+    _,_,_,inbox,outbox=snapshot(store,oid)
+    assert len(inbox)==1 and inbox[0].processing_state=="received" and outbox==[]
+    assert inbox[0].raw_body_sha256==hashlib.sha256(first).hexdigest()
+    restarted=CommerceStore(DATABASE_URL)
+    PaymentWebhookService(settings(),restarted,FixedVerifier(ev),FixedGateway(evd)).handle(raw_body=b'{ "retry" : 1 }',signature="sig")
+    order_state,payment_state,_,inbox,outbox=snapshot(restarted,oid)
+    assert (order_state,payment_state)==("paid","paid")
+    assert len(inbox)==1 and inbox[0].attempt_count==2 and inbox[0].processing_state=="processed"
+    assert len(outbox)==1 and outbox[0].outbox_type=="order.paid.v1"
 
 def test_webhook_first_recovers_provider_success_local_bind_loss_without_second_session():
     reset_db(); store=CommerceStore(DATABASE_URL); oid=make_order(store,bound=False)
@@ -114,6 +144,13 @@ def test_duplicate_event_identity_conflict_fails_closed():
     service(store,ev,evd).handle(raw_body=b"canonical",signature="sig")
     conflict=StripeEventEnvelope(ev.event_id,"checkout.session.expired",ev.api_version,ev.livemode,ev.created_at,ev.checkout_session_id,ev.candidate_order_id)
     with pytest.raises(EventIdentityConflict): service(store,conflict,evd).handle(raw_body=b"different",signature="sig")
+    assert snapshot(store,oid)[0:2]==("paid","paid") and len(snapshot(store,oid)[4])==1
+
+def test_duplicate_event_session_identity_conflict_fails_closed():
+    reset_db(); store=CommerceStore(DATABASE_URL); oid=make_order(store); ev=envelope(oid); evd=evidence(oid)
+    service(store,ev,evd).handle(raw_body=b"canonical",signature="sig")
+    conflict=StripeEventEnvelope(ev.event_id,ev.event_type,ev.api_version,ev.livemode,ev.created_at,"cs_test_other",ev.candidate_order_id)
+    with pytest.raises(EventIdentityConflict): service(store,conflict,evd).handle(raw_body=b"canonical",signature="sig")
     assert snapshot(store,oid)[0:2]==("paid","paid") and len(snapshot(store,oid)[4])==1
 
 def test_concurrent_same_event_converges_to_one_inbox_one_outbox():
