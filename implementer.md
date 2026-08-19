@@ -30,17 +30,14 @@ REVIEWED_HEAD_SEEN: 6790cc2eccb858f80857103e99f9b5562e8db485
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-
 COM60-H001: ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER
 COM60-H002: ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
 
 VALIDATED_SHA: 7c5300784b0ccae33a42d1310b00678a91d08d7c
-VALIDATION_WORKFLOW: faz6-6-0-exact-head-validation
 VALIDATION_RUN_ID: 32240653815
 VALIDATION_JOB_ID: 96030230093
 VALIDATION_CONCLUSION: SUCCESS
-EXACT_HEAD_CHECKOUT_ASSERTION: PASS
 TEMP_VALIDATION_WORKFLOW_REMOVED: YES
 VALIDATED_TO_FINAL_COMMITS: 1
 VALIDATED_TO_FINAL_DELTA: ONLY .github/workflows/faz6-6-0-validation.yml REMOVAL
@@ -51,15 +48,10 @@ SITESCORE_API_TESTS: 105 PASS
 FROZEN_PACKAGE_REGRESSION_TESTS: 1375 PASS
 FROZEN_TOTAL_TESTS: 1504 PASS
 COMBINED_PYTEST_TOTAL: 1556 PASS
-
 POSTGRESQL_VERSION: 16.15
 COMMERCE_MIGRATION_UPGRADE_DOWNGRADE_UPGRADE: PASS
-COMMERCE_SCHEMA_ISOLATION: PASS
-COMMERCE_ALEMBIC_VERSION_TABLE: commerce.alembic_version PASS
 DURABLE_STRIPE_OPERATION_REPLAY_CONFIG_DRIFT: PASS
 PROVIDER_SUCCESS_LOCAL_BIND_LOSS_RESTART_REPLAY: PASS
-PRIVATE_S3_COMPATIBLE_STORAGE_REGRESSION: PASS
-REDIS_CELERY_EXECUTION_TRANSPORT: PASS
 SECRET_SCAN: PASS
 FROZEN_SCOPE_SCAN: PASS
 
@@ -71,84 +63,38 @@ FAZ_6_0_STATUS: READY_FOR_REVIEW
 START_6_1: NO
 ```
 
-## Reviewer blocker closure attempt
+## COM60-H001 — addressed, Reviewer verification required
 
-Reviewer requested hardening only for `COM60-H001` and `COM60-H002`. Implementer changed no frozen FAZ 3/4/5 runtime package and did not start FAZ 6.1.
+The unbound Stripe Checkout operation is now durably snapshotted before provider I/O. Persisted replay authority includes provider idempotency key, operation version, product/catalog, Stripe Price ID, quantity, customer email, and resolved success/cancel URLs. Existing unbound retries reconstruct `CheckoutOperation` only from that durable snapshot, so later deployment Price or redirect settings cannot change the provider request semantics associated with the same Stripe idempotency key.
 
-### COM60-H001 — durable exact Stripe operation replay
+Real PostgreSQL adversarial evidence `test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss` passed: provider success followed by forced local bind loss, fresh store/service instance, Price/URL configuration drift, exact original operation replay, unchanged provider key, and later binding of the same simulated Checkout Session identity.
 
-`commerce.checkout_sessions` now persists the immutable operation projection required to replay the same Stripe idempotent operation across process restart and deployment configuration drift:
+## COM60-H002 — addressed, Reviewer verification required
 
-```text
-provider_idempotency_key
-operation_version
-product_code
-catalog_version
-stripe_price_id
-quantity
-customer_email
-success_url
-cancel_url
-```
-
-`OrderService` authors the original snapshot before provider I/O. On retry it reconstructs `CheckoutOperation` exclusively from persisted fields; current deployment Price and redirect settings cannot mutate an existing unbound operation. `StripeCheckoutGateway` projects its request only from that durable operation, including the unchanged server-owned provider idempotency key.
-
-The real PostgreSQL test `test_durable_checkout_replay_survives_restart_config_drift_and_bind_loss` proves provider-success/local-bind-loss recovery across a fresh store/service instance, unchanged provider operation identity, unchanged Price A / URLs A after config drift to Price B / URLs B, and later binding of the same simulated Checkout Session identity.
-
-### COM60-H002 — safe Alembic downgrade
-
-The revision downgrade no longer executes `DROP SCHEMA commerce CASCADE`. It drops only revision-owned product tables while preserving the schema that hosts Alembic's own version table.
-
-Real PostgreSQL 16.15 validation executed and passed:
+Revision downgrade no longer drops the `commerce` schema containing Alembic's own version table. It drops only revision-owned product tables. Real PostgreSQL 16.15 validation and the dedicated test passed the exact cycle:
 
 ```text
-alembic upgrade head
-alembic downgrade base
-alembic upgrade head
+upgrade head -> downgrade base -> upgrade head
 ```
 
-The dedicated rollback-cycle test verifies that after downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade rebuilds the product tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
+After downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; re-upgrade reconstructs the tables and records `0001_commerce_order_checkout`, with no public Alembic version table.
 
-## Fresh authoritative validation
-
-```text
-validated SHA: 7c5300784b0ccae33a42d1310b00678a91d08d7c
-run:           32240653815
-job:           96030230093
-conclusion:    SUCCESS
-PostgreSQL:    16.15
-
-sitescore-commerce: 52 PASS
-sitescore-report:    24 PASS
-sitescore-api:       105 PASS
-frozen packages:     1375 PASS
-frozen total:        1504 PASS
-combined total:      1556 PASS
-```
-
-Also PASS: exact-head/frozen-base ancestry, commerce schema/version isolation, private S3-compatible artifact regression, Redis/Celery execution transport, secret scan, and frozen-scope scan.
-
-## Validation cleanup / final review identity
-
-Temporary workflow cleanup occurred only after the green exact-head run.
+## Fresh validation and final identity
 
 ```text
 validated SHA:     7c5300784b0ccae33a42d1310b00678a91d08d7c
 final review HEAD: 8a4e358709ae7a662bf079722db042fb6e319ffd
+run/job:           32240653815 / 96030230093
+result:            SUCCESS
+commerce:          52 PASS
+frozen baseline:   1504 PASS
+combined:          1556 PASS
 ```
 
-GitHub compare shows exactly one later commit and the only delta is removal of `.github/workflows/faz6-6-0-validation.yml`.
+Exact-head/frozen-base ancestry, schema isolation, private S3 regression, Redis/Celery transport, secret scan and frozen-scope scan also passed. The only validated-to-final delta is removal of the temporary validation workflow. Final PR #23 has 22 changed files, all under `sitescore-commerce/`. Live `main` remains the frozen FAZ 5 SHA.
 
-Final PR #23 contains exactly 22 changed files, all under `sitescore-commerce/`. Live `main` remains `0e370940ee5c8c1253db72fa7e33078fb4ef3b2c`.
+No payment-truth/webhook, paid transition/outbox, analysis/report dispatch, refund, n8n, Postmark, delivery, public download, reconciliation worker, or other 6.1+ subsystem was added.
 
-## Authority boundary / stop state
-
-Hardening does not add webhook/payment truth, paid transition/outbox, analysis/report dispatch, refund, n8n, Postmark, delivery grants, public download, or reconciliation workers. Checkout creation/browser redirect remains non-authoritative for payment.
-
-Implementer does not self-resolve Reviewer blockers or self-authorize LOCK. `COM60-H001` and `COM60-H002` are only `ADDRESSED_BY_IMPLEMENTER_AWAITING_REVIEWER`.
-
-PR #23 remains OPEN and unmerged. No `LOCK` was issued by the user in the current turn. `START_6_1: NO`.
-
-Reviewer should independently review exact final HEAD `8a4e358709ae7a662bf079722db042fb6e319ffd` and issue the next authoritative state.
+Implementer does not self-resolve the Reviewer blockers, does not authorize LOCK and does not merge. PR #23 remains OPEN. `START_6_1: NO`.
 
 > Mathematically validated scoring engine; empirical validation pending.
