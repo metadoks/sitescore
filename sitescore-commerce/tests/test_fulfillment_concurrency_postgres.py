@@ -14,7 +14,14 @@ from conftest import valid_order
 from sitescore_commerce.checkout import CHECKOUT_OPERATION_VERSION
 from sitescore_commerce.contracts import OrderCreateRequest
 from sitescore_commerce.db import CheckoutSessionRow, CommerceStore, OrderRow
-from sitescore_commerce.fulfillment import AnalysisEvidence, FulfillmentBindingRow, FulfillmentStore
+from sitescore_commerce.fulfillment import (
+    AnalysisEvidence,
+    FulfillmentBindingRow,
+    FulfillmentStore,
+    PaymentIntentEvidence,
+    RefundEvidence,
+    RefundOperationRow,
+)
 from sitescore_commerce.fulfillment_runtime import FulfillmentRuntimeService
 from sitescore_commerce.settings import Settings
 
@@ -71,3 +78,37 @@ def test_provider_io_occurs_after_order_row_lock_transaction_is_released():
                 row=session.execute(select(OrderRow).where(OrderRow.order_id==oid).with_for_update(nowait=True)).scalar_one(); assert row.order_id==oid
             return super().submit_analysis(op)
     service=FulfillmentRuntimeService(cfg(),FulfillmentStore(commerce),ProbeGateway(),NoRefunds()); result=service.advance(oid); assert result.fulfillment_state=="analysis_pending"
+
+
+def test_concurrent_refund_triggers_share_one_local_operation_and_one_logical_provider_effect():
+    migrate(); commerce=CommerceStore(DATABASE_URL); oid=seed_paid(commerce); store=FulfillmentStore(commerce); store.prepare_analysis_operation(order_id=oid,settings=cfg()); aid=uuid4(); store.bind_analysis(order_id=oid,evidence=AnalysisEvidence(aid,"failed"))
+
+    class TerminalSiteScore:
+        def submit_analysis(self,*a,**k): raise AssertionError("analysis POST must not run")
+        def get_analysis(self,*,base_url,analysis_id): return AnalysisEvidence(analysis_id,"failed")
+        def resolve_report(self,**kwargs): raise AssertionError("report must not run")
+        def get_report(self,**kwargs): raise AssertionError("report must not run")
+
+    class IdempotentRefunds:
+        def __init__(self):
+            self.lock=threading.Lock(); self.effects={}; self.create_calls=[]
+        def retrieve_payment_intent(self,payment_intent_id):
+            return PaymentIntentEvidence(payment_intent_id,1234,"USD",False,{"sitescore_order_id":str(oid),"sitescore_product_code":"location_report_v1"})
+        def list_refunds(self,payment_intent_id):
+            with self.lock: return tuple(self.effects.values())
+        def create_refund(self,operation):
+            with self.lock:
+                self.create_calls.append(operation)
+                evidence=self.effects.get(operation.provider_idempotency_key)
+                if evidence is None:
+                    evidence=RefundEvidence("re_"+uuid4().hex,operation.stripe_payment_intent_id,operation.original_amount_received,operation.currency,"succeeded",operation.metadata)
+                    self.effects[operation.provider_idempotency_key]=evidence
+                return evidence
+
+    refunds=IdempotentRefunds(); service=FulfillmentRuntimeService(cfg(),store,TerminalSiteScore(),refunds)
+    with ThreadPoolExecutor(max_workers=8) as pool: results=list(pool.map(lambda _:service.advance(oid),range(16)))
+    with commerce.session_factory() as session:
+        order=session.get(OrderRow,oid); operation=session.get(RefundOperationRow,oid); assert order.order_state=="refunded" and order.payment_state=="refunded" and order.fulfillment_state=="analysis_failed"; assert operation is not None and operation.provider_idempotency_key==f"sitescore:refund:v1:{oid}"
+    assert len(refunds.effects)==1
+    assert len({op.provider_idempotency_key for op in refunds.create_calls})<=1
+    assert all(result.order_id==oid for result in results)
