@@ -236,10 +236,13 @@ class CommerceStore:
                 if row is None:
                     session.add(StripeEventInboxRow(**values, processing_state="received", failure_code=None, received_at=now, processed_at=None, attempt_count=1))
                     return
-                essential = (row.stripe_event_type, row.stripe_object_id, row.event_api_version, row.livemode, row.event_created_at, row.raw_body_sha256)
-                incoming = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at, raw_body_sha256)
+                essential = (row.stripe_event_type, row.stripe_object_id, row.event_api_version, row.livemode, row.event_created_at)
+                incoming = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at)
                 if essential != incoming:
                     raise EventIdentityConflict("duplicate Stripe event identity conflicts with durable inbox")
+                # raw_body_sha256 is first-delivery byte evidence only. Each redelivery is
+                # independently signature-verified before this method; a different JSON byte
+                # serialization is not itself a Stripe Event identity conflict.
                 row.attempt_count += 1
         except EventIdentityConflict:
             raise
