@@ -126,7 +126,7 @@ alembic downgrade base
 alembic upgrade head
 ```
 
-All three transitions succeeded. After downgrade-to-base, the commerce schema and Alembic version table remained valid; the subsequent upgrade rebuilt the product tables and returned `commerce.alembic_version` to `0001_commerce_order_checkout` without creating a public Alembic version table.
+All three transitions succeeded. The dedicated test additionally verifies that after downgrade-to-base the `commerce` schema contains only `commerce.alembic_version`; the subsequent upgrade rebuilds the product tables and returns `commerce.alembic_version` to `0001_commerce_order_checkout` without creating a public Alembic version table.
 
 ## 2. Fresh authoritative validation
 
