@@ -9,7 +9,7 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.2
 CHECKPOINT_TITLE: Paid Fulfillment Binding + Canonical Unfulfillable Full Refund Authority
-IMPLEMENTER_STATE: LOCK_EXECUTING
+IMPLEMENTER_STATE: LOCK_AUTHORIZED
 IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
@@ -50,8 +50,8 @@ FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
 FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
-FAZ_6_2_STATUS: LOCK_EXECUTING
+FAZ_6_2_STATUS: LOCK_AUTHORIZED
 START_6_3: NO
 ```
 
-Literal user `LOCK` received. Immediately before merge, Reviewer remains READY_TO_LOCK for exact head `3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628`; PR #25 remains open, mergeable, non-draft and unmerged; live main remains exact expected pre-lock SHA `8027239b4b168e98e8ee16e15787366632017156`; blocker and reopen/design/contract gates are clean. Merge is being executed with exact expected-head guard. FAZ 6.3 remains prohibited.
+Literal user `LOCK` received and all pre-lock gates were freshly re-verified. Merge is authorized only for PR #25 at exact reviewed head `3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628` against exact pre-lock main `8027239b4b168e98e8ee16e15787366632017156`, using an expected-head guard. FAZ 6.3 remains prohibited until post-merge Reviewer authorization.
