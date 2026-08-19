@@ -10,22 +10,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.pull_request.head.sha }}"}
-      - name: Probe exact n8n export metadata required by import
+      - name: Prove minimum workflow id required by n8n import
         run: |
           set -euxo pipefail
           IMAGE=n8nio/n8n:2.33.4
           docker pull "$IMAGE" >/dev/null
           test "$(docker run --rm "$IMAGE" --version | tail -n1 | tr -d '\r')" = "2.33.4"
           python - <<'PY'
-          import json, uuid
+          import json
           source='automation/n8n/workflows/sitescore-order-paid-v1.json'
           data=json.load(open(source))
           data['id']='sitescoreOrderPaidV1'
-          data['versionId']=str(uuid.uuid5(uuid.NAMESPACE_URL,'sitescore-order-paid-v1@1.0.0'))
+          assert 'versionId' not in data
           with open('/tmp/sitescore-order-paid-v1-probe.json','w') as f:
               json.dump(data,f,separators=(',',':'))
           print('PROBE_ID='+data['id'])
-          print('PROBE_VERSION_ID='+data['versionId'])
           PY
           VOLUME="n8n-diagnostic-${GITHUB_RUN_ID}"
           docker volume create "$VOLUME"
@@ -52,8 +51,9 @@ jobs:
           items=data if isinstance(data,list) else [data]
           assert len(items)==1, items
           item=items[0]
-          print('N8N_PROBE_IMPORT=PASS')
-          print('EXPORTED_ID='+str(item.get('id')))
-          print('EXPORTED_VERSION_ID='+str(item.get('versionId')))
-          print('EXPORTED_ACTIVE='+str(item.get('active')))
+          assert item['id']=='sitescoreOrderPaidV1'
+          assert item.get('versionId')
+          print('N8N_ID_ONLY_IMPORT=PASS')
+          print('EXPORTED_ID='+item['id'])
+          print('N8N_GENERATED_VERSION_ID='+item['versionId'])
           PY
