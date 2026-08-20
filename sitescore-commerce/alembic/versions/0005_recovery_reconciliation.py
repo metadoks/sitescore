@@ -74,6 +74,42 @@ def upgrade() -> None:
         schema="commerce",
     )
 
+    # A post-0005 verified Event without signed candidate-order material must not
+    # accidentally enter the legacy runtime fallback merely because candidate_order_id
+    # is NULL. Defaults are populated before BEFORE INSERT triggers, so the marker
+    # distinguishes this shape from pre-0005 rows and quarantines it immediately.
+    op.execute(
+        sa.text(
+            """
+            CREATE FUNCTION commerce.guard_verified_event_candidate_lineage()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF NEW.candidate_order_lineage_version = 'verified_event_v1'
+                   AND NEW.candidate_order_id IS NULL
+                   AND NEW.processing_state = 'received' THEN
+                    NEW.processing_state := 'attention_required';
+                    NEW.failure_code := 'event_order_correlation_invalid';
+                    NEW.processed_at := COALESCE(NEW.processed_at, CURRENT_TIMESTAMP);
+                END IF;
+                RETURN NEW;
+            END;
+            $$
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            CREATE TRIGGER trg_guard_verified_event_candidate_lineage
+            BEFORE INSERT ON commerce.stripe_event_inbox
+            FOR EACH ROW
+            EXECUTE FUNCTION commerce.guard_verified_event_candidate_lineage()
+            """
+        )
+    )
+
     op.create_table(
         "recovery_runs",
         sa.Column("run_id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -160,6 +196,8 @@ def downgrade() -> None:
     op.drop_index("ix_recovery_state_next_attempt", table_name="recovery_state", schema="commerce")
     op.drop_table("recovery_state", schema="commerce")
     op.drop_table("recovery_runs", schema="commerce")
+    op.execute(sa.text("DROP TRIGGER IF EXISTS trg_guard_verified_event_candidate_lineage ON commerce.stripe_event_inbox"))
+    op.execute(sa.text("DROP FUNCTION IF EXISTS commerce.guard_verified_event_candidate_lineage()"))
     op.drop_constraint(
         "ck_stripe_event_inbox_candidate_lineage_version",
         "stripe_event_inbox",
