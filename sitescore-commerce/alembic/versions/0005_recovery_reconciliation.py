@@ -32,7 +32,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "recovery_state",
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id"), primary_key=True),
+        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id", ondelete="CASCADE"), primary_key=True),
         sa.Column("attempt_count", sa.Integer(), nullable=False),
         sa.Column("consecutive_failures", sa.Integer(), nullable=False),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False),
@@ -53,7 +53,7 @@ def upgrade() -> None:
     op.create_table(
         "payment_poll_receipts",
         sa.Column("receipt_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id"), nullable=False),
+        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id", ondelete="CASCADE"), nullable=False),
         sa.Column("source", sa.String(64), nullable=False),
         sa.Column("stripe_checkout_session_id", sa.String(255), nullable=False),
         sa.Column("observed_session_status", sa.String(40), nullable=False),
@@ -73,9 +73,9 @@ def upgrade() -> None:
     op.create_table(
         "outbox_replay_audit",
         sa.Column("replay_attempt_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("run_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.recovery_runs.run_id"), nullable=False),
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id"), nullable=False),
-        sa.Column("outbox_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.outbox_events.outbox_id"), nullable=False),
+        sa.Column("run_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.recovery_runs.run_id", ondelete="CASCADE"), nullable=False),
+        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id", ondelete="CASCADE"), nullable=False),
+        sa.Column("outbox_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.outbox_events.outbox_id", ondelete="CASCADE"), nullable=False),
         sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("result", sa.String(32), nullable=False),
         sa.Column("failure_code", sa.String(80), nullable=True),
@@ -86,8 +86,8 @@ def upgrade() -> None:
     op.create_table(
         "recovery_findings",
         sa.Column("finding_id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("run_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.recovery_runs.run_id"), nullable=False),
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id"), nullable=False),
+        sa.Column("run_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.recovery_runs.run_id", ondelete="CASCADE"), nullable=False),
+        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("commerce.orders.order_id", ondelete="CASCADE"), nullable=False),
         sa.Column("code", sa.String(80), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         schema="commerce",
