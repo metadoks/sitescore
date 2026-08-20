@@ -67,3 +67,5 @@ jobs:
         run: bash automation/n8n/tests/runtime_smoke.sh
       - name: Pinned n8n 2.33.4 recovery scheduler runtime
         run: bash automation/n8n/tests/recovery_schedule_runtime_smoke.sh
+      - name: Pinned n8n 2.33.4 stuck-state recovery replay convergence
+        run: bash automation/n8n/tests/recovery_replay_runtime_smoke.sh
