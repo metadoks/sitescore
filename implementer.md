@@ -145,9 +145,7 @@ After both exact-head validation workflows were successful, the two temporary va
 1. `.github/workflows/faz6-6-4-validation.yml`
 2. `.github/workflows/faz6-6-4-frozen-validation.yml`
 
-There are no post-validation product-code changes. An attempted post-validation documentation mutation was rejected by GitHub with HTTP 409 because the supplied blob SHA was stale; no repository content changed from that attempted call. The validated product tree therefore remains intact apart from the two intentional temporary-workflow deletions recorded above.
-
-Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
+There are no post-validation product-code changes. Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
 
 ## STOP condition
 
