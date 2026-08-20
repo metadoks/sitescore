@@ -7,8 +7,9 @@ The recovery scanner is a bounded operational convergence mechanism. It is **not
 It may only re-prove or replay authority already owned by the existing commerce/provider contracts:
 
 - verified Stripe Event inbox recovery uses the original durable Stripe event identity and stored candidate-order correlation;
+- genuine pre-0005 Stripe inbox rows, which predate durable candidate-order storage, may use only the already-stored Stripe Checkout Session identity to correlate to exactly one durable local Checkout binding; that locally-derived order is **not** written back as signed Event evidence;
 - missing-webhook recovery uses a fresh server-side retrieval of the exact bound Checkout Session and writes a distinct `stripe_checkout_server_poll_v1` receipt only when that poll wins the atomic pending → paid/expired transition;
-- paid-outbox recovery sends or replays the exact durable `order.paid.v1` outbox event identity;
+- paid-outbox recovery sends or replays the exact durable `order.paid.v1` outbox event identity only after re-proving coherent durable paid Stripe authority;
 - downstream analysis/report/refund/delivery convergence remains owned by the locked n8n order workflow and existing commerce state machines.
 
 Recovery never authors scoring, readiness, financial, report, payment, refund, fulfillment, delivery, or provider acceptance truth.
@@ -50,7 +51,14 @@ Migration `0005_recovery_reconciliation` owns:
 - `payment_poll_receipts`: immutable server-poll transition evidence with exact bound session observations and canonical evidence SHA-256;
 - `outbox_replay_audit`: exact event replay attempt/result evidence;
 - `recovery_findings`: sanitized operator-attention codes;
-- `stripe_event_inbox.candidate_order_id`: the original verified Event candidate order correlation required for crash-safe `received`-row resumption.
+- `stripe_event_inbox.candidate_order_id`: candidate order extracted from post-0005 verified Event material;
+- `stripe_event_inbox.candidate_order_lineage_version`: provenance discriminator. Rows carried forward from 0004 retain `NULL`; post-0005 verified Event inserts receive `verified_event_v1`.
+
+The migration deliberately does **not** backfill a legacy row's `candidate_order_id` from local state. Doing so would misrepresent locally-derived correlation as signed Event evidence. Legacy rows preserve `candidate_order_id = NULL` and lineage marker `NULL`.
+
+During the populated 0004 → 0005 upgrade, a legacy `received` row is retainable for runtime recovery only when its stored `stripe_object_id` maps to exactly one durable local `checkout_sessions.stripe_checkout_session_id`. Orphan/missing/non-unique correlation is quarantined as sanitized `legacy_event_session_correlation_invalid` attention. The Checkout Session identity is already uniqueness-protected in the commerce schema.
+
+Post-0005 verified Event rows are stamped `verified_event_v1`. A new verified Event that lacks candidate-order correlation is immediately quarantined as `event_order_correlation_invalid`, so it cannot masquerade as a pre-0005 legacy row and enter the local-session fallback.
 
 No raw provider response body, secret, customer email, report bytes, private storage URL, raw/reversible delivery token, or n8n execution payload is persisted by these recovery records.
 
@@ -71,7 +79,11 @@ Recovery is at-least-once and idempotent, never exactly-once.
 
 ### A — stale verified Stripe inbox `received`
 
-Recovery uses the **original** real Stripe event ID and durable event metadata. The durable candidate order ID must exactly match the claimed order before provider I/O. Fresh Stripe Checkout evidence must then satisfy the existing API version, livemode, session, metadata, line-item, product, price, quantity, and payment/expiry authority checks. Existing `processed`, `ignored`, and `attention_required` rows are not reopened.
+For a post-0005 row, recovery uses the **original** real Stripe event ID and durable signed-event candidate order ID. A non-NULL candidate that is malformed or does not exactly match the claimed order fails closed before provider I/O.
+
+For a genuine pre-0005 row, the candidate-order field and lineage marker are both absent/`NULL` by provenance. Recovery may correlate only the row's stored real Stripe object/session ID to exactly one durable local Checkout Session/order binding. It does not write that derived order back to `candidate_order_id`, does not create a poll receipt, does not create another inbox row, and does not invent an `evt_*` identity.
+
+After either permitted correlation path, fresh Stripe Checkout evidence must still satisfy the existing API version, livemode, session, client-reference, metadata, product/catalog, Price, quantity, USD, and payment/expiry authority checks. The winning transition keeps the original real Stripe event ID as `last_reconciliation_event_id`. Existing `processed`, `ignored`, and `attention_required` rows are not reopened.
 
 ### B — missing webhook / server Checkout poll
 
@@ -86,11 +98,22 @@ The poll path never creates a fake Stripe Event, fake Stripe inbox row, or fake 
 
 ### C — unpublished paid outbox
 
-The existing durable outbox UUID/order/type/original `created_at` is sent. Only confirmed 2xx marks that same row published. Timeout/connection loss stays uncertain; 429/5xx stays retryable and unpublished.
+Before the existing durable outbox UUID/order/type/original `created_at` may be sent, recovery re-validates the durable local paid Stripe authority shape. It requires an exact bound Checkout Session, the locked checkout operation/catalog/product/quantity/customer relationship, `stripe_session_status=complete`, `stripe_payment_status=paid`, a non-empty bound PaymentIntent, expected livemode, and a reconciliation timestamp.
+
+The payment lineage must also be coherent:
+
+- webhook-paid: the durable `last_reconciliation_event_id` must resolve to a processed `checkout.session.completed` inbox record for the same Checkout Session with coherent API-version/livemode/order lineage; or
+- server-poll-paid: exactly one immutable `stripe_checkout_server_poll_v1` paid receipt must match the same Session, complete/paid observation, PaymentIntent, livemode, and canonical evidence hash shape.
+
+Any contradiction or missing authority becomes a sanitized `paid_*` recovery finding and causes **zero n8n I/O**. Recovery does not repair the binding or synthesize provider evidence.
+
+Only after this guard passes is the exact existing outbox event sent. Only confirmed 2xx marks that same row published. Timeout/connection loss stays uncertain; 429/5xx stays retryable and unpublished.
 
 ### D — published stale nonterminal order
 
-The exact same already-published outbox identity is replayed. `published_at` is history and is never cleared/replaced. Each replay gets a durable replay-audit row; transport acceptance does not itself create business truth.
+The same paid-authority guard is applied **before** published replay, including stale `fulfillment_in_progress` and `refund_pending` shapes rooted in the original paid authority. Corrupt paid binding therefore cannot re-enter analysis/report/refund/delivery orchestration.
+
+For a valid paid binding, the exact same already-published outbox identity is replayed. `published_at` is history and is never cleared/replaced. Each actual replay gets a durable replay-audit row; transport acceptance does not itself create business truth.
 
 ### E — downstream stuck convergence
 
@@ -98,7 +121,7 @@ Recovery replays the exact paid outbox so the locked order workflow re-enters co
 
 ### F — invariant corruption
 
-Missing/duplicate/contradictory authority artifacts are not synthesized or repaired. Recovery records a sanitized finding and stops normal hot-loop retries for that candidate. Existing `attention_required` business states are not automatically reopened.
+Missing/duplicate/contradictory authority artifacts are not synthesized or repaired. Recovery records a sanitized finding and stops normal hot-loop retries for that candidate. Examples include paid state without one exact paid outbox, missing/contradictory durable Stripe paid evidence, invalid webhook/poll lineage, and mismatched provider identities. Existing `attention_required` business states are not automatically reopened.
 
 ## Transport classification to n8n
 
