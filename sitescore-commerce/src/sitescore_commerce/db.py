@@ -12,6 +12,7 @@ from .contracts import FulfillmentState, OrderCreateRequest, OrderState, Payment
 
 SCHEMA = "commerce"
 PAID_OUTBOX_TYPE = "order.paid.v1"
+POLL_RECEIPT_SOURCE = "stripe_checkout_server_poll_v1"
 
 
 class PersistenceUnavailable(RuntimeError):
@@ -114,6 +115,7 @@ class StripeEventInboxRow(Base):
     stripe_event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     stripe_event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     stripe_object_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    candidate_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_api_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     livemode: Mapped[bool] = mapped_column(Boolean, nullable=False)
     event_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -139,6 +141,93 @@ class OutboxEventRow(Base):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RecoveryRunRow(Base):
+    __tablename__ = "recovery_runs"
+    __table_args__ = (
+        CheckConstraint("claimed >= 0 AND reconciled >= 0 AND published >= 0 AND replayed >= 0 AND deferred >= 0 AND attention >= 0", name="ck_recovery_runs_nonnegative_counts"),
+        {"schema": SCHEMA},
+    )
+    run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed: Mapped[int] = mapped_column(Integer, nullable=False)
+    reconciled: Mapped[int] = mapped_column(Integer, nullable=False)
+    published: Mapped[int] = mapped_column(Integer, nullable=False)
+    replayed: Mapped[int] = mapped_column(Integer, nullable=False)
+    deferred: Mapped[int] = mapped_column(Integer, nullable=False)
+    attention: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class RecoveryStateRow(Base):
+    __tablename__ = "recovery_state"
+    __table_args__ = (
+        CheckConstraint("attempt_count >= 0", name="ck_recovery_state_attempt_count"),
+        CheckConstraint("consecutive_failures >= 0", name="ck_recovery_state_failure_count"),
+        CheckConstraint("(lease_token IS NULL) = (lease_expires_at IS NULL)", name="ck_recovery_state_lease_pair"),
+        {"schema": SCHEMA},
+    )
+    order_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.order_id"), primary_key=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_outcome: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    lease_token: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PaymentPollReceiptRow(Base):
+    __tablename__ = "payment_poll_receipts"
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_payment_poll_receipts_order"),
+        CheckConstraint("source = 'stripe_checkout_server_poll_v1'", name="ck_payment_poll_receipts_source"),
+        CheckConstraint("transition_target IN ('paid','expired')", name="ck_payment_poll_receipts_target"),
+        CheckConstraint("evidence_sha256 ~ '^[0-9a-f]{64}$'", name="ck_payment_poll_receipts_digest"),
+        {"schema": SCHEMA},
+    )
+    receipt_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.order_id"), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    stripe_checkout_session_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    observed_session_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    observed_payment_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    observed_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    observed_livemode: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    transition_target: Mapped[str] = mapped_column(String(16), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OutboxReplayAuditRow(Base):
+    __tablename__ = "outbox_replay_audit"
+    __table_args__ = (
+        CheckConstraint("result IN ('accepted','uncertain','retryable_rejected','attention')", name="ck_outbox_replay_audit_result"),
+        {"schema": SCHEMA},
+    )
+    replay_attempt_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.recovery_runs.run_id"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.order_id"), nullable=False)
+    outbox_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.outbox_events.outbox_id"), nullable=False)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class RecoveryFindingRow(Base):
+    __tablename__ = "recovery_findings"
+    __table_args__ = ({"schema": SCHEMA},)
+    finding_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.recovery_runs.run_id"), nullable=False)
+    order_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey(f"{SCHEMA}.orders.order_id"), nullable=False)
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class CommerceStore:
@@ -225,6 +314,7 @@ class CommerceStore:
             stripe_event_id=event.event_id,
             stripe_event_type=event.event_type,
             stripe_object_id=event.checkout_session_id,
+            candidate_order_id=event.candidate_order_id,
             event_api_version=event.api_version,
             livemode=event.livemode,
             event_created_at=event.created_at,
@@ -250,13 +340,24 @@ class CommerceStore:
                     .where(StripeEventInboxRow.stripe_event_id == event.event_id)
                     .with_for_update()
                 ).scalar_one()
-                essential = (row.stripe_event_type, row.stripe_object_id, row.event_api_version, row.livemode, row.event_created_at)
-                incoming = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at)
+                essential = (
+                    row.stripe_event_type,
+                    row.stripe_object_id,
+                    row.candidate_order_id,
+                    row.event_api_version,
+                    row.livemode,
+                    row.event_created_at,
+                )
+                incoming = (
+                    event.event_type,
+                    event.checkout_session_id,
+                    event.candidate_order_id,
+                    event.api_version,
+                    event.livemode,
+                    event.created_at,
+                )
                 if essential != incoming:
                     raise EventIdentityConflict("duplicate Stripe event identity conflicts with durable inbox")
-                # raw_body_sha256 is first-delivery byte evidence only. Each redelivery is
-                # independently signature-verified before this method; a different JSON byte
-                # serialization is not itself a Stripe Event identity conflict.
                 row.attempt_count += 1
         except EventIdentityConflict:
             raise
@@ -293,6 +394,57 @@ class CommerceStore:
     def mark_event_ignored(self, event_id: str, code: str) -> None:
         self._finish_event(event_id, "ignored", code)
 
+    @staticmethod
+    def _apply_payment_transition_locked(*, session: object, order: OrderRow, checkout: CheckoutSessionRow, evidence: object, target: str, event_id: str | None) -> tuple[bool, str | None]:
+        if checkout.stripe_checkout_session_id is not None and checkout.stripe_checkout_session_id != evidence.session_id:
+            return False, "local_session_binding_conflict"
+
+        if target == "paid":
+            if order.order_state == OrderState.EXPIRED.value or order.payment_state == PaymentState.EXPIRED.value:
+                return False, "contradictory_terminal_payment_truth"
+            if order.order_state == OrderState.PENDING_PAYMENT.value and order.payment_state == PaymentState.PENDING.value:
+                transitioned = True
+            elif order.order_state == OrderState.PAID.value and order.payment_state == PaymentState.PAID.value:
+                transitioned = False
+            else:
+                return False, "invalid_payment_state_transition"
+        elif target == "expired":
+            if order.order_state == OrderState.PAID.value or order.payment_state == PaymentState.PAID.value:
+                return False, "late_expiration_after_paid"
+            if order.order_state == OrderState.PENDING_PAYMENT.value and order.payment_state == PaymentState.PENDING.value:
+                transitioned = True
+            elif order.order_state == OrderState.EXPIRED.value and order.payment_state == PaymentState.EXPIRED.value:
+                transitioned = False
+            else:
+                return False, "invalid_expiration_state_transition"
+        else:
+            raise PersistenceUnavailable("unsupported reconciliation target")
+
+        now = utcnow()
+        if checkout.stripe_checkout_session_id is None:
+            checkout.stripe_checkout_session_id = evidence.session_id
+        checkout.stripe_payment_intent_id = evidence.payment_intent_id
+        checkout.stripe_session_status = evidence.status
+        checkout.stripe_payment_status = evidence.payment_status
+        checkout.stripe_livemode = evidence.livemode
+        checkout.reconciled_at = now
+        if event_id is not None:
+            checkout.last_reconciliation_event_id = event_id
+        checkout.updated_at = now
+
+        if transitioned and target == "paid":
+            order.order_state = OrderState.PAID.value
+            order.payment_state = PaymentState.PAID.value
+            order.updated_at = now
+            existing = session.execute(select(OutboxEventRow).where(OutboxEventRow.order_id == order.order_id, OutboxEventRow.outbox_type == PAID_OUTBOX_TYPE)).scalar_one_or_none()
+            if existing is None:
+                session.add(OutboxEventRow(outbox_id=uuid4(), order_id=order.order_id, outbox_type=PAID_OUTBOX_TYPE, payload_version="1", payload={"order_id": str(order.order_id), "event_type": PAID_OUTBOX_TYPE, "payload_version": 1}, created_at=now, published_at=None))
+        elif transitioned and target == "expired":
+            order.order_state = OrderState.EXPIRED.value
+            order.payment_state = PaymentState.EXPIRED.value
+            order.updated_at = now
+        return transitioned, None
+
     def apply_reconciliation(self, *, event_id: str, order_id: UUID, evidence: object, target: str) -> None:
         try:
             with self.session_factory.begin() as session:
@@ -301,57 +453,13 @@ class CommerceStore:
                     return
                 order = session.execute(select(OrderRow).where(OrderRow.order_id == order_id).with_for_update()).scalar_one()
                 checkout = session.execute(select(CheckoutSessionRow).where(CheckoutSessionRow.order_id == order_id).with_for_update()).scalar_one()
-                if checkout.stripe_checkout_session_id is not None and checkout.stripe_checkout_session_id != evidence.session_id:
-                    inbox.processing_state = "attention_required"
-                    inbox.failure_code = "local_session_binding_conflict"
-                    inbox.processed_at = utcnow()
-                    return
-                if checkout.stripe_checkout_session_id is None:
-                    checkout.stripe_checkout_session_id = evidence.session_id
+                _, failure_code = self._apply_payment_transition_locked(session=session, order=order, checkout=checkout, evidence=evidence, target=target, event_id=event_id)
                 now = utcnow()
-                checkout.stripe_payment_intent_id = evidence.payment_intent_id
-                checkout.stripe_session_status = evidence.status
-                checkout.stripe_payment_status = evidence.payment_status
-                checkout.stripe_livemode = evidence.livemode
-                checkout.reconciled_at = now
-                checkout.last_reconciliation_event_id = event_id
-                checkout.updated_at = now
-
-                if target == "paid":
-                    if order.order_state == OrderState.EXPIRED.value or order.payment_state == PaymentState.EXPIRED.value:
-                        inbox.processing_state = "attention_required"
-                        inbox.failure_code = "contradictory_terminal_payment_truth"
-                        inbox.processed_at = now
-                        return
-                    if order.order_state == OrderState.PENDING_PAYMENT.value and order.payment_state == PaymentState.PENDING.value:
-                        order.order_state = OrderState.PAID.value
-                        order.payment_state = PaymentState.PAID.value
-                        order.updated_at = now
-                        existing = session.execute(select(OutboxEventRow).where(OutboxEventRow.order_id == order_id, OutboxEventRow.outbox_type == PAID_OUTBOX_TYPE)).scalar_one_or_none()
-                        if existing is None:
-                            session.add(OutboxEventRow(outbox_id=uuid4(), order_id=order_id, outbox_type=PAID_OUTBOX_TYPE, payload_version="1", payload={"order_id": str(order_id), "event_type": PAID_OUTBOX_TYPE, "payload_version": 1}, created_at=now, published_at=None))
-                    elif order.order_state != OrderState.PAID.value or order.payment_state != PaymentState.PAID.value:
-                        inbox.processing_state = "attention_required"
-                        inbox.failure_code = "invalid_payment_state_transition"
-                        inbox.processed_at = now
-                        return
-                elif target == "expired":
-                    if order.order_state == OrderState.PAID.value or order.payment_state == PaymentState.PAID.value:
-                        inbox.processing_state = "attention_required"
-                        inbox.failure_code = "late_expiration_after_paid"
-                        inbox.processed_at = now
-                        return
-                    if order.order_state == OrderState.PENDING_PAYMENT.value and order.payment_state == PaymentState.PENDING.value:
-                        order.order_state = OrderState.EXPIRED.value
-                        order.payment_state = PaymentState.EXPIRED.value
-                        order.updated_at = now
-                    elif order.order_state != OrderState.EXPIRED.value or order.payment_state != PaymentState.EXPIRED.value:
-                        inbox.processing_state = "attention_required"
-                        inbox.failure_code = "invalid_expiration_state_transition"
-                        inbox.processed_at = now
-                        return
-                else:
-                    raise PersistenceUnavailable("unsupported reconciliation target")
+                if failure_code is not None:
+                    inbox.processing_state = "attention_required"
+                    inbox.failure_code = failure_code
+                    inbox.processed_at = now
+                    return
                 inbox.processing_state = "processed"
                 inbox.failure_code = None
                 inbox.processed_at = now
@@ -359,3 +467,41 @@ class CommerceStore:
             raise
         except SQLAlchemyError as exc:
             raise PersistenceUnavailable("payment reconciliation could not be persisted") from exc
+
+    def apply_poll_reconciliation(self, *, order_id: UUID, evidence: object, target: str, evidence_sha256: str, observed_at: datetime) -> tuple[str, str | None]:
+        """Apply a server-poll payment transition without fabricating a Stripe Event identity.
+
+        A receipt is written only when this poll actually wins the pending -> paid/expired
+        transition. If a real webhook already won the same row lock race, the poll is an
+        idempotent observation and no synthetic authority record is created.
+        """
+        try:
+            with self.session_factory.begin() as session:
+                order = session.execute(select(OrderRow).where(OrderRow.order_id == order_id).with_for_update()).scalar_one()
+                checkout = session.execute(select(CheckoutSessionRow).where(CheckoutSessionRow.order_id == order_id).with_for_update()).scalar_one()
+                transitioned, failure_code = self._apply_payment_transition_locked(session=session, order=order, checkout=checkout, evidence=evidence, target=target, event_id=None)
+                if failure_code is not None:
+                    return "attention", failure_code
+                if not transitioned:
+                    return "already_terminal", None
+                session.add(PaymentPollReceiptRow(
+                    receipt_id=uuid4(),
+                    order_id=order_id,
+                    source=POLL_RECEIPT_SOURCE,
+                    stripe_checkout_session_id=evidence.session_id,
+                    observed_session_status=evidence.status,
+                    observed_payment_status=evidence.payment_status,
+                    observed_payment_intent_id=evidence.payment_intent_id,
+                    observed_livemode=evidence.livemode,
+                    evidence_sha256=evidence_sha256,
+                    transition_target=target,
+                    observed_at=observed_at,
+                    created_at=utcnow(),
+                ))
+                return "transitioned", None
+        except IntegrityError as exc:
+            raise PersistenceUnavailable("payment poll reconciliation receipt conflicted with durable authority") from exc
+        except PersistenceUnavailable:
+            raise
+        except SQLAlchemyError as exc:
+            raise PersistenceUnavailable("payment poll reconciliation could not be persisted") from exc

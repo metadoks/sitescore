@@ -74,8 +74,8 @@ def event():
     )
 
 
-def test_checkpoint_package_version_is_0_5_0():
-    assert __version__ == "0.5.0"
+def test_checkpoint_package_version_is_0_6_0():
+    assert __version__ == "0.6.0"
 
 
 def test_payload_is_minimal_server_owned_identity_only():
@@ -116,9 +116,7 @@ def test_non_2xx_never_marks_published(status):
     item = event()
     store = FakeStore(item)
     http = FakeHttpClient(store, [status])
-    result = PaidOutboxDispatcher(
-        store, N8nWebhookClient(settings(), client=http)
-    ).dispatch_once()
+    result = PaidOutboxDispatcher(store, N8nWebhookClient(settings(), client=http)).dispatch_once()
     assert result.state is DispatchState.UNPUBLISHED
     assert result.event_id == item.event_id
     assert store.marked == []
@@ -132,9 +130,7 @@ def test_timeout_or_uncertain_response_replays_exact_same_event_identity():
         request=httpx.Request("POST", settings().webhook_url),
     )
     http = FakeHttpClient(store, [timeout, 202])
-    dispatcher = PaidOutboxDispatcher(
-        store, N8nWebhookClient(settings(), client=http)
-    )
+    dispatcher = PaidOutboxDispatcher(store, N8nWebhookClient(settings(), client=http))
 
     first = dispatcher.dispatch_once()
     assert first.state is DispatchState.UNPUBLISHED
@@ -149,9 +145,7 @@ def test_timeout_or_uncertain_response_replays_exact_same_event_identity():
 def test_no_event_is_clean_noop():
     store = FakeStore(None)
     http = FakeHttpClient(store, [])
-    result = PaidOutboxDispatcher(
-        store, N8nWebhookClient(settings(), client=http)
-    ).dispatch_once()
+    result = PaidOutboxDispatcher(store, N8nWebhookClient(settings(), client=http)).dispatch_once()
     assert result.state is DispatchState.EMPTY
     assert http.calls == []
     assert store.marked == []
@@ -175,14 +169,8 @@ def test_dispatch_settings_require_https_in_production_and_distinct_role_secrets
 
 def test_dispatch_settings_accept_local_http_for_test(monkeypatch):
     monkeypatch.setenv("COMMERCE_ENV", "test")
-    monkeypatch.setenv(
-        "SITESCORE_COMMERCE_DATABASE_URL",
-        "postgresql+psycopg://postgres:postgres@127.0.0.1/sitescore",
-    )
-    monkeypatch.setenv(
-        "COMMERCE_N8N_ORDER_PAID_WEBHOOK_URL",
-        "http://127.0.0.1:5678/webhook/sitescore-order-paid-v1",
-    )
+    monkeypatch.setenv("SITESCORE_COMMERCE_DATABASE_URL", "postgresql+psycopg://postgres:postgres@127.0.0.1/sitescore")
+    monkeypatch.setenv("COMMERCE_N8N_ORDER_PAID_WEBHOOK_URL", "http://127.0.0.1:5678/webhook/sitescore-order-paid-v1")
     monkeypatch.setenv("COMMERCE_N8N_INGRESS_SECRET", "i" * 32)
     monkeypatch.setenv("COMMERCE_AUTOMATION_API_KEY", "a" * 32)
     value = OutboxDispatchSettings.from_env()
