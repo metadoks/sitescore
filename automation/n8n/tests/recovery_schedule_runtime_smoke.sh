@@ -11,6 +11,7 @@ CONTAINER="sitescore-n8n65-${RUN_TOKEN}"
 TMP_DIR="$(mktemp -d)"
 EXPORT_DIR="$TMP_DIR/export"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
+OWNER_EMAIL="sitescore-recovery-ci@example.test"
 mkdir -p "$EXPORT_DIR"; chmod 777 "$EXPORT_DIR"
 RUNTIME_OK=0
 
@@ -56,9 +57,8 @@ wait_health(){ for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:5680/healthz
 
 docker run -d --name "$CONTAINER" -p 5680:5680 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
-SETUP_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/owner/setup -d '{"email":"sitescore-recovery-ci@example.test","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
+SETUP_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/owner/setup -d '{"email":"'"$OWNER_EMAIL"'","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
 test "$SETUP_CODE" = 200
-test -s "$COOKIE_JAR"
 echo N8N_RECOVERY_INSTANCE_PROVISIONING=PASS
 docker stop "$CONTAINER" >/dev/null; docker rm "$CONTAINER" >/dev/null
 
@@ -96,16 +96,36 @@ FAKE_RECOVERY_AUTOMATION_KEY="$AUTOMATION_KEY" python "$FAKE_SERVER" >/tmp/n8n65
 for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:18081/__stats >/dev/null 2>&1 && break; sleep .2; done
 curl -fsS http://127.0.0.1:18081/__stats >/dev/null
 
-# The n8n CLI execute command is a sub-workflow entry path and intentionally
-# requires an Execute Workflow Trigger. The production artifact must remain a
-# pure Schedule Trigger -> Commerce HTTP workflow, so exercise the exact saved
-# workflow through n8n's manual-run API and explicitly select the Schedule
-# Trigger as the start node. n8n 2.33.4 may return HTTP 200 with an empty body
-# for this endpoint, so the proof is acceptance plus the exact Commerce side
-# effect rather than a non-contractual response-body shape.
+# Exercise the exact saved Schedule Trigger workflow through n8n's manual-run
+# API. Re-authenticate after the import/publish stop-start cycle instead of
+# relying on a setup-session cookie. n8n 2.33.4 may return HTTP 200 with an
+# empty body here, so acceptance plus the exact Commerce side effect is the
+# authoritative runtime proof.
 docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5680:5680 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
-RUN_CODE=$(curl -sS -b "$COOKIE_JAR" -o "$TMP_DIR/run.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST "http://127.0.0.1:5680/rest/workflows/$WORKFLOW_ID/run" -d '{"triggerToStartFrom":{"name":"Recovery Schedule"}}')
+rm -f "$COOKIE_JAR"
+LOGIN_CODE=000
+for _ in $(seq 1 30); do
+  set +e
+  LOGIN_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/login.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/login -d '{"emailOrLdapLoginId":"'"$OWNER_EMAIL"'","password":"'"$OWNER_PASSWORD"'"}')
+  CURL_STATUS=$?
+  set -e
+  [[ "$CURL_STATUS" = 0 && "$LOGIN_CODE" = 200 ]] && break
+  sleep .5
+done
+test "$LOGIN_CODE" = 200
+test -s "$COOKIE_JAR"
+echo N8N_RECOVERY_RELOGIN=PASS
+
+RUN_CODE=000
+for _ in $(seq 1 30); do
+  set +e
+  RUN_CODE=$(curl -sS -b "$COOKIE_JAR" -o "$TMP_DIR/run.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST "http://127.0.0.1:5680/rest/workflows/$WORKFLOW_ID/run" -d '{"triggerToStartFrom":{"name":"Recovery Schedule"}}')
+  CURL_STATUS=$?
+  set -e
+  [[ "$CURL_STATUS" = 0 && "$RUN_CODE" = 200 ]] && break
+  sleep .5
+done
 test "$RUN_CODE" = 200
 echo N8N_RECOVERY_MANUAL_TRIGGER_HTTP=PASS
 
