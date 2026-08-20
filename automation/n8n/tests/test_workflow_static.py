@@ -25,8 +25,8 @@ def targets(workflow, name, output=0):
 def test_repository_workflow_identity_and_sha_are_stable_shape():
     workflow = load()
     assert workflow["id"] == "sitescoreOrderPaidV1"
-    assert workflow["name"] == "SiteScore Order Paid Orchestration v1.0.0"
-    assert workflow["meta"]["sitescoreWorkflowVersion"] == "1.0.0"
+    assert workflow["name"] == "SiteScore Order Paid Orchestration v1.1.0"
+    assert workflow["meta"]["sitescoreWorkflowVersion"] == "1.1.0"
     assert workflow["meta"]["sitescoreBusinessIdentity"] == "sitescore-order-paid-v1"
     assert workflow["active"] is False
     assert len(hashlib.sha256(WORKFLOW.read_bytes()).hexdigest()) == 64
@@ -44,7 +44,7 @@ def test_export_has_no_literal_secret_or_privileged_provider_material():
     for pattern in [r"sk_live_[A-Za-z0-9]+",r"sk_test_[A-Za-z0-9]+",r"whsec_[A-Za-z0-9]+",r"ssk1_[A-Za-z0-9]",r"AKIA[0-9A-Z]{16}",r"postgresql(?:\+psycopg)?://",r"redis://"]:
         assert re.search(pattern, text) is None
     lowered = text.lower()
-    for forbidden in ["stripe_secret_key","stripe_webhook_secret","postmark","sitescore_api_service_key","s3_","aws_secret","database_url","/v1/analyses","/v1/reports","/content"]:
+    for forbidden in ["stripe_secret_key","stripe_webhook_secret","postmark","sitescore_api_service_key","s3_","aws_secret","database_url","/v1/analyses","/v1/reports","/content","secure_download_url","token_digest","grant_id"]:
         assert forbidden not in lowered
 
 
@@ -70,28 +70,31 @@ def test_trigger_validation_precedes_acceptance_and_commerce_lookup():
     assert targets(workflow, "Accept Trigger") == ["Get Commerce State"]
 
 
-def test_only_commerce_automation_http_boundary_is_used():
+def test_only_commerce_automation_http_boundary_is_used_and_mutations_are_bodyless():
     workflow = load(); nodes = by_name(workflow)
     http_nodes = [node for node in workflow["nodes"] if node["type"] == "n8n-nodes-base.httpRequest"]
-    assert {node["name"] for node in http_nodes} == {"Get Commerce State", "Advance Commerce"}
+    assert {node["name"] for node in http_nodes} == {"Get Commerce State", "Advance Commerce", "Deliver Commerce"}
     for node in http_nodes:
         blob = json.dumps(node)
         assert "SITESCORE_COMMERCE_AUTOMATION_BASE_URL" in blob
         assert "COMMERCE_AUTOMATION_API_KEY" in blob
         assert "COMMERCE_N8N_INGRESS_SECRET" not in blob
         assert node.get("retryOnFail") is True and node.get("maxTries") == 3 and node.get("waitBetweenTries") == 2000
-    get = nodes["Get Commerce State"]["parameters"]; advance = nodes["Advance Commerce"]["parameters"]
+    get = nodes["Get Commerce State"]["parameters"]
     assert "/v1/automation/orders/" in get["url"]
-    assert advance["method"] == "POST" and advance["url"].endswith(" + '/advance' }}")
-    assert advance.get("sendBody") is not True and "bodyParameters" not in advance and "jsonBody" not in advance
+    for name, suffix in [("Advance Commerce", "/advance"), ("Deliver Commerce", "/deliver")]:
+        params = nodes[name]["parameters"]
+        assert params["method"] == "POST" and params["url"].endswith(f" + '{suffix}' }}}}")
+        assert params.get("sendBody") is not True and "bodyParameters" not in params and "jsonBody" not in params
 
 
-def test_state_machine_branches_only_on_commerce_projection_and_paces_every_advance_cycle():
+def test_state_machine_branches_only_on_commerce_projection_and_paces_every_mutation_cycle():
     workflow = load()
     assert targets(workflow, "Get Commerce State") == ["Terminal State?"]
     assert targets(workflow, "Terminal State?", 0) == ["Stop Terminal"]
     assert targets(workflow, "Terminal State?", 1) == ["Delivery Boundary?"]
-    assert targets(workflow, "Delivery Boundary?", 0) == ["Stop At Delivery Pending"]
+    assert targets(workflow, "Delivery Boundary?", 0) == ["Deliver Commerce"]
+    assert targets(workflow, "Deliver Commerce") == ["Within Poll Horizon?"]
     assert targets(workflow, "Advance Requested?", 0) == ["Advance Commerce"]
     assert targets(workflow, "Refund Requested?", 0) == ["Advance Commerce"]
     assert targets(workflow, "Wait Requested?", 0) == ["Within Poll Horizon?"]
@@ -100,9 +103,10 @@ def test_state_machine_branches_only_on_commerce_projection_and_paces_every_adva
     assert targets(workflow, "Within Poll Horizon?", 0) == ["Wait Before Poll"]
     assert targets(workflow, "Wait Before Poll") == ["Get Commerce State"]
     assert "Get Commerce State" not in targets(workflow, "Advance Commerce")
+    assert "Get Commerce State" not in targets(workflow, "Deliver Commerce")
     blob = json.dumps(workflow)
     for action in ["advance","refund","wait","delivery","none"]: assert action in blob
-    for forbidden in ["analysis_id","report_id","refund_amount","refund_reason","payment_intent","paid=true","fulfilled"]: assert forbidden not in blob.lower()
+    for forbidden in ["analysis_id","report_id","refund_amount","refund_reason","payment_intent","paid=true","fulfilled","recipient","templatealias"]: assert forbidden not in blob.lower()
 
 
 def test_wait_is_finite_configurable_and_poll_horizon_fails_without_business_mutation():

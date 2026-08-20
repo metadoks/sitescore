@@ -29,22 +29,39 @@ HTTP_5XX = "00000000-0000-4000-8000-000000000013"
 UNCERTAIN_RESPONSE = "00000000-0000-4000-8000-000000000014"
 RESTART_ADVANCE = "00000000-0000-4000-8000-000000000015"
 DUPLICATE_ADVANCE = "00000000-0000-4000-8000-000000000016"
+DELIVERY_RETRY = "00000000-0000-4000-8000-000000000017"
+DELIVERY_FAILED = "00000000-0000-4000-8000-000000000018"
+DELIVERY_RESTART = "00000000-0000-4000-8000-000000000019"
+DELIVERY_PERMANENT_RETRY = "00000000-0000-4000-8000-000000000020"
+
+DELIVERY_FIXTURES = (
+    DELIVERY,
+    DELIVERY_RETRY,
+    DELIVERY_FAILED,
+    DELIVERY_RESTART,
+    DELIVERY_PERMANENT_RETRY,
+)
 
 LOCK = threading.Lock()
 STATE = {
-    ADVANCE: {"stage": 0, "logical_effects": 0},
+    DELIVERY: {"deliver_calls": 0, "delivery_effects": 0},
+    ADVANCE: {"stage": 0, "logical_effects": 0, "deliver_calls": 0, "delivery_effects": 0},
     NOT_SCORE_READY: {"stage": 0, "logical_effects": 0},
     ANALYSIS_FAILED: {"stage": 0, "logical_effects": 0},
     ANALYSIS_TIMED_OUT: {"stage": 0, "logical_effects": 0},
     REPORT_FAILED: {"stage": 0, "logical_effects": 0},
     REFUND_PENDING: {"stage": 0, "pending_reads": 0, "logical_effects": 0},
-    ANALYSIS_PENDING: {"advance_calls": 0, "analysis_identity_mints": 1},
-    ANALYSIS_RUNNING: {"advance_calls": 0, "analysis_identity_mints": 1},
+    ANALYSIS_PENDING: {"advance_calls": 0, "analysis_identity_mints": 1, "deliver_calls": 0, "delivery_effects": 0},
+    ANALYSIS_RUNNING: {"advance_calls": 0, "analysis_identity_mints": 1, "deliver_calls": 0, "delivery_effects": 0},
     PERMANENT_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1},
-    HTTP_5XX: {"stage": 0, "logical_effects": 0, "get_5xx_remaining": 1, "get_5xx_injected": 0},
-    UNCERTAIN_RESPONSE: {"stage": 0, "logical_effects": 0, "uncertain_post_injected": 0},
-    RESTART_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1},
-    DUPLICATE_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1},
+    HTTP_5XX: {"stage": 0, "logical_effects": 0, "get_5xx_remaining": 1, "get_5xx_injected": 0, "deliver_calls": 0, "delivery_effects": 0},
+    UNCERTAIN_RESPONSE: {"stage": 0, "logical_effects": 0, "uncertain_post_injected": 0, "deliver_calls": 0, "delivery_effects": 0},
+    RESTART_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1, "deliver_calls": 0, "delivery_effects": 0},
+    DUPLICATE_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1, "deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_RETRY: {"deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_FAILED: {"deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_RESTART: {"deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_PERMANENT_RETRY: {"deliver_calls": 0, "delivery_effects": 0},
 }
 REQUESTS: list[dict[str, object]] = []
 
@@ -62,16 +79,40 @@ def status(order_id, order_state, payment_state, fulfillment_state, retryable, t
     }
 
 
-def projection(order_id):
+def delivery_projection(order_id):
+    row = STATE.get(order_id, {})
+    calls = int(row.get("deliver_calls", 0))
+    if order_id in {DELIVERY_RETRY, DELIVERY_RESTART}:
+        if calls < 2:
+            return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+        return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
+    if order_id == DELIVERY_PERMANENT_RETRY:
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+    if order_id == DELIVERY_FAILED:
+        if calls == 0:
+            return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+        return status(order_id, "attention_required", "paid", "delivery_failed", False, False, "none")
     if order_id == DELIVERY:
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+        if calls > 0:
+            return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+    if "deliver_calls" in row and calls > 0:
+        return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
+    return None
+
+
+def projection(order_id):
+    delivered = delivery_projection(order_id)
+    if delivered is not None:
+        if order_id in {DELIVERY, DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY} or STATE[order_id].get("deliver_calls", 0) > 0:
+            return delivered
     if order_id == ATTENTION:
         return status(order_id, "attention_required", "paid", "analysis_failed", False, True, "none")
     if order_id == EXPIRED:
         return status(order_id, "expired", "expired", "not_started", False, True, "none")
     if order_id == ADVANCE:
         row = STATE[order_id]
-        return status(order_id, "paid", "paid", "not_started" if row["stage"] == 0 else "delivery_pending", row["stage"] == 0, False, "advance" if row["stage"] == 0 else "delivery")
+        return status(order_id, "fulfillment_in_progress", "paid", "not_started" if row["stage"] == 0 else "delivery_pending", row["stage"] == 0, False, "advance" if row["stage"] == 0 else "delivery")
 
     refund_states = {
         NOT_SCORE_READY: "not_score_ready",
@@ -82,54 +123,56 @@ def projection(order_id):
     if order_id in refund_states:
         row = STATE[order_id]
         if row["stage"] == 0:
-            return status(order_id, "paid", "paid", refund_states[order_id], True, False, "refund")
+            return status(order_id, "fulfillment_in_progress", "paid", refund_states[order_id], True, False, "refund")
         return status(order_id, "refunded", "refunded", refund_states[order_id], False, True, "none")
 
     if order_id == REFUND_PENDING:
         row = STATE[order_id]
         if row["stage"] == 0:
-            return status(order_id, "paid", "paid", "analysis_failed", True, False, "refund")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_failed", True, False, "refund")
         reads = row["pending_reads"]
         row["pending_reads"] = reads + 1
         if reads < 2:
-            return status(order_id, "paid", "refund_pending", "analysis_failed", True, False, "wait")
+            return status(order_id, "fulfillment_in_progress", "refund_pending", "analysis_failed", True, False, "wait")
         return status(order_id, "refunded", "refunded", "analysis_failed", False, True, "none")
 
     if order_id == ANALYSIS_PENDING:
         calls = STATE[order_id]["advance_calls"]
         if calls < 3:
-            return status(order_id, "paid", "paid", "analysis_pending", True, False, "advance")
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_pending", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
     if order_id == ANALYSIS_RUNNING:
         calls = STATE[order_id]["advance_calls"]
         if calls < 3:
-            return status(order_id, "paid", "paid", "analysis_running", True, False, "advance")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
         if calls == 3:
-            return status(order_id, "paid", "paid", "report_pending", True, False, "advance")
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+            return status(order_id, "fulfillment_in_progress", "paid", "report_pending", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
     if order_id == PERMANENT_ADVANCE:
-        return status(order_id, "paid", "paid", "analysis_running", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
 
     if order_id == RESTART_ADVANCE:
         calls = STATE[order_id]["advance_calls"]
         if calls < 3:
-            return status(order_id, "paid", "paid", "analysis_running", True, False, "advance")
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
     if order_id == DUPLICATE_ADVANCE:
         calls = STATE[order_id]["advance_calls"]
         if calls < 3:
-            return status(order_id, "paid", "paid", "analysis_running", True, False, "advance")
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
     if order_id in {HTTP_5XX, UNCERTAIN_RESPONSE}:
         row = STATE[order_id]
         if row["stage"] == 0:
-            return status(order_id, "paid", "paid", "analysis_running", True, False, "advance")
-        return status(order_id, "paid", "paid", "delivery_pending", False, False, "delivery")
+            return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
+    if order_id in {DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY}:
+        return delivery_projection(order_id)
     raise KeyError(order_id)
 
 
@@ -144,6 +187,20 @@ def advance(order_id):
         STATE[order_id]["advance_calls"] += 1
         return projection(order_id)
     raise KeyError(order_id)
+
+
+def deliver(order_id):
+    if order_id not in STATE or "deliver_calls" not in STATE[order_id]:
+        raise KeyError(order_id)
+    row = STATE[order_id]
+    row["deliver_calls"] += 1
+    if order_id == DELIVERY_PERMANENT_RETRY:
+        return projection(order_id)
+    if order_id in {DELIVERY_RETRY, DELIVERY_RESTART} and row["deliver_calls"] < 2:
+        return projection(order_id)
+    if row.get("delivery_effects", 0) == 0:
+        row["delivery_effects"] = 1
+    return projection(order_id)
 
 
 def record(method, path, body_len, auth_valid, outcome="normal"):
@@ -161,10 +218,9 @@ def record(method, path, body_len, auth_valid, outcome="normal"):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SiteScoreFakeCommerce/2"
+    server_version = "SiteScoreFakeCommerce/3"
 
-    def log_message(self, fmt, *args):
-        return
+    def log_message(self, fmt, *args): return
 
     def json_response(self, code, payload):
         body = json.dumps(payload, separators=(",", ":")).encode()
@@ -187,18 +243,18 @@ class Handler(BaseHTTPRequestHandler):
                 payload = {
                     "requests": list(REQUESTS),
                     "logical_effects": {k: v.get("logical_effects", 0) for k, v in STATE.items()},
+                    "delivery_effects": {k: v.get("delivery_effects", 0) for k, v in STATE.items()},
                     "state": json.loads(json.dumps(STATE)),
+                    "delivery_projections": {k: delivery_projection(k) for k in DELIVERY_FIXTURES},
                 }
             self.json_response(200, payload)
             return
-
         prefix = "/v1/automation/orders/"
         if not parsed.path.startswith(prefix):
             self.json_response(404, {"error": "not_found"})
             return
         order_id = parsed.path[len(prefix):]
         valid = self.auth_valid()
-
         with LOCK:
             if order_id == HTTP_5XX and STATE[order_id]["get_5xx_remaining"] > 0 and valid:
                 STATE[order_id]["get_5xx_remaining"] -= 1
@@ -220,10 +276,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         prefix = "/v1/automation/orders/"
-        if not parsed.path.startswith(prefix) or not parsed.path.endswith("/advance"):
+        if not parsed.path.startswith(prefix):
             self.json_response(404, {"error": "not_found"})
             return
-        order_id = parsed.path[len(prefix):-len("/advance")]
+        operation = None
+        if parsed.path.endswith("/advance"):
+            operation = "advance"
+            order_id = parsed.path[len(prefix):-len("/advance")]
+        elif parsed.path.endswith("/deliver"):
+            operation = "deliver"
+            order_id = parsed.path[len(prefix):-len("/deliver")]
+        else:
+            self.json_response(404, {"error": "not_found"})
+            return
         length = int(self.headers.get("Content-Length", "0") or "0")
         body = self.rfile.read(length) if length else b""
         valid = self.auth_valid()
@@ -237,26 +302,21 @@ class Handler(BaseHTTPRequestHandler):
                 record("POST", parsed.path, len(body), valid, "invalid_body")
             self.json_response(400, {"error": "body_must_be_empty"})
             return
-
         uncertain = False
         with LOCK:
             try:
-                payload = advance(order_id)
+                payload = advance(order_id) if operation == "advance" else deliver(order_id)
             except KeyError:
                 record("POST", parsed.path, len(body), valid, "not_found")
                 self.json_response(404, {"error": "not_found"})
                 return
-            if order_id == UNCERTAIN_RESPONSE and STATE[order_id]["uncertain_post_injected"] == 0:
+            if operation == "advance" and order_id == UNCERTAIN_RESPONSE and STATE[order_id]["uncertain_post_injected"] == 0:
                 STATE[order_id]["uncertain_post_injected"] = 1
                 uncertain = True
                 record("POST", parsed.path, len(body), valid, "accepted_response_delayed")
             else:
                 record("POST", parsed.path, len(body), valid)
-
         if uncertain:
-            # The commerce side effect is durable before the response is delayed beyond
-            # the n8n HTTP node's 10 second timeout. A retry must converge on the same
-            # order identity without minting replacement business authority.
             time.sleep(11.0)
         self.json_response(200, payload)
 

@@ -74,8 +74,8 @@ def event():
     )
 
 
-def test_checkpoint_package_version_is_0_4_0():
-    assert __version__ == "0.4.0"
+def test_checkpoint_package_version_is_0_5_0():
+    assert __version__ == "0.5.0"
 
 
 def test_payload_is_minimal_server_owned_identity_only():
