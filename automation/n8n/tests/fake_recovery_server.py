@@ -74,4 +74,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 18081), Handler).serve_forever()
+    # CI keeps probing through 127.0.0.1, while the pinned n8n container reaches
+    # the host through host.docker.internal/host-gateway. Listen on all host
+    # interfaces so both paths exercise the same fake Commerce recovery server.
+    ThreadingHTTPServer(("0.0.0.0", 18081), Handler).serve_forever()
