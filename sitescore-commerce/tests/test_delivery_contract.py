@@ -61,7 +61,7 @@ def test_delivery_token_has_256_bits_source_and_digest_only_shape():
 
 
 class FakePostmark:
-    def __init__(self, *, status=200, payload=None, delay=0.0):
+    def __init__(self, *, status=200, payload=None, delay=0.0, raw_body: bytes | None = None, content_type="application/json"):
         self.status = status
         self.payload = payload if payload is not None else {
             "To": "customer@example.com",
@@ -70,6 +70,8 @@ class FakePostmark:
             "ErrorCode": 0,
             "Message": "OK",
         }
+        self.raw_body = raw_body
+        self.content_type = content_type
         self.delay = delay
         self.requests = []
         outer = self
@@ -82,9 +84,9 @@ class FakePostmark:
                 outer.requests.append((self.path, dict(self.headers), json.loads(body)))
                 if outer.delay:
                     time.sleep(outer.delay)
-                data = json.dumps(outer.payload).encode()
+                data = outer.raw_body if outer.raw_body is not None else json.dumps(outer.payload).encode()
                 self.send_response(outer.status)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", outer.content_type)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 try: self.wfile.write(data)
@@ -134,17 +136,35 @@ def test_postmark_wire_contract_is_server_owned_and_acceptance_is_validated():
 
 
 @pytest.mark.parametrize("payload,code",[
-    ({"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"00000000-0000-4000-8000-000000000777","ErrorCode":10},"postmark_error_10"),
     ({"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"","ErrorCode":0},"postmark_message_id_missing"),
     ({"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"not-a-uuid","ErrorCode":0},"postmark_message_id_invalid"),
     ({"To":"other@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"00000000-0000-4000-8000-000000000777","ErrorCode":0},"postmark_recipient_mismatch"),
     ({"To":"customer@example.com","SubmittedAt":"not-time","MessageID":"00000000-0000-4000-8000-000000000777","ErrorCode":0},"postmark_submitted_at_invalid"),
+    ({"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"00000000-0000-4000-8000-000000000777"},"postmark_error_code_invalid"),
+    ({"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"00000000-0000-4000-8000-000000000777","ErrorCode":"0"},"postmark_error_code_invalid"),
+    (["not", "an", "object"],"postmark_malformed_response"),
 ])
-def test_postmark_http_200_is_not_enough(payload,code):
+def test_postmark_http_200_ambiguous_acceptance_evidence_is_uncertain(payload,code):
     fake=FakePostmark(payload=payload)
     try:
-        with pytest.raises(PostmarkRejected) as exc: send(fake)
+        with pytest.raises(PostmarkUncertain) as exc: send(fake)
         assert exc.value.code==code
+    finally: fake.close()
+
+
+def test_postmark_http_200_raw_truncated_json_is_uncertain():
+    fake=FakePostmark(raw_body=b'{"ErrorCode":0,"MessageID":"00000000-0000-4000-8000-000000000777"')
+    try:
+        with pytest.raises(PostmarkUncertain) as exc: send(fake)
+        assert exc.value.code=="postmark_malformed_response"
+    finally: fake.close()
+
+
+def test_postmark_http_200_explicit_nonzero_error_code_is_rejected():
+    fake=FakePostmark(payload={"To":"customer@example.com","SubmittedAt":"2026-08-20T00:15:30Z","MessageID":"00000000-0000-4000-8000-000000000777","ErrorCode":10})
+    try:
+        with pytest.raises(PostmarkRejected) as exc: send(fake)
+        assert exc.value.code=="postmark_error_10" and exc.value.retryable is False
     finally: fake.close()
 
 
