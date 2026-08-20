@@ -16,22 +16,32 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # New 0.6 writers preserve the candidate order extracted from the verified
-    # Stripe Event.  Existing 0004 inbox rows legitimately have no such column,
-    # so NULL remains an explicit legacy provenance marker rather than being
-    # backfilled with locally-derived data and misrepresented as signed evidence.
+    # Existing 0004 rows predate durable signed-event candidate-order lineage.
+    # Keep that provenance distinguishable: legacy rows stay NULL, while all
+    # post-0005 inserts receive the verified-event lineage marker from the DB.
     op.add_column(
         "stripe_event_inbox",
         sa.Column("candidate_order_id", sa.String(64), nullable=True),
+        schema="commerce",
+    )
+    op.add_column(
+        "stripe_event_inbox",
+        sa.Column("candidate_order_lineage_version", sa.String(32), nullable=True),
+        schema="commerce",
+    )
+    op.create_check_constraint(
+        "ck_stripe_event_inbox_candidate_lineage_version",
+        "stripe_event_inbox",
+        "candidate_order_lineage_version IS NULL OR candidate_order_lineage_version = 'verified_event_v1'",
         schema="commerce",
     )
 
     # A legacy received event can only be resumed when its already-stored Stripe
     # object/session identity correlates to exactly one durable local Checkout
     # binding. checkout_sessions.stripe_checkout_session_id is UNIQUE, therefore
-    # count=1 is the only recoverable legacy shape.  Orphan/otherwise non-unique
-    # legacy rows are quarantined durably during the data-preserving upgrade and
-    # are never converted into synthetic candidate-order evidence.
+    # count=1 is the only recoverable legacy shape. Orphan/otherwise non-unique
+    # rows are quarantined durably and are never converted into synthetic signed
+    # candidate-order evidence.
     op.execute(
         sa.text(
             """
@@ -40,7 +50,7 @@ def upgrade() -> None:
                    failure_code = 'legacy_event_session_correlation_invalid',
                    processed_at = COALESCE(inbox.processed_at, CURRENT_TIMESTAMP)
              WHERE inbox.processing_state = 'received'
-               AND inbox.candidate_order_id IS NULL
+               AND inbox.candidate_order_lineage_version IS NULL
                AND (
                     inbox.stripe_object_id IS NULL
                     OR (
@@ -51,6 +61,17 @@ def upgrade() -> None:
                )
             """
         )
+    )
+
+    # SQLAlchemy 0.6 code intentionally does not map the marker; omitting it from
+    # INSERT lets PostgreSQL stamp every new verified Event row while legacy rows
+    # retained by the upgrade remain NULL and therefore auditable as legacy.
+    op.alter_column(
+        "stripe_event_inbox",
+        "candidate_order_lineage_version",
+        server_default=sa.text("'verified_event_v1'"),
+        existing_type=sa.String(32),
+        schema="commerce",
     )
 
     op.create_table(
@@ -139,5 +160,12 @@ def downgrade() -> None:
     op.drop_index("ix_recovery_state_next_attempt", table_name="recovery_state", schema="commerce")
     op.drop_table("recovery_state", schema="commerce")
     op.drop_table("recovery_runs", schema="commerce")
+    op.drop_constraint(
+        "ck_stripe_event_inbox_candidate_lineage_version",
+        "stripe_event_inbox",
+        schema="commerce",
+        type_="check",
+    )
+    op.drop_column("stripe_event_inbox", "candidate_order_lineage_version", schema="commerce")
     op.drop_column("stripe_event_inbox", "candidate_order_id", schema="commerce")
     # commerce schema is intentionally preserved for commerce.alembic_version.
