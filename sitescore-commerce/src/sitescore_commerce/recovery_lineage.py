@@ -3,10 +3,20 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from .checkout import CheckoutInvariantError
-from .db import CommerceStore, PersistenceUnavailable, StripeEventInboxRow, utcnow
+from .checkout import CHECKOUT_OPERATION_VERSION, CheckoutInvariantError
+from .db import (
+    CheckoutSessionRow,
+    CommerceStore,
+    OrderRow,
+    POLL_RECEIPT_SOURCE,
+    PaymentPollReceiptRow,
+    PersistenceUnavailable,
+    StripeEventInboxRow,
+    utcnow,
+)
 from .dispatcher import OutboxDispatchSettings, PaidOutboxEvent
 from .recovery import (
     ReceivedInboxCandidate,
@@ -45,26 +55,133 @@ def _safe_uuid(value: str | None) -> UUID | None:
 
 
 class LineageRecoveryService(RecoveryService):
-    """Production recovery with signed-event lineage and atomic lease fencing.
+    """Production recovery with signed/legacy lineage and atomic lease fencing.
 
-    The candidate order identifier comes only from the verified Stripe Event inbox.
-    After external I/O, recovery business writes lock and validate the exact recovery
-    lease inside the same PostgreSQL transaction that applies payment/inbox/outbox
-    truth. A stale worker may still have performed a safe duplicate provider read or
-    n8n replay, but cannot write a newer worker's durable result.
+    New 0.6 Stripe inbox rows carry the candidate order extracted from the verified
+    signed Event.  Pre-0005 rows are intentionally distinguishable because that
+    column remains NULL after upgrade; those legacy rows may be correlated only by
+    their already-stored Stripe Checkout Session identity to exactly one durable
+    local checkout binding.  The locally-derived order is never written back into
+    candidate_order_id and therefore never masquerades as signed Event evidence.
+
+    After external I/O, recovery business writes lock and validate the exact
+    recovery lease inside the same PostgreSQL transaction that applies payment,
+    inbox, or outbox truth. A stale worker may still have performed a safe duplicate
+    provider read or n8n replay, but cannot write a newer worker's durable result.
     """
 
-    def _stored_candidate_order_id(self, event_id: str) -> UUID | None:
+    def _correlate_stored_event_order(self, event_id: str) -> tuple[UUID | None, bool]:
+        """Return (order_id, is_legacy_local_correlation) without fabricating lineage."""
         try:
             with self.store.session_factory() as session:
                 row = session.get(StripeEventInboxRow, event_id)
                 if row is None:
                     raise PersistenceUnavailable("recovery Stripe inbox identity is unavailable")
-                return _safe_uuid(row.candidate_order_id)
+
+                # A non-NULL value is durable signed-event lineage. It must never be
+                # replaced by a locally-derived value when malformed or conflicting.
+                if row.candidate_order_id is not None:
+                    return _safe_uuid(row.candidate_order_id), False
+
+                # Legacy pre-0005 row: use only the stored real Stripe object/session
+                # identity and the UNIQUE checkout binding. No provider/caller input is
+                # used and candidate_order_id remains NULL to preserve provenance.
+                if not row.stripe_object_id:
+                    return None, True
+                matches = session.execute(
+                    select(CheckoutSessionRow.order_id)
+                    .where(CheckoutSessionRow.stripe_checkout_session_id == row.stripe_object_id)
+                    .limit(2)
+                ).scalars().all()
+                if len(matches) != 1:
+                    return None, True
+                return matches[0], True
         except PersistenceUnavailable:
             raise
         except SQLAlchemyError as exc:
             raise PersistenceUnavailable("recovery Stripe inbox lineage is unavailable") from exc
+
+    def _paid_authority_invariant_code(self, order_id: UUID) -> str | None:
+        """Validate durable paid Stripe authority before any n8n publish/replay I/O."""
+        try:
+            with self.store.session_factory() as session:
+                order = session.get(OrderRow, order_id)
+                checkout = session.get(CheckoutSessionRow, order_id)
+                if order is None or checkout is None:
+                    return "paid_checkout_binding_missing"
+
+                if checkout.order_id != order.order_id:
+                    return "paid_checkout_order_identity_invalid"
+                if not checkout.stripe_checkout_session_id:
+                    return "paid_checkout_session_missing"
+                if checkout.operation_version != CHECKOUT_OPERATION_VERSION:
+                    return "paid_checkout_operation_invalid"
+                if (
+                    checkout.product_code != order.product_code
+                    or checkout.catalog_version != order.catalog_version
+                    or checkout.customer_email != order.customer_email
+                    or checkout.quantity != 1
+                    or not checkout.stripe_price_id
+                ):
+                    return "paid_checkout_catalog_binding_invalid"
+                if checkout.stripe_session_status != "complete":
+                    return "paid_stripe_session_status_invalid"
+                if checkout.stripe_payment_status != "paid":
+                    return "paid_stripe_payment_status_invalid"
+                if not checkout.stripe_payment_intent_id:
+                    return "paid_stripe_payment_intent_missing"
+                if checkout.stripe_livemode is not self.settings.stripe_expected_livemode:
+                    return "paid_stripe_livemode_invalid"
+                if checkout.reconciled_at is None:
+                    return "paid_stripe_reconciliation_missing"
+
+                receipts = session.execute(
+                    select(PaymentPollReceiptRow)
+                    .where(PaymentPollReceiptRow.order_id == order_id)
+                    .order_by(PaymentPollReceiptRow.created_at.asc(), PaymentPollReceiptRow.receipt_id.asc())
+                ).scalars().all()
+
+                if checkout.last_reconciliation_event_id:
+                    inbox = session.get(StripeEventInboxRow, checkout.last_reconciliation_event_id)
+                    if inbox is None:
+                        return "paid_webhook_lineage_missing"
+                    if (
+                        inbox.processing_state != "processed"
+                        or inbox.stripe_event_type != "checkout.session.completed"
+                        or inbox.stripe_object_id != checkout.stripe_checkout_session_id
+                        or inbox.livemode is not self.settings.stripe_expected_livemode
+                        or (
+                            inbox.event_api_version is not None
+                            and inbox.event_api_version != self.settings.stripe_api_version
+                        )
+                    ):
+                        return "paid_webhook_lineage_invalid"
+                    if (
+                        inbox.candidate_order_id is not None
+                        and _safe_uuid(inbox.candidate_order_id) != order_id
+                    ):
+                        return "paid_webhook_order_lineage_invalid"
+                else:
+                    # Server-poll-paid authority has no fake Event identity. It must
+                    # instead have the immutable local poll receipt created atomically
+                    # with the winning paid transition.
+                    if len(receipts) != 1:
+                        return "paid_poll_lineage_missing"
+                    receipt = receipts[0]
+                    if (
+                        receipt.source != POLL_RECEIPT_SOURCE
+                        or receipt.transition_target != "paid"
+                        or receipt.stripe_checkout_session_id != checkout.stripe_checkout_session_id
+                        or receipt.observed_session_status != "complete"
+                        or receipt.observed_payment_status != "paid"
+                        or receipt.observed_payment_intent_id != checkout.stripe_payment_intent_id
+                        or receipt.observed_livemode is not self.settings.stripe_expected_livemode
+                        or len(receipt.evidence_sha256 or "") != 64
+                    ):
+                        return "paid_poll_lineage_invalid"
+                return None
+        except SQLAlchemyError as exc:
+            raise PersistenceUnavailable("paid recovery authority validation is unavailable") from exc
 
     def _finish_attention(
         self,
@@ -137,14 +254,19 @@ class LineageRecoveryService(RecoveryService):
         event: ReceivedInboxCandidate,
         now,
     ) -> tuple[str, str | None]:
-        candidate_order_id = self._stored_candidate_order_id(event.event_id)
+        candidate_order_id, legacy_correlation = self._correlate_stored_event_order(event.event_id)
         if candidate_order_id != claim.order_id:
+            code = (
+                "legacy_event_session_correlation_invalid"
+                if legacy_correlation
+                else "event_order_correlation_invalid"
+            )
             outcome = self._finish_inbox_without_transition(
                 claim=claim,
                 run_id=run_id,
                 event_id=event.event_id,
                 inbox_state="attention_required",
-                code="event_order_correlation_invalid",
+                code=code,
                 action="resume_stripe_inbox",
                 now=utcnow(),
             )
@@ -375,6 +497,20 @@ class LineageRecoveryService(RecoveryService):
         published_at,
         now,
     ) -> tuple[str, str | None]:
+        # R65-F: orchestration replay is permitted only when the durable local
+        # paid reconciliation authority is still coherent. Contradictory/missing
+        # Stripe binding is an operator-attention finding, never an n8n trigger.
+        authority_code = self._paid_authority_invariant_code(claim.order_id)
+        if authority_code is not None:
+            finished = self._finish_attention(
+                claim,
+                run_id=run_id,
+                now=utcnow(),
+                action="verify_paid_authority",
+                code=authority_code,
+            )
+            return ("attention" if finished else "lease_lost"), authority_code
+
         result = self.n8n.send(event)
         after_io = utcnow()
 
