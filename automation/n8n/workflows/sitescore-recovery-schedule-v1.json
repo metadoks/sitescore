@@ -1,0 +1,60 @@
+{
+  "id": "sitescoreRecoveryScheduleV1",
+  "name": "SiteScore Recovery Scheduler v1.0.0",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "65000000-0000-4000-8000-000000000001",
+      "name": "Recovery Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SITESCORE_COMMERCE_AUTOMATION_BASE_URL + '/v1/automation/recovery/run' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.COMMERCE_AUTOMATION_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "65000000-0000-4000-8000-000000000002",
+      "name": "Run Commerce Recovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    }
+  ],
+  "connections": {
+    "Recovery Schedule": {
+      "main": [[{"node": "Run Commerce Recovery", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "meta": {
+    "sitescoreWorkflowVersion": "1.0.0",
+    "sitescoreBusinessIdentity": "sitescore-recovery-schedule-v1"
+  },
+  "tags": [],
+  "active": false
+}
