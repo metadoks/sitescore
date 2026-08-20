@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.4
 CHECKPOINT_TITLE: Delivery Grant + Transactional Email
 
-REVIEWER_STATE: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION: IMPLEMENT
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,18 +21,31 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
 LIVE_MAIN_SHA_AT_REVIEW: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
 CODE_BRANCH: faz6/6-4-delivery-grant-email
-PR: NONE
-PR_STATE: NONE
-REVIEWED_HEAD_SHA: NONE
+PR: #27
+PR_STATE: OPEN
+PR_DRAFT: FALSE
+PR_MERGEABLE: TRUE
+PR_MERGED: FALSE
+REVIEWED_HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
 
-EXPECTED_COMMERCE_VERSION: 0.5.0
-EXPECTED_MIGRATION_HEAD: 0004_delivery_email
+VALIDATED_SHA: 2501d6af71b4c9057a8f5b3008d9c4db3ba15377
+COMMERCE_VALIDATION_RUN_ID: 32306516241
+COMMERCE_VALIDATION_JOB_ID: 96240342784
+FROZEN_VALIDATION_RUN_ID: 32306516300
+FROZEN_VALIDATION_JOB_ID: 96240342892
+VALIDATION_CONCLUSION: SUCCESS
+VALIDATED_TO_FINAL_COMMITS: 2
+VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY 6.4 VALIDATION WORKFLOW REMOVALS
+
+COMMERCE_VERSION: 0.5.0
+MIGRATION_HEAD: 0004_delivery_email
 N8N_RUNTIME_VERSION: 2.33.4
-N8N_CONTAINER_TAG: n8nio/n8n:2.33.4
-LOCKED_6_3_WORKFLOW: automation/n8n/workflows/sitescore-order-paid-v1.json
+N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
 
-DEL64-H001: NOT_OPENED
-BLOCKERS: NONE
+DEL64-H001: OPEN
+DEL64-H002: OPEN
+BLOCKERS: DEL64-H001, DEL64-H002
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -45,828 +58,330 @@ FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
 FAZ_6_3_STATUS: LOCKED
-FAZ_6_4_STATUS: IMPLEMENTATION_REQUESTED
+FAZ_6_4_STATUS: HARDENING_REQUIRED
 START_6_5: NO
 ```
 
 ---
 
-# 1. OPENING STATE / AUTHORITY
+# 1. EXACT STATE REVIEWED
 
-Reviewer independently re-read live GitHub before opening this checkpoint.
-
-```text
-live main:
-7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
-
-FAZ 6.3:
-LOCKED
-
-PR #26 merge:
-7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
-
-merge parents:
-acc213ac52f980789164d9fedcd4e18deeefcf75
-64887a560c4af492312e726f990363fc5010345d
-```
-
-FAZ 6.4 begins only from that exact main.
-
-Canonical authority remains:
+Reviewer independently re-read live GitHub and reviewed the exact final PR head.
 
 ```text
-Stripe = payment processor evidence
-commerce PostgreSQL = durable order/payment/refund/delivery truth
-frozen sitescore-api = analysis/report resource truth
-frozen sitescore-report = PDF/report truth
-n8n = orchestration only
-Postmark = transactional email transport evidence
-customer delivery token = access capability only
+main:
+7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
+
+PR #27:
+OPEN
+DRAFT: FALSE
+MERGEABLE: TRUE
+MERGED: FALSE
+
+base:
+main@7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
+
+reviewed final head:
+11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
+
+validated SHA:
+2501d6af71b4c9057a8f5b3008d9c4db3ba15377
 ```
 
-A token, MessageID, email response, n8n execution or customer HTTP request is never analytical/payment/report authority.
+Validated SHA -> final HEAD is exactly two commits and only removes the two temporary FAZ 6.4 validation workflows. No product/test/runtime content changed after validation.
+
+Base -> reviewed head scope is confined to `sitescore-commerce` 6.4 delivery/email work and the minimum reserved `automation/n8n` delivery branch extension. No frozen FAZ 3/4/5 source mutation and no FAZ 6.5 broad recovery scanner were observed.
 
 ---
 
-# 2. CHECKPOINT SCOPE
+# 2. POSITIVE REVIEW RESULTS
 
-Implement only the canonical FAZ 6.4 deliverables:
-
-```text
-opaque expiring download grant
-hashed/digest-only token persistence
-public download proxy
-frozen report-content verification
-Postmark transactional template/API adapter
-provider acceptance evidence
-delivery retries
-fulfilled order condition
-```
-
-The existing frozen commerce states already include:
+Reviewer confirmed the following on the exact reviewed head:
 
 ```text
-order:
-fulfilled / attention_required
-
-payment:
-paid
-
-fulfillment:
-delivery_pending / completed / delivery_failed
-```
-
-Use those meanings; do not collapse order/payment/fulfillment into one state.
-
-Expected additive implementation area:
-
-```text
-sitescore-commerce
-+ minimum automation/n8n delivery-branch extension
-```
-
-Expected package version:
-
-```text
-sitescore-commerce==0.5.0
-```
-
-Expected additive commerce migration:
-
-```text
-0004_delivery_email
-```
-
-No frozen FAZ 3/4/5 source mutation is authorized.
-
----
-
-# 3. LOCKED 6.3 BOUNDARY MUST BE PRESERVED
-
-Current locked workflow deliberately stops here:
-
-```text
-next_action=delivery
--> Stop At Delivery Pending
-```
-
-FAZ 6.4 may replace/extend only that reserved downstream delivery boundary so the workflow can ask commerce to perform delivery and then observe authoritative commerce state.
-
-This is additive 6.4 work and does NOT reopen FAZ 6.3 provided all locked 6.3 invariants remain intact:
-
-```text
-n8n == 2.33.4
-protected order.paid.v1 ingress
-minimal event_id/event_type/order_id/occurred_at trigger
-COMMERCE_N8N_INGRESS_SECRET only for ingress transport
-COMMERCE_AUTOMATION_API_KEY only for commerce automation calls
-no Stripe secret in n8n
-no SiteScore service key in n8n
-no Postmark token in n8n
-no DB/Redis/S3 credential in n8n
+sitescore-commerce == 0.5.0
+migration head == 0004_delivery_email
+256-bit random URL-safe delivery token
+digest-only SHA-256 token persistence
+no plaintext/encrypted/reversible raw-token column
+exact 7-day grant lifetime
+revocable and reusable grants
+exact order/report grant binding
+public /d/{opaque_token} capability proxy
+fresh frozen SiteScore report re-verification before download
+fresh frozen /content retrieval
+PDF MIME / length / Content-SHA256 / local SHA-256 verification
+private no-store + no-referrer + nosniff download headers
+server-owned COMMERCE_PUBLIC_BASE_URL
+Postmark token/from/template/recipient remain server-owned
+Postmark call occurs outside DB transaction/row lock
+provider MessageID is durable and unique when accepted
+provider_accepted + valid bound grant/report transitions atomically to fulfilled/paid/completed
+known provider_accepted replay short-circuits duplicate send
+uncertain retry can create a fresh grant while prior possible emailed grant remains valid
+bounded delivery attempts
+email failure does not create refund/payment/analysis/report failure authority
+n8n /deliver request body is empty
+n8n receives no raw token, recipient, Postmark token, SiteScore key or report bytes
+n8n delivery continuation goes through existing finite horizon + Wait path
 zero Code/Function business-authority nodes
-finite Wait/poll horizon
-no direct busy loop
-duplicate/restart convergence
-commerce PostgreSQL remains truth
 ```
 
-A dedicated server-owned operation equivalent to:
+Migration upgrade/downgrade/re-upgrade, PostgreSQL state tests, secret scans and frozen boundary are also otherwise acceptable.
 
-```text
-POST /v1/automation/orders/{order_id}/deliver
-```
-
-is authorized and preferred.
-
-Requirements:
-
-```text
-same dedicated Bearer automation auth
-request body must be empty
-caller supplies no report_id
-caller supplies no recipient
-caller supplies no token
-caller supplies no provider result
-caller supplies no fulfilled flag
-response/status must not expose raw token or Postmark secret
-```
-
-After a delivery operation, n8n must re-enter the existing finite horizon/Wait/re-read path before any continuing retry cycle. No delivery busy-loop.
+These positive results do not close the two blockers below.
 
 ---
 
-# 4. DELIVERY GRANT CONTRACT
+# 3. DEL64-H001 — OPEN
 
-Implement cryptographically strong opaque capability tokens.
+## Ambiguous Postmark HTTP-200 acceptance evidence is persisted as definitive non-retryable rejection
 
-Mandatory V1 properties:
+The 6.4 contract requires precise provider states and explicitly says uncertain provider outcome caused by timeout, connection loss or response loss must become `provider_uncertain`, never fabricated acceptance or definitive rejection.
 
-```text
-minimum raw entropy: 256 bits
-URL-safe opaque representation
-raw token exists only transiently in customer/email flow
-commerce DB stores digest/hash only
-SHA-256 digest is acceptable because raw token is uniformly high-entropy random
-unique digest
-order-bound
-report-bound
-default lifetime: exactly 7 days from issuance
-reusable for repeated customer downloads until expiry
-revocable
-not one-time-consumed
-```
-
-Do not store any plaintext/raw token column, encrypted-token recovery column, complete delivery URL, or raw token in durable logs/outbox/provider-evidence rows.
-
-The token is a capability, not identity authority. Grant creation must require server-side proof that:
-
-```text
-order payment_state == paid
-order fulfillment_state == delivery_pending
-bound fulfillment analysis == completed
-bound report_id exists
-bound report state == ready
-report belongs to the exact bound analysis/order
-```
-
-Arbitrary foreign `report_id` substitution must fail closed.
-
-Grant records should durably preserve equivalent non-secret facts:
-
-```text
-grant_id
-order_id
-report_id
-token_digest
-issued_at
-expires_at
-revoked_at nullable
-created_at
-updated_at
-```
-
-Multiple historical grants for the same order/report MAY exist when required by retry/recovery. Every grant remains independently bound and valid only until its own expiry/revocation.
-
-Do not require a single-use token. Email security scanners may follow links before the human customer.
-
----
-
-# 5. RAW-TOKEN / CRASH / RETRY RULE
-
-Digest-only persistence creates an intentional recovery constraint: after the process loses an in-memory raw token, it cannot reconstruct that token from the database.
-
-Do NOT solve this by weakening the contract with:
-
-```text
-plaintext token persistence
-encrypted raw-token persistence
-reversible token storage
-predictable/deterministic low-entropy tokens
-```
-
-Use durable delivery-attempt semantics instead.
-
-Required behavior for a send attempt:
-
-```text
-1. server verifies exact paid order + exact ready bound report
-2. generate strong random grant token
-3. persist grant digest + durable delivery-attempt identity before provider call
-4. retain raw token only in process memory for construction of the email link
-5. commit DB work
-6. call Postmark OUTSIDE the DB transaction/row lock
-7. validate provider response
-8. persist accepted/rejected/uncertain evidence
-9. only durable accepted provider evidence may complete fulfillment
-```
-
-If Postmark outcome is uncertain because of timeout/connection loss/response loss, do not fabricate `provider_accepted` and do not mark fulfilled.
-
-An uncertain retry may create a fresh delivery attempt and fresh grant because the previous raw token cannot be reconstructed. The previous grant MUST NOT be blindly revoked merely because the provider response was lost: the first email may actually have been accepted, and revoking its link would break a possibly delivered customer message.
-
-Therefore, under an uncertain-send replay, duplicate transactional messages are tolerated as an at-least-once transport consequence, but:
-
-```text
-all links remain bound to the same exact order/report
-all valid links resolve the same verified PDF
-no second analysis/report/payment authority is created
-known provider-accepted state short-circuits later duplicate delivery triggers
-no exactly-once email claim is made
-```
-
-This rule must be tested explicitly.
-
----
-
-# 6. PUBLIC DOWNLOAD PROXY
-
-Implement a customer-facing capability route equivalent to:
-
-```text
-GET /d/{opaque_token}
-```
-
-No separate customer account/login system is required in FAZ 6.4; the high-entropy token itself is the access capability.
-
-Request processing must fail closed:
-
-```text
-hash incoming token
-resolve exact digest
-verify not expired
-verify not revoked
-verify exact order/report binding still coherent
-verify order/report is a deliverable state
-use server-owned frozen SiteScore credential
-freshly GET exact bound /v1/reports/{report_id}
-require exact report_id + exact analysis_id + state=ready
-retrieve exact /v1/reports/{report_id}/content
-re-verify customer-bound content metadata/integrity
-return verified PDF bytes
-```
-
-The frozen SiteScore report-content endpoint already performs storage integrity verification. Commerce must still verify the upstream response against the exact bound report resource and must not infer or guess any S3 path.
-
-At minimum verify as applicable:
-
-```text
-HTTP success
-report state ready
-exact report/analysis binding
-application/pdf MIME
-content byte length when reported
-Content-SHA256 / report content_sha256 coherence
-local SHA-256 of returned bytes
-safe filename/content disposition
-```
-
-Do not expose or forward:
-
-```text
-SITESCORE_API_SERVICE_KEY
-S3 URL
-S3 bucket
-S3 key
-object-store credentials
-upstream Authorization header
-internal debug/provider errors
-```
-
-Customer response should preserve safe download semantics such as:
-
-```text
-Content-Type: application/pdf
-Content-Disposition: attachment with safe server-verified filename
-Cache-Control: private, no-store
-Referrer-Policy: no-referrer
-X-Content-Type-Options: nosniff
-```
-
-Invalid/expired/revoked/foreign tokens must not reveal internal object identity or storage details.
-
-Raw tokens must never be written by application logging. Document that production reverse-proxy/access-log configuration must redact or suppress `/d/{token}` path tokens; deployment-wide log hardening remains a FAZ 7 operational concern, but 6.4 must not itself log them.
-
----
-
-# 7. SERVER-OWNED DOWNLOAD URL
-
-The customer link host/base is server configuration, never caller/n8n authority.
-
-Add validated server-side configuration equivalent to:
-
-```text
-COMMERCE_PUBLIC_BASE_URL
-```
-
-Production requirements:
-
-```text
-absolute HTTPS
-no embedded userinfo/credentials
-no query
-no fragment
-no caller override
-```
-
-The final email URL is derived only by commerce from:
-
-```text
-server public base + /d/{raw token}
-```
-
-This prevents caller-controlled/phishing/exfiltration link construction.
-
----
-
-# 8. POSTMARK TRANSACTIONAL EMAIL CONTRACT
-
-Postmark exists only behind `sitescore-commerce`.
-
-Use the current official Postmark transactional template API contract:
-
-```text
-POST https://api.postmarkapp.com/email/withTemplate
-Accept: application/json
-Content-Type: application/json
-X-Postmark-Server-Token: <secret from environment>
-```
-
-Use the already-pinned `httpx==0.28.1` unless a genuine blocker requires a dependency change. Do not add an unnecessary provider SDK merely for this checkpoint.
-
-Server configuration should be equivalent to:
-
-```text
-POSTMARK_SERVER_TOKEN          secret
-POSTMARK_FROM_EMAIL            server-owned sender
-POSTMARK_TEMPLATE_ALIAS        server-owned/versioned template alias
-POSTMARK_TIMEOUT_SECONDS       bounded timeout
-COMMERCE_PUBLIC_BASE_URL       server-owned customer origin
-```
-
-Recommended transactional message stream:
-
-```text
-outbound
-```
-
-Template model may contain only customer-appropriate material required for delivery, such as:
-
-```text
-order/report reference
-secure download URL
-expiry timestamp / 7-day wording
-```
-
-Do NOT send:
-
-```text
-raw analytics JSON
-Stripe secrets/internal payment objects
-SiteScore service key
-storage path/bucket/key
-Postmark token
-debug stack/error details
-```
-
-Recipient is always the durable server-owned `order.customer_email`. n8n/caller cannot override `To`.
-
-Sender/template alias/message stream are server-owned configuration. n8n/caller cannot override them.
-
-The Postmark token must never be returned, persisted in domain rows, or exposed to n8n.
-
-No marketing email implementation.
-
-No Postmark delivery/bounce webhook is authorized in 6.4. If later proposed, Reviewer must first inspect the then-current official webhook security contract; do not invent an HMAC/signature mechanism.
-
----
-
-# 9. POSTMARK PROVIDER EVIDENCE
-
-A provider request is NOT accepted merely because HTTP transport succeeded.
-
-For V1, provider acceptance requires the official response semantics equivalent to:
+The official Postmark single template-send success contract uses:
 
 ```text
 HTTP 200
-ErrorCode == 0
-non-empty MessageID
-To == exact durable recipient
-SubmittedAt is parseable provider timestamp
+ErrorCode = 0
+MessageID
+To
+SubmittedAt
 ```
 
-Persist durable evidence equivalent to:
+The implementation correctly refuses to call HTTP 200 alone accepted. However, after receiving HTTP 200 it currently maps malformed/incomplete success evidence to `PostmarkRejected(... retryable=False)`.
+
+Current examples include:
 
 ```text
-delivery_attempt_id
-order_id
-report_id
-grant_id
-provider = postmark
-recipient
-server-owned template alias/version identity
-attempt number
-attempt_started_at
-provider_message_id nullable
-provider_submitted_at nullable
-status
-safe failure category/code
-created_at
-updated_at
+HTTP 200 + malformed/non-JSON body
+HTTP 200 + non-object body
+HTTP 200 + invalid/missing ErrorCode
+HTTP 200 + ErrorCode=0 + missing MessageID
+HTTP 200 + ErrorCode=0 + invalid MessageID
+HTTP 200 + ErrorCode=0 + recipient mismatch
+HTTP 200 + ErrorCode=0 + invalid SubmittedAt
 ```
 
-Use precise states. Allowed semantics should distinguish at least:
+`DeliveryService` catches those as `PostmarkRejected` and calls `record_rejected()`.
 
-```text
-prepared / dispatch_started
-provider_accepted
-provider_rejected
-provider_uncertain
-```
-
-Do NOT call the accepted state:
-
-```text
-delivered
-received
-read
-opened
-```
-
-Postmark `provider_accepted` means the provider accepted the transactional send request. It is not proof that a human inbox received or opened the email.
-
-Provider MessageID, when known, must be persisted and protected against conflicting rebinding.
-
-Provider response/message text persisted for diagnostics must be bounded and sanitized; never store secrets or raw token/download URL in failure text.
-
----
-
-# 10. FULFILLED CONDITION
-
-Commerce may transition to successful fulfillment only after all of the following server-owned conditions are true:
-
-```text
-payment_state == paid
-exact bound analysis == completed
-exact bound report == ready
-valid non-revoked delivery grant was used for the accepted attempt
-Postmark response is durably validated as provider_accepted
-provider MessageID is durably bound to that attempt
-```
-
-Then the durable commerce terminal state is:
-
-```text
-order_state = fulfilled
-payment_state = paid
-fulfillment_state = completed
-```
-
-`fulfilled` therefore means:
-
-```text
-purchased verified report is available through a valid SiteScore delivery capability
-+
-transactional send request was durably accepted by Postmark
-```
-
-It does NOT mean the customer read/opened the message.
-
-A browser opening the download link by itself must never mark payment or email provider acceptance.
-
----
-
-# 11. DELIVERY FAILURE / RETRY SEMANTICS
-
-Delivery failure is separate from analytical/payment truth.
-
-Never do this solely because Postmark/email delivery failed:
-
-```text
-payment -> failed/refunded
-analysis -> failed
-report -> failed
-```
-
-Email delivery failure alone is NOT automatic refund authority.
-
-Required retry behavior:
-
-```text
-duplicate n8n delivery trigger after known provider_accepted -> no second send; converge on fulfilled
-provider_rejected -> durable failed attempt; server may allow bounded retry according to server-owned policy
-provider_uncertain -> no fabricated success; later retry/recovery remains safe under the raw-token rule above
-retry exhaustion/non-retryable configuration failure -> delivery_failed + attention_required is acceptable
-payment remains paid
-analysis/report truth remains unchanged
-```
-
-While retry is still authorized, the automation projection must continue to return `next_action=delivery` and must not accidentally fall through to `advance`.
-
-After non-retryable/exhausted delivery failure:
+For any non-retryable rejection, the durable store immediately transitions:
 
 ```text
 order_state = attention_required
 payment_state = paid
 fulfillment_state = delivery_failed
-next_action = none
 ```
 
-Broad scheduled repair/reconciliation of delivery failures belongs to FAZ 6.5.
+This is unsafe for a success-like HTTP 200 whose response body/evidence was corrupted, truncated, incomplete, or otherwise not trustworthy. Postmark may already have accepted the email while commerce has merely lost enough acceptance evidence to bind a MessageID. The customer may therefore receive a valid link while commerce durably records a definitive provider rejection and stops normal delivery recovery.
+
+That is a concrete provider-state/recovery correctness defect.
+
+Required semantics:
+
+```text
+explicit, trustworthy provider rejection
+-> provider_rejected
+
+ambiguous outcome where acceptance cannot be proven and rejection also cannot be proven
+-> provider_uncertain
+```
+
+At minimum, after HTTP 200 these cases must NOT become definitive non-retryable `provider_rejected` merely because acceptance evidence cannot be validated:
+
+```text
+malformed/truncated/non-JSON response
+non-object response
+missing/invalid ErrorCode
+ErrorCode == 0 but required acceptance evidence is missing/invalid/mismatched
+```
+
+They must fail closed as NOT accepted while preserving the uncertainty/retry model. `ErrorCode != 0` remains affirmative provider rejection evidence and may remain `provider_rejected`. Clear non-2xx provider errors may retain the existing rejected/retryable policy as appropriate.
+
+Do not weaken acceptance validation: no case above may be marked `provider_accepted` without all required evidence.
+
+Required tests:
+
+```text
+1. HTTP 200 with malformed/truncated JSON -> provider_uncertain, not fulfilled
+2. HTTP 200 with invalid/missing ErrorCode -> provider_uncertain, not fulfilled
+3. HTTP 200 + ErrorCode=0 but missing/invalid MessageID -> provider_uncertain, not fulfilled
+4. HTTP 200 + ErrorCode=0 but To/SubmittedAt cannot be safely bound -> provider_uncertain, not fulfilled
+5. uncertain attempt leaves payment paid and retry guidance available while below attempt limit
+6. replay creates fresh attempt/grant; prior grant is not blindly revoked
+7. later fully validated acceptance -> one durable fulfilled/paid/completed terminal state
+8. explicit nonzero ErrorCode remains provider_rejected
+```
+
+Use real PostgreSQL for the durable state assertions and isolated fake Postmark HTTP responses, including a raw malformed/truncated 200 body rather than only JSON-shaped fixtures.
+
+```text
+DEL64-H001: OPEN
+```
 
 ---
 
-# 12. DATABASE / MIGRATION REQUIREMENTS
+# 4. DEL64-H002 — OPEN
 
-Add only commerce-owned delivery persistence.
+## Required n8n restart-during-delivery-wait recovery proof is missing
 
-Expected migration head:
-
-```text
-0004_delivery_email
-```
-
-Suggested tables/resources:
+The Reviewer 6.4 validation gate explicitly requires pinned n8n 2.33.4 runtime proof for:
 
 ```text
-delivery_grants
-delivery_attempts
-```
-
-Mandatory database-level protections as applicable:
-
-```text
-UUID primary identities
-order FK
-unique token_digest
-bounded/validated digest shape
-provider_message_id unique when non-null
-attempt-number uniqueness per order or equivalent durable operation identity
-status CHECK constraints
-timestamp coherence
-no raw token column
-no Postmark secret column
-```
-
-Cross-order/report substitution must be prevented by durable relations + service invariant checks.
-
-Migration validation must prove:
-
-```text
-0003_fulfillment_refund -> 0004_delivery_email upgrade
-0004 -> 0003 downgrade
-re-upgrade to 0004
-commerce schema/version table remains isolated
-frozen sitescore-api schema untouched
-```
-
-No DB transaction/row lock may be held across SiteScore or Postmark network I/O.
-
----
-
-# 13. REQUIRED ADVERSARIAL TESTS
-
-At minimum add deterministic tests for:
-
-```text
-strong token entropy/shape
-digest-only persistence
-no raw token in DB/log/domain API
-exact 7-day default expiry
-repeated download before expiry succeeds
-expired token rejected
-revoked token rejected
-random/unknown token rejected
-foreign order/report binding rejected
-tampered durable grant/report binding rejected
-report not ready rejected
-report ID mismatch rejected
-analysis binding mismatch rejected
-upstream SiteScore auth/404/409/5xx/malformed content fail closed
-upstream PDF MIME mismatch rejected
-byte-length mismatch rejected
-content hash mismatch rejected
-S3/private storage details never surface
-server-owned public base cannot be caller overridden
-server-owned recipient cannot be caller/n8n overridden
-Postmark secret absent from n8n/workflow/API/logs
-HTTP 200 + ErrorCode != 0 is NOT accepted
-HTTP 200 + missing/invalid MessageID is NOT accepted
-response recipient mismatch is NOT accepted
-known provider_accepted replay sends no duplicate
-provider rejected -> retry-safe durable attempt
-Postmark timeout/response lost -> provider_uncertain, NOT fulfilled
-uncertain replay -> new attempt may send a fresh grant while prior possible emailed grant remains valid
-multiple valid retry grants still resolve identical exact bound PDF
-provider accepted + DB response/HTTP response lost -> replay converges without new analysis/report/payment authority
-provider accepted -> fulfilled/completed/paid
-email failure -> payment stays paid and analysis/report truth unchanged
-```
-
-Use real PostgreSQL coverage for state-changing and uniqueness/concurrency paths.
-
-Use an isolated fake Postmark HTTP server for deterministic wire-level failure injection. Do not send email to real customers in CI.
-
----
-
-# 14. N8N INTEGRATION TESTS
-
-Update only the reserved 6.4 delivery branch of the locked workflow.
-
-Prove with pinned n8n `2.33.4` runtime:
-
-```text
-delivery_pending -> commerce delivery operation
-no Postmark token in n8n
-no raw grant token exposed to n8n
-bodyless delivery trigger
-provider accepted -> commerce GET observes terminal fulfilled/completed
-retryable delivery -> finite Wait/poll -> later delivery call
-no delivery busy-loop
-duplicate same-event execution converges
 restart during delivery wait converges
 provider uncertainty does not fabricate fulfilled
-non-retryable delivery_failed -> attention/no action stop
-all previous 6.3 pacing/restart/5xx/timeout tests remain green
 ```
 
-The repository-exported sanitized workflow JSON remains authority and must be import/publish-tested exactly as in 6.3.
+The current runtime suite proves:
 
-If workflow version changes, bump its explicit SiteScore workflow version and document the exact new workflow SHA-256 in Implementer evidence.
+```text
+N8N_DELIVERY_ACCEPTED_TO_FULFILLED=PASS
+N8N_DELIVERY_RETRY_PACING=PASS
+N8N_DELIVERY_FAILED_STOP=PASS
+```
 
-n8n runtime version itself must remain `2.33.4` in this checkpoint unless Reviewer explicitly reopens that decision.
+and retains the older 6.3 restart proof:
+
+```text
+N8N_REAL_ADVANCE_WAIT_RESTART=PASS
+```
+
+But it does not separately stop/restart n8n while a 6.4 delivery execution is in its Wait/retry cycle and prove that the delivery branch resumes/converges from durable commerce truth. A restart proof for the analysis `/advance` branch is not a substitute for the newly introduced `/deliver` branch.
+
+The graph design appears to reuse the same finite Wait path, which is positive, but the checkpoint explicitly requires runtime evidence for the new delivery branch because delivery has distinct at-least-once provider side effects and grant/email retry semantics.
+
+Required runtime proof on exact n8n 2.33.4:
+
+```text
+1. trigger an order whose first /deliver remains retryable/provider-uncertain guidance
+2. confirm execution enters Wait after bodyless /deliver
+3. stop n8n while that delivery execution is waiting
+4. restart with the same durable n8n volume/state
+5. prove the execution resumes, or a safe duplicate trigger converges from commerce durable state
+6. prove no fabricated fulfilled state occurs before commerce reports accepted evidence
+7. prove bounded delivery retry/poll horizon is still enforced
+8. prove no new analysis/report/payment identity is created
+```
+
+Add an explicit runtime evidence label such as:
+
+```text
+N8N_DELIVERY_WAIT_RESTART=PASS
+```
+
+If the test models provider uncertainty, also prove that n8n treats it only through commerce `next_action` guidance and never authors provider truth itself.
+
+```text
+DEL64-H002: OPEN
+```
 
 ---
 
-# 15. CONFIGURATION / SECRET RULES
+# 5. EXACT-HEAD VALIDATION REVIEWED
 
-No real secrets or customer PII fixtures in repository.
+The existing validation remains useful positive evidence but must be rerun after hardening.
 
-New secret/config names only, never values, may be documented.
-
-Expected new configuration surface:
+Current exact validated SHA:
 
 ```text
-POSTMARK_SERVER_TOKEN
-POSTMARK_FROM_EMAIL
-POSTMARK_TEMPLATE_ALIAS
-POSTMARK_TIMEOUT_SECONDS
-COMMERCE_PUBLIC_BASE_URL
+2501d6af71b4c9057a8f5b3008d9c4db3ba15377
 ```
 
-The existing server-only SiteScore credential continues to be used by commerce for frozen report retrieval.
-
-Do not give n8n:
+Commerce/n8n run:
 
 ```text
-POSTMARK_SERVER_TOKEN
-SITESCORE_API_SERVICE_KEY
-S3 credentials
-commerce DB credentials
+run: 32306516241
+job: 96240342784
+conclusion: SUCCESS
+PostgreSQL: 16.15
+sitescore-commerce: 313 PASS
+n8n static: 9 PASS
+n8n runtime: 2.33.4
 ```
 
-Production public base and provider endpoint must use HTTPS.
+Frozen run:
+
+```text
+run: 32306516300
+job: 96240342892
+conclusion: SUCCESS
+checkout: exact validated SHA
+frozen FAZ 3/4/5: 1504 PASS
+sitescore-report: 24 PASS
+sitescore-api: 105 PASS
+private S3 regression: PASS
+Redis/Celery transport: PASS
+frozen-scope scan: PASS
+secret boundary scan: PASS
+```
+
+Existing n8n image digest:
+
+```text
+n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+```
+
+Existing workflow SHA-256:
+
+```text
+02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+```
+
+A fresh exact-head commerce+n8n validation and frozen validation are required after DEL64-H001/H002 hardening. Any validated-SHA -> final-head delta must again be independently reviewable and non-semantic.
 
 ---
 
-# 16. VALIDATION / CI GATE
+# 6. HARDENING SCOPE
 
-Before `READY_FOR_REVIEW`, Implementer must produce fresh exact-head evidence for the same PR/branch.
+Implementer must harden only PR #27 / FAZ 6.4.
 
-Require at minimum:
+Do NOT:
 
 ```text
-fresh PostgreSQL 16 migration cycle through 0004
-full sitescore-commerce suite
-real PostgreSQL delivery state tests
-n8n static suite
-pinned n8n 2.33.4 import/publish/runtime integration
-isolated Postmark wire-contract integration
-public download proxy integration against frozen SiteScore report/content behavior
-full frozen FAZ 3/4/5 regression = 1504 PASS
-secret scan
-frozen-scope scan
-private S3 regression
-Redis/Celery regression
+reopen frozen FAZ 3/4/5
+change payment/refund authority
+change analysis/report truth
+add Postmark webhooks
+add broad FAZ 6.5 recovery scanner
+persist raw/encrypted delivery tokens
+move Postmark secrets into n8n
+bypass the server-owned /deliver operation
+change n8n runtime away from 2.33.4
 ```
 
-Postmark's official special `POSTMARK_API_TEST` token may be used only as optional non-delivering validation; deterministic CI must not depend on a real customer inbox.
+Expected hardening surface is narrowly:
 
-Temporary exact-head validation workflow is acceptable. If validation is run on a temporary workflow commit and then only that workflow is removed, provide exact validated-SHA -> final-head compare proof as in prior checkpoints.
+```text
+Postmark outcome classification + tests
+PostgreSQL durable uncertainty/replay tests
+n8n delivery-wait restart runtime proof
+necessary 6.4 docs/static-test updates
+fresh exact-head validation workflows/evidence
+```
 
 ---
 
-# 17. OUT OF SCOPE / STOP BOUNDARY
-
-Do NOT implement in 6.4:
+# 7. REVIEWER DECISION
 
 ```text
-Postmark bounce/delivery webhook tracking
-marketing email
-customer account system
-frontend download dashboard
-broad lost-event scanner
-scheduled global reconciliation
-expired-grant customer recovery portal
-manual fake fulfilled endpoint
-manual fake paid/ready state
-production observability stack
-rate limiting/autoscaling/deployment platform
-FAZ 6.5 recovery scanner
-FAZ 7+
-```
+FAZ 6.4: HARDENING_REQUIRED
+PR: #27
+REVIEWED_HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
 
-FAZ 6.5 remains closed.
+DEL64-H001: OPEN
+DEL64-H002: OPEN
+BLOCKERS: DEL64-H001, DEL64-H002
 
----
-
-# 18. IMPLEMENTER HANDOFF REQUIREMENT
-
-Implementer must use exactly:
-
-```text
-base:
-main@7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
-
-branch:
-faz6/6-4-delivery-grant-email
-
-one branch
-one PR
-```
-
-Before stopping, `implementer.md` must record at minimum:
-
-```text
-CURRENT_PHASE: FAZ 6
-CURRENT_CHECKPOINT: 6.4
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-EXPECTED_BASE_SHA
-CODE_BRANCH
-PR
-HEAD_SHA
-changed files
-sitescore-commerce version
-migration head
-new delivery tables/resources
-public download route
-Postmark API/template contract
-new ENV names only
-n8n workflow version/path/SHA
-n8n runtime version
-Postmark isolated integration evidence
-PostgreSQL migration/state evidence
-commerce test count
-frozen regression count
-exact validation run/job/SHA
-validated->final delta
-secret/frozen-scope evidence
-CONTRACT_CHANGE_REQUIRED
-DESIGN_DECISION_REVIEW_REQUIRED
-ADDITIONAL_REOPEN_REQUIRED
-BLOCKERS_REPORTED_BY_IMPLEMENTER
-```
-
-Then STOP.
-
----
-
-# 19. REVIEWER OPENING DECISION
-
-```text
-FAZ 6.4: IMPLEMENTATION_REQUESTED
-EXPECTED_BASE_SHA: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
-CODE_BRANCH: faz6/6-4-delivery-grant-email
-
-BLOCKERS: NONE AT OPENING
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-REVIEWER_STATE: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION: IMPLEMENT
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
 USER_LOCK_AUTHORIZED: NO
 START_6_5: NO
 ```
 
-Implement only FAZ 6.4, update the one PR and `implementer.md`, then STOP for independent Reviewer audit.
+Implementer must harden the same PR, produce a new exact final head plus fresh exact-head CI evidence, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
+
+No LOCK is authorized. FAZ 6.5 remains closed. Reviewer STOP.
