@@ -16,6 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # FAZ 6.5 makes the original signed Event correlation durable so a crash after
+    # inbox receipt cannot force recovery to infer the Event's candidate order.
+    op.add_column(
+        "stripe_event_inbox",
+        sa.Column("candidate_order_id", sa.String(64), nullable=True),
+        schema="commerce",
+    )
     op.create_table(
         "recovery_runs",
         sa.Column("run_id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -102,4 +109,5 @@ def downgrade() -> None:
     op.drop_index("ix_recovery_state_next_attempt", table_name="recovery_state", schema="commerce")
     op.drop_table("recovery_state", schema="commerce")
     op.drop_table("recovery_runs", schema="commerce")
+    op.drop_column("stripe_event_inbox", "candidate_order_id", schema="commerce")
     # commerce schema is intentionally preserved for commerce.alembic_version.
