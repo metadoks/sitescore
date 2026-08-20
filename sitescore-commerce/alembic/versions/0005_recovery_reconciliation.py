@@ -16,13 +16,43 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # FAZ 6.5 makes the original signed Event correlation durable so a crash after
-    # inbox receipt cannot force recovery to infer the Event's candidate order.
+    # New 0.6 writers preserve the candidate order extracted from the verified
+    # Stripe Event.  Existing 0004 inbox rows legitimately have no such column,
+    # so NULL remains an explicit legacy provenance marker rather than being
+    # backfilled with locally-derived data and misrepresented as signed evidence.
     op.add_column(
         "stripe_event_inbox",
         sa.Column("candidate_order_id", sa.String(64), nullable=True),
         schema="commerce",
     )
+
+    # A legacy received event can only be resumed when its already-stored Stripe
+    # object/session identity correlates to exactly one durable local Checkout
+    # binding. checkout_sessions.stripe_checkout_session_id is UNIQUE, therefore
+    # count=1 is the only recoverable legacy shape.  Orphan/otherwise non-unique
+    # legacy rows are quarantined durably during the data-preserving upgrade and
+    # are never converted into synthetic candidate-order evidence.
+    op.execute(
+        sa.text(
+            """
+            UPDATE commerce.stripe_event_inbox AS inbox
+               SET processing_state = 'attention_required',
+                   failure_code = 'legacy_event_session_correlation_invalid',
+                   processed_at = COALESCE(inbox.processed_at, CURRENT_TIMESTAMP)
+             WHERE inbox.processing_state = 'received'
+               AND inbox.candidate_order_id IS NULL
+               AND (
+                    inbox.stripe_object_id IS NULL
+                    OR (
+                        SELECT COUNT(*)
+                          FROM commerce.checkout_sessions AS checkout
+                         WHERE checkout.stripe_checkout_session_id = inbox.stripe_object_id
+                    ) <> 1
+               )
+            """
+        )
+    )
+
     op.create_table(
         "recovery_runs",
         sa.Column("run_id", postgresql.UUID(as_uuid=True), primary_key=True),
