@@ -31,6 +31,8 @@ RESTART_ADVANCE = "00000000-0000-4000-8000-000000000015"
 DUPLICATE_ADVANCE = "00000000-0000-4000-8000-000000000016"
 DELIVERY_RETRY = "00000000-0000-4000-8000-000000000017"
 DELIVERY_FAILED = "00000000-0000-4000-8000-000000000018"
+DELIVERY_RESTART = "00000000-0000-4000-8000-000000000019"
+DELIVERY_PERMANENT_RETRY = "00000000-0000-4000-8000-000000000020"
 
 LOCK = threading.Lock()
 STATE = {
@@ -50,6 +52,8 @@ STATE = {
     DUPLICATE_ADVANCE: {"advance_calls": 0, "analysis_identity_mints": 1, "deliver_calls": 0, "delivery_effects": 0},
     DELIVERY_RETRY: {"deliver_calls": 0, "delivery_effects": 0},
     DELIVERY_FAILED: {"deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_RESTART: {"deliver_calls": 0, "delivery_effects": 0},
+    DELIVERY_PERMANENT_RETRY: {"deliver_calls": 0, "delivery_effects": 0},
 }
 REQUESTS: list[dict[str, object]] = []
 
@@ -68,25 +72,27 @@ def status(order_id, order_state, payment_state, fulfillment_state, retryable, t
 
 
 def delivery_projection(order_id):
-    row=STATE.get(order_id,{})
-    calls=int(row.get("deliver_calls",0))
-    if order_id == DELIVERY_RETRY:
+    row = STATE.get(order_id, {})
+    calls = int(row.get("deliver_calls", 0))
+    if order_id in {DELIVERY_RETRY, DELIVERY_RESTART}:
         if calls < 2:
-            return status(order_id,"fulfillment_in_progress","paid","delivery_pending",True,False,"delivery")
-        return status(order_id,"fulfilled","paid","completed",False,True,"none")
+            return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+        return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
+    if order_id == DELIVERY_PERMANENT_RETRY:
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
     if order_id == DELIVERY_FAILED:
         if calls == 0:
-            return status(order_id,"fulfillment_in_progress","paid","delivery_pending",True,False,"delivery")
-        return status(order_id,"attention_required","paid","delivery_failed",False,False,"none")
+            return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
+        return status(order_id, "attention_required", "paid", "delivery_failed", False, False, "none")
     if "deliver_calls" in row and calls > 0:
-        return status(order_id,"fulfilled","paid","completed",False,True,"none")
+        return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
     return None
 
 
 def projection(order_id):
-    delivered=delivery_projection(order_id)
+    delivered = delivery_projection(order_id)
     if delivered is not None:
-        if order_id in {DELIVERY_RETRY,DELIVERY_FAILED} or STATE[order_id].get("deliver_calls",0)>0:
+        if order_id in {DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY} or STATE[order_id].get("deliver_calls", 0) > 0:
             return delivered
     if order_id == DELIVERY:
         return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
@@ -155,7 +161,7 @@ def projection(order_id):
             return status(order_id, "fulfillment_in_progress", "paid", "analysis_running", True, False, "advance")
         return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
 
-    if order_id in {DELIVERY_RETRY,DELIVERY_FAILED}:
+    if order_id in {DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY}:
         return delivery_projection(order_id)
     raise KeyError(order_id)
 
@@ -176,11 +182,13 @@ def advance(order_id):
 def deliver(order_id):
     if order_id not in STATE or "deliver_calls" not in STATE[order_id]:
         raise KeyError(order_id)
-    row=STATE[order_id]
+    row = STATE[order_id]
     row["deliver_calls"] += 1
-    if order_id == DELIVERY_RETRY and row["deliver_calls"] < 2:
+    if order_id == DELIVERY_PERMANENT_RETRY:
         return projection(order_id)
-    if row.get("delivery_effects",0)==0:
+    if order_id in {DELIVERY_RETRY, DELIVERY_RESTART} and row["deliver_calls"] < 2:
+        return projection(order_id)
+    if row.get("delivery_effects", 0) == 0:
         row["delivery_effects"] = 1
     return projection(order_id)
 
