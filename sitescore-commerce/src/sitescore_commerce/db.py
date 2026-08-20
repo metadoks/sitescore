@@ -115,6 +115,7 @@ class StripeEventInboxRow(Base):
     stripe_event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     stripe_event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     stripe_object_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    candidate_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_api_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     livemode: Mapped[bool] = mapped_column(Boolean, nullable=False)
     event_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -313,6 +314,7 @@ class CommerceStore:
             stripe_event_id=event.event_id,
             stripe_event_type=event.event_type,
             stripe_object_id=event.checkout_session_id,
+            candidate_order_id=event.candidate_order_id,
             event_api_version=event.api_version,
             livemode=event.livemode,
             event_created_at=event.created_at,
@@ -338,8 +340,22 @@ class CommerceStore:
                     .where(StripeEventInboxRow.stripe_event_id == event.event_id)
                     .with_for_update()
                 ).scalar_one()
-                essential = (row.stripe_event_type, row.stripe_object_id, row.event_api_version, row.livemode, row.event_created_at)
-                incoming = (event.event_type, event.checkout_session_id, event.api_version, event.livemode, event.created_at)
+                essential = (
+                    row.stripe_event_type,
+                    row.stripe_object_id,
+                    row.candidate_order_id,
+                    row.event_api_version,
+                    row.livemode,
+                    row.event_created_at,
+                )
+                incoming = (
+                    event.event_type,
+                    event.checkout_session_id,
+                    event.candidate_order_id,
+                    event.api_version,
+                    event.livemode,
+                    event.created_at,
+                )
                 if essential != incoming:
                     raise EventIdentityConflict("duplicate Stripe event identity conflicts with durable inbox")
                 row.attempt_count += 1
@@ -456,7 +472,7 @@ class CommerceStore:
         """Apply a server-poll payment transition without fabricating a Stripe Event identity.
 
         A receipt is written only when this poll actually wins the pending -> paid/expired
-        transition.  If a real webhook already won the same row lock race, the poll is an
+        transition. If a real webhook already won the same row lock race, the poll is an
         idempotent observation and no synthetic authority record is created.
         """
         try:
