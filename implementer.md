@@ -91,24 +91,12 @@ FAZ_6_4_STATUS: READY_FOR_REVIEW
 START_6_5: NO
 ```
 
-## Implementation summary
+FAZ 6.4 was implemented only from the Reviewer-authorized frozen base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba` on PR #27. Package `sitescore-commerce==0.5.0`, migration `0004_delivery_email`, digest-only seven-day revocable grants, verified public download proxy, Postmark acceptance evidence, bounded delivery retries, explicit revocation, logging guidance, and the minimum bodyless n8n delivery branch are implemented. No FAZ 3/4/5 frozen source mutation and no FAZ 6.5 work occurred.
 
-FAZ 6.4 was implemented only from the Reviewer-authorized frozen base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba` on `faz6/6-4-delivery-grant-email` / PR #27. No FAZ 3/4/5 frozen source was modified and FAZ 6.5 was not started.
+Authoritative commerce+n8n validation at exact SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`: run `32306516241`, job `96240342784`, SUCCESS; commerce 313 PASS, n8n static 9 PASS, PostgreSQL 16 migration cycle and pinned n8n 2.33.4 delivery/retry/restart/fault integration PASS.
 
-The commerce package is `sitescore-commerce==0.5.0` with additive migration head `0004_delivery_email`. Commerce owns high-entropy opaque customer delivery grants with digest-only SHA-256 persistence, exact seven-day expiry, revocation, order/report binding, and safe at-least-once retry semantics. The public `/d/{opaque_token}` proxy re-verifies the exact frozen report resource/content and PDF integrity. Postmark remains commerce-only, provider acceptance is durable evidence rather than a human-delivery claim, and delivery failure never rewrites payment or frozen analytical/report truth.
+Separate frozen validation at the same SHA: run `32306516300`, job `96240342892`, SUCCESS; frozen total 1504 PASS, private S3, Redis/Celery, scope and secret-boundary scans PASS. Commerce + frozen pytest total: 1817 PASS.
 
-The locked 6.3 n8n boundary was extended only at `next_action=delivery`: n8n performs the bodyless authenticated commerce `/deliver` operation and returns through the existing finite horizon + Wait + GET state-observation path. n8n receives no raw delivery token, recipient, report bytes, Postmark token, SiteScore service key, DB/Redis/S3 credential, Stripe secret or provider-result authority.
+Validated SHA -> final review HEAD `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762` is exactly two commits ahead and only removes the two temporary validation workflows. No product code changed after validation. PR #27 remains open, mergeable, non-draft and unmerged; live main remains the exact expected base.
 
-## Exact validation evidence
-
-Authoritative commerce+n8n validation at exact SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`: run `32306516241`, job `96240342784`, SUCCESS. PostgreSQL 16 upgrade/downgrade/upgrade and `0004_delivery_email` passed; commerce 313 PASS; n8n static 9 PASS; pinned n8n 2.33.4 delivery/retry/restart/duplicate/5xx/timeout/horizon integration markers all PASS.
-
-Separate frozen regression at the same exact SHA: run `32306516300`, job `96240342892`, SUCCESS. Frozen scope and secret-boundary scans, private MinIO/S3, Redis/Celery, and all frozen package suites passed for frozen total 1504 PASS. Commerce + frozen pytest total is 1817 PASS, with n8n static 9 reported separately.
-
-After validation, only the two temporary validation workflow files were removed. Compare `2501d6af71b4c9057a8f5b3008d9c4db3ba15377` -> `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762` is exactly 2 commits ahead and contains only those two removals. No product code changed after validation.
-
-Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
-
-## STOP condition
-
-FAZ 6.4 is `READY_FOR_REVIEW`. No LOCK/merge was performed. FAZ 6.5 was not started. Implementer STOP pending a fresh Reviewer decision.
+FAZ 6.4 is READY_FOR_REVIEW. No LOCK/merge. START_6_5=NO. Implementer STOP.
