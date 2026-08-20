@@ -27,6 +27,7 @@ HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
 VALIDATED_SHA: 2501d6af71b4c9057a8f5b3008d9c4db3ba15377
 VALIDATED_TO_FINAL_COMMITS: 2
 VALIDATED_TO_FINAL_DIFF: ONLY .github/workflows/faz6-6-4-validation.yml AND .github/workflows/faz6-6-4-frozen-validation.yml REMOVED
+POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
 
 EXPECTED_COMMERCE_VERSION: 0.5.0
 EXPECTED_MIGRATION_HEAD: 0004_delivery_email
@@ -94,7 +95,7 @@ START_6_5: NO
 
 FAZ 6.4 was implemented only from the Reviewer-authorized frozen base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba` on `faz6/6-4-delivery-grant-email` / PR #27. No FAZ 3/4/5 frozen source was modified and FAZ 6.5 was not started.
 
-The commerce package is now `sitescore-commerce==0.5.0` with additive migration head `0004_delivery_email`. Commerce owns high-entropy opaque customer delivery grants with digest-only SHA-256 persistence, exact seven-day expiry, revocation, order/report binding, and multiple safe historical grants when uncertain provider outcomes require at-least-once replay. No plaintext, reversible, encrypted-recovery token or complete customer delivery URL is persisted.
+The commerce package is `sitescore-commerce==0.5.0` with additive migration head `0004_delivery_email`. Commerce owns high-entropy opaque customer delivery grants with digest-only SHA-256 persistence, exact seven-day expiry, revocation, order/report binding, and multiple safe historical grants when uncertain provider outcomes require at-least-once replay. No plaintext, reversible, encrypted-recovery token or complete customer delivery URL is persisted.
 
 The customer-facing `/d/{opaque_token}` capability path hashes the incoming token, verifies grant validity and binding, re-reads the exact frozen SiteScore report resource and report content using the server-owned credential, verifies report/analysis identity, ready state, MIME, content length/hash and local PDF integrity, and returns only safe PDF download semantics. Application code does not log the raw token; production reverse-proxy/access-log suppression/redaction requirements are documented without claiming deployment-wide FAZ 7 hardening is complete.
 
@@ -144,7 +145,7 @@ After both exact-head validation workflows were successful, the two temporary va
 1. `.github/workflows/faz6-6-4-validation.yml`
 2. `.github/workflows/faz6-6-4-frozen-validation.yml`
 
-There are no post-validation product-code changes.
+There are no post-validation product-code changes. An attempted post-validation documentation mutation was rejected by GitHub with HTTP 409 because the supplied blob SHA was stale; no repository content changed from that attempted call. The validated product tree therefore remains intact apart from the two intentional temporary-workflow deletions recorded above.
 
 Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
 
