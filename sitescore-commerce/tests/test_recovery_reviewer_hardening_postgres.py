@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
+from sitescore_commerce.checkout import CHECKOUT_OPERATION_VERSION
 from sitescore_commerce.contracts import OrderCreateRequest
 from sitescore_commerce.db import (
     CheckoutSessionRow,
@@ -21,6 +21,7 @@ from sitescore_commerce.db import (
     OutboxEventRow,
     OutboxReplayAuditRow,
     PaymentPollReceiptRow,
+    PersistenceUnavailable,
     RecoveryFindingRow,
     StripeEventInboxRow,
     utcnow,
@@ -28,6 +29,7 @@ from sitescore_commerce.db import (
 from sitescore_commerce.recovery import RecoveryIngressResult, RecoveryTransportResult
 from sitescore_commerce.recovery_lineage import LineageRecoveryService
 from sitescore_commerce.settings import STRIPE_API_VERSION
+from sitescore_commerce.webhook import PaymentWebhookService, StripeEventEnvelope
 
 from conftest import valid_order
 from test_recovery_postgres import (
@@ -51,6 +53,36 @@ def _cfg():
     return cfg
 
 
+def _delete_business_rows() -> None:
+    engine = sa.create_engine(DATABASE_URL)
+    with engine.begin() as conn:
+        existing = set(sa.inspect(conn).get_table_names(schema="commerce"))
+        for table in (
+            "recovery_findings",
+            "outbox_replay_audit",
+            "payment_poll_receipts",
+            "recovery_state",
+            "recovery_runs",
+            "delivery_attempts",
+            "delivery_grants",
+            "refund_operations",
+            "refund_eligibility",
+            "fulfillment_bindings",
+            "outbox_events",
+            "stripe_event_inbox",
+            "checkout_sessions",
+            "order_idempotency",
+            "orders",
+        ):
+            if table in existing:
+                conn.execute(sa.text(f"DELETE FROM commerce.{table}"))
+
+
+def _clean_head() -> None:
+    command.upgrade(_cfg(), "head")
+    _delete_business_rows()
+
+
 def _lineage(store: CommerceStore, gateway, n8n) -> LineageRecoveryService:
     return LineageRecoveryService(
         settings=settings(),
@@ -64,21 +96,7 @@ def _lineage(store: CommerceStore, gateway, n8n) -> LineageRecoveryService:
 def _clean_0004() -> None:
     command.upgrade(_cfg(), "head")
     command.downgrade(_cfg(), "0004_delivery_email")
-    engine = sa.create_engine(DATABASE_URL)
-    with engine.begin() as conn:
-        for table in (
-            "delivery_attempts",
-            "delivery_grants",
-            "refund_operations",
-            "refund_eligibility",
-            "fulfillment_bindings",
-            "outbox_events",
-            "stripe_event_inbox",
-            "checkout_sessions",
-            "order_idempotency",
-            "orders",
-        ):
-            conn.execute(sa.text(f"DELETE FROM commerce.{table}"))
+    _delete_business_rows()
 
 
 def _legacy_order() -> tuple[CommerceStore, object, str]:
@@ -149,8 +167,6 @@ def test_populated_0004_legacy_received_event_survives_upgrade_and_resumes_origi
     event_id = f"evt_legacy_{uuid4().hex}"
     _insert_legacy_received(event_id=event_id, event_type=event_type, session_id=sid)
 
-    # This is the data-preserving production upgrade under review. The new
-    # candidate_order_id column did not exist when the event was inserted.
     command.upgrade(_cfg(), "0005_recovery_reconciliation")
 
     evd = evidence(
@@ -172,6 +188,15 @@ def test_populated_0004_legacy_received_event_survives_upgrade_and_resumes_origi
     assert inbox.stripe_event_id == event_id and inbox.candidate_order_id is None
     assert checkout.last_reconciliation_event_id == event_id
     assert receipts == [] and findings == []
+    with store.session_factory() as session:
+        marker = session.execute(
+            sa.text(
+                "SELECT candidate_order_lineage_version FROM commerce.stripe_event_inbox "
+                "WHERE stripe_event_id = :event_id"
+            ),
+            {"event_id": event_id},
+        ).scalar_one()
+        assert marker is None
     if target_order == "paid":
         assert len(outboxes) == 1 and outboxes[0].outbox_type == "order.paid.v1"
     else:
@@ -189,8 +214,15 @@ def test_populated_0004_orphan_legacy_session_is_quarantined_during_0005_upgrade
     with store.session_factory() as session:
         order = session.get(OrderRow, oid)
         inbox = session.get(StripeEventInboxRow, event_id)
+        marker = session.execute(
+            sa.text(
+                "SELECT candidate_order_lineage_version FROM commerce.stripe_event_inbox "
+                "WHERE stripe_event_id = :event_id"
+            ),
+            {"event_id": event_id},
+        ).scalar_one()
         assert (order.order_state, order.payment_state) == ("pending_payment", "pending")
-        assert inbox.candidate_order_id is None
+        assert inbox.candidate_order_id is None and marker is None
         assert inbox.processing_state == "attention_required"
         assert inbox.failure_code == "legacy_event_session_correlation_invalid"
         assert inbox.processed_at is not None
@@ -210,44 +242,73 @@ def test_legacy_checkout_session_correlation_is_structurally_unique_in_0004():
         catalog_version="v1",
         price_id="price_1234567890",
         quantity=1,
-        operation_version="stripe_checkout_session_v1",
+        operation_version=CHECKOUT_OPERATION_VERSION,
         checkout_success_url=f"https://a.example/success?order_id={oid_b}&session_id={{CHECKOUT_SESSION_ID}}",
         checkout_cancel_url=f"https://a.example/cancel?order_id={oid_b}",
     )
-    with pytest.raises((IntegrityError, Exception)) as exc_info:
+    with pytest.raises(PersistenceUnavailable):
         store.bind_checkout(
             order_id=oid_b,
             stripe_session_id=sid,
             checkout_url=f"https://checkout.stripe.com/c/pay/{sid}",
             expires_at=None,
         )
-    assert exc_info.value is not None
     command.upgrade(_cfg(), "0005_recovery_reconciliation")
     assert oid_a != oid_b
 
 
+class _FixedVerifier:
+    def __init__(self, event):
+        self.event = event
+
+    def verify(self, raw_body, signature):
+        return self.event
+
+
+class _NeverGateway:
+    def __init__(self):
+        self.calls = []
+
+    def retrieve(self, session_id):
+        self.calls.append(session_id)
+        raise AssertionError("provider must not be called without signed candidate-order correlation")
+
+
+def test_post_0005_verified_event_missing_candidate_cannot_enter_legacy_fallback():
+    _clean_head()
+    store = CommerceStore(DATABASE_URL)
+    oid, sid = make_order(store)
+    event = StripeEventEnvelope(
+        f"evt_missing_candidate_{uuid4().hex}",
+        "checkout.session.completed",
+        STRIPE_API_VERSION,
+        False,
+        datetime(2026, 8, 20, tzinfo=timezone.utc),
+        sid,
+        None,
+    )
+    gateway = _NeverGateway()
+    service = PaymentWebhookService(settings(), store, _FixedVerifier(event), gateway)
+
+    assert service.handle(raw_body=b"signed-event-without-candidate", signature="sig") == {"status": "accepted"}
+    assert gateway.calls == []
+    with store.session_factory() as session:
+        inbox = session.get(StripeEventInboxRow, event.event_id)
+        marker = session.execute(
+            sa.text(
+                "SELECT candidate_order_lineage_version FROM commerce.stripe_event_inbox "
+                "WHERE stripe_event_id = :event_id"
+            ),
+            {"event_id": event.event_id},
+        ).scalar_one()
+        assert marker == "verified_event_v1"
+        assert inbox.candidate_order_id is None
+        assert inbox.processing_state == "attention_required"
+        assert inbox.failure_code == "event_order_correlation_invalid"
+
+
 def _prepare_paid(*, published: bool):
-    command.upgrade(_cfg(), "head")
-    engine = sa.create_engine(DATABASE_URL)
-    with engine.begin() as conn:
-        for table in (
-            "recovery_findings",
-            "outbox_replay_audit",
-            "payment_poll_receipts",
-            "recovery_state",
-            "recovery_runs",
-            "delivery_attempts",
-            "delivery_grants",
-            "refund_operations",
-            "refund_eligibility",
-            "fulfillment_bindings",
-            "outbox_events",
-            "stripe_event_inbox",
-            "checkout_sessions",
-            "order_idempotency",
-            "orders",
-        ):
-            conn.execute(sa.text(f"DELETE FROM commerce.{table}"))
+    _clean_head()
     store = CommerceStore(DATABASE_URL)
     oid, sid = make_order(store)
     transition_paid_by_poll(store, oid, sid)
