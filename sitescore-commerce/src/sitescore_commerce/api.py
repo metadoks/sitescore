@@ -71,7 +71,14 @@ def create_app(
     delivery_service: DeliveryService | None = None,
     recovery_service: RecoveryService | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="SiteScore Commerce API", version="0.6.0")
+    app = FastAPI(
+        title="SiteScore Commerce API",
+        version="0.6.0",
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
+        swagger_ui_oauth2_redirect_url=None,
+    )
 
     settings: Settings | None = None
     store: CommerceStore | None = None
