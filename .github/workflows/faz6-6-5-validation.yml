@@ -64,7 +64,20 @@ jobs:
       - name: Prove locked order workflow artifact unchanged
         run: test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
       - name: Pinned n8n 2.33.4 locked order runtime regression
-        run: bash automation/n8n/tests/runtime_smoke.sh
+        shell: bash
+        run: |
+          set +e
+          bash automation/n8n/tests/runtime_smoke.sh > /tmp/n8n65-locked-runtime.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/n8n65-locked-runtime.log
+          if [ "$status" -ne 0 ]; then
+            echo '--- LOCKED RUNTIME FAILURE MARKERS ---'
+            grep -E 'N8N_|PASS|FAIL|Assertion|assert|ERROR|Error|error|failed|timed|timeout' /tmp/n8n65-locked-runtime.log | tail -n 160 || true
+            echo '--- LOCKED RUNTIME FAILURE TAIL ---'
+            tail -n 160 /tmp/n8n65-locked-runtime.log || true
+          fi
+          exit "$status"
       - name: Pinned n8n 2.33.4 recovery scheduler runtime
         run: bash automation/n8n/tests/recovery_schedule_runtime_smoke.sh
       - name: Pinned n8n 2.33.4 stuck-state recovery replay convergence
