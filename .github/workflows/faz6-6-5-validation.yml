@@ -54,8 +54,16 @@ jobs:
           e=sa.create_engine(os.environ['SITESCORE_COMMERCE_DATABASE_URL']); i=sa.inspect(e)
           required={'recovery_runs','recovery_state','payment_poll_receipts','outbox_replay_audit','recovery_findings'}
           assert required <= set(i.get_table_names(schema='commerce'))
+          cols={c['name'] for c in i.get_columns('stripe_event_inbox',schema='commerce')}
+          assert 'candidate_order_id' in cols
           with e.connect() as c: assert c.execute(sa.text('SELECT version_num FROM commerce.alembic_version')).scalar_one()=='0005_recovery_reconciliation'
           print('RECOVERY_0005=PASS')
           PY
       - name: n8n static contracts
         run: python -m pytest -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py
+      - name: Prove locked order workflow artifact unchanged
+        run: test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
+      - name: Pinned n8n 2.33.4 locked order runtime regression
+        run: bash automation/n8n/tests/runtime_smoke.sh
+      - name: Pinned n8n 2.33.4 recovery scheduler runtime
+        run: bash automation/n8n/tests/recovery_schedule_runtime_smoke.sh
