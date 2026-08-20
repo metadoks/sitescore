@@ -45,7 +45,14 @@ Before provider I/O, commerce commits the grant and durable delivery attempt. No
 
 A send is accepted only when the provider response satisfies the complete acceptance contract: HTTP 200, integer `ErrorCode == 0`, non-empty valid `MessageID`, exact `To` equal to the durable customer email, and timezone-aware `SubmittedAt`. HTTP success alone is never fulfillment evidence.
 
-Transport timeout/network uncertainty is recorded as `provider_uncertain`; provider rejection is `provider_rejected`. Neither marks the order fulfilled. A retry creates a fresh grant/attempt; a prior uncertain grant is not blindly revoked because the first provider request may actually have been accepted. Known durable provider acceptance converges without another send.
+Provider outcome classification is evidence-driven:
+
+- explicit, trustworthy provider rejection evidence becomes `provider_rejected`;
+- timeout, connection loss, response loss, or a success-like HTTP 200 whose body cannot safely prove either acceptance or rejection becomes `provider_uncertain`;
+- HTTP 200 malformed/truncated/non-object JSON, missing or invalid `ErrorCode`, or `ErrorCode == 0` with invalid/missing/mismatched `MessageID`, `To`, or `SubmittedAt` is therefore `provider_uncertain`, never definitive rejection and never acceptance;
+- integer `ErrorCode != 0` remains affirmative Postmark rejection evidence.
+
+Neither rejected nor uncertain evidence marks the order fulfilled. While below the bounded attempt limit, an uncertain attempt keeps payment `paid`, fulfillment `delivery_pending`, and retry guidance available. A retry creates a fresh grant/attempt; a prior uncertain grant is not blindly revoked because the first provider request may actually have been accepted. Later fully validated acceptance converges to one durable `fulfilled / paid / completed` state. Known durable provider acceptance converges without another send.
 
 ## Fulfillment and failure state
 
@@ -73,6 +80,8 @@ commerce GET -> next_action=delivery
 
 The `/deliver` request body is empty and uses only the existing commerce automation bearer. The same finite horizon/pacing semantics apply to delivery retries; n8n never authors `fulfilled` or provider truth.
 
+Pinned-runtime evidence must separately exercise the delivery branch itself. A retryable delivery execution is stopped after the first bodyless `/deliver` has left commerce in authoritative `paid / delivery_pending / next_action=delivery`, while the execution is on the shared Wait cycle. n8n is restarted with the same durable volume and must resume or safely converge from commerce truth without `/advance`, without minting analytical identity, and without fabricating `fulfilled` before commerce reports acceptance. A permanently retryable delivery case must also stop at the configured finite poll horizon. Runtime evidence labels include `N8N_DELIVERY_WAIT_RESTART=PASS` and `N8N_DELIVERY_POLL_HORIZON=PASS`.
+
 ## Validation requirements
 
-Exact-head validation must cover PostgreSQL 16 migration upgrade/downgrade/re-upgrade, digest-only schema, 313 commerce tests, fake Postmark wire/adversarial behavior, pinned n8n 2.33.4 import/publish/auth/delivery/retry/restart/horizon behavior, secret/frozen-scope scans, private S3-compatible storage, Redis/Celery transport, and the frozen FAZ 3/4/5 1504-test baseline.
+Exact-head validation must cover PostgreSQL 16 migration upgrade/downgrade/re-upgrade, digest-only schema, the full commerce suite including raw malformed HTTP-200 Postmark uncertainty/replay PostgreSQL assertions, fake Postmark wire/adversarial behavior, pinned n8n 2.33.4 import/publish/auth/delivery/retry/delivery-wait-restart/delivery-horizon behavior, secret/frozen-scope scans, private S3-compatible storage, Redis/Celery transport, and the frozen FAZ 3/4/5 1504-test baseline.
