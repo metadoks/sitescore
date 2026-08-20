@@ -177,4 +177,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # Host-side probes use loopback while the pinned n8n container reaches this
+    # fake Commerce boundary through host.docker.internal/host-gateway.
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
