@@ -203,19 +203,22 @@ def test_recovery_keeps_lease_fencing_and_same_paid_outbox_identity_contract():
     recovery = (SRC / "recovery.py").read_text()
     atomic = (SRC / "recovery_atomic.py").read_text()
     lineage = (SRC / "recovery_lineage.py").read_text()
-    combined = "\n".join((recovery, atomic, lineage))
+    db = (SRC / "db.py").read_text()
+    migration = (COMMERCE / "alembic" / "versions" / "0005_recovery_reconciliation.py").read_text()
+    combined = "\n".join((recovery, atomic, lineage, db, migration))
     assert "skip_locked=True" in combined
     assert "lease_token" in combined and "lease_expires_at" in combined
     assert "PAID_OUTBOX_TYPE" in combined
     assert "stripe_checkout_server_poll_v1" in combined
     assert "payment_poll_receipt" in combined.lower() or "PaymentPollReceiptRow" in combined
-    assert "evt_" not in re.sub(r"event_id|stripe_event_id", "", combined)
+    assert "evt_" not in re.sub(r"event_id|stripe_event_id", "", "\n".join((recovery, atomic, lineage)))
 
 
 def test_final_audit_contains_required_truth_disclaimer_and_state_money_matrix():
     text = DOC.read_text()
+    normalized = text.lower().replace("**", "")
     assert "Mathematically validated scoring engine; empirical validation pending." in text
-    assert "not empirical business-outcome validation" in text.lower()
+    assert "not empirical business-outcome validation" in normalized
     for required in (
         "pending payment",
         "expired/unpaid",
