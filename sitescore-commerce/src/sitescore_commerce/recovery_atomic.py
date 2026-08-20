@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .db import (
+    CheckoutSessionRow,
     CommerceStore,
+    OrderRow,
     OutboxEventRow,
     PAID_OUTBOX_TYPE,
     POLL_RECEIPT_SOURCE,
@@ -16,8 +18,6 @@ from .db import (
     RecoveryFindingRow,
     RecoveryStateRow,
     StripeEventInboxRow,
-    OrderRow,
-    CheckoutSessionRow,
     utcnow,
 )
 
@@ -38,6 +38,39 @@ def _lock_current_lease(session, *, order_id: UUID, lease_token: UUID, now: date
         .with_for_update()
     ).scalar_one_or_none()
     return row if _lease_row_is_current(row, lease_token=lease_token, now=now) else None
+
+
+def mark_inbox_state_with_lease(
+    store: CommerceStore,
+    *,
+    order_id: UUID,
+    lease_token: UUID,
+    event_id: str,
+    state: str,
+    failure_code: str,
+    processed_at: datetime,
+) -> bool:
+    """Fence recovery-only inbox state changes with the same durable lease."""
+    if state not in {"ignored", "attention_required"}:
+        raise ValueError("unsupported recovery inbox state")
+    try:
+        with store.session_factory.begin() as session:
+            write_now = utcnow()
+            if _lock_current_lease(session, order_id=order_id, lease_token=lease_token, now=write_now) is None:
+                return False
+            inbox = session.execute(
+                select(StripeEventInboxRow)
+                .where(StripeEventInboxRow.stripe_event_id == event_id)
+                .with_for_update()
+            ).scalar_one()
+            if inbox.processing_state != "received":
+                return False
+            inbox.processing_state = state
+            inbox.failure_code = failure_code[:80]
+            inbox.processed_at = processed_at
+            return True
+    except SQLAlchemyError as exc:
+        raise PersistenceUnavailable("lease-fenced Stripe inbox result failed") from exc
 
 
 def apply_event_reconciliation_with_lease(
