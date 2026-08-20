@@ -21,7 +21,8 @@ from .fulfillment import (
     SiteScoreProviderUnavailable,
 )
 from .fulfillment_runtime import build_runtime_fulfillment_service
-from .recovery import RecoveryRunResponse, RecoveryService, build_recovery_service
+from .recovery import RecoveryRunResponse, RecoveryService
+from .recovery_lineage import build_recovery_service
 from .service import InvalidIdempotencyKey, OrderService
 from .settings import ConfigurationError, Settings
 from .webhook import (
@@ -74,9 +75,6 @@ def create_app(
 
     settings: Settings | None = None
     store: CommerceStore | None = None
-    # Preserve dependency-injected unit tests: only load environment when an unprovided
-    # pre-6.4 production service actually needs construction. A separately injected
-    # delivery/recovery service never forces environment loading into legacy unit tests.
     if service is None or webhook_service is None or fulfillment_service is None:
         try:
             settings = Settings.from_env()
