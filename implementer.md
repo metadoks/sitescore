@@ -54,7 +54,7 @@ FAZ_6_4_STATUS: READY_FOR_REVIEW
 START_6_5: NO
 ```
 
-FAZ 6.4 is implemented only from the Reviewer-authorized base. Delivery grants are high-entropy, digest-only, exact seven-day, revocable and report/order-bound. The commerce public download proxy freshly verifies the frozen report/content and PDF integrity. Postmark remains commerce-only with durable accepted/rejected/uncertain evidence and bounded retries. Fulfillment completion requires paid order, exact completed analysis, exact ready report, valid grant and durable provider acceptance. Delivery failure does not rewrite payment or frozen analytical/report truth. The locked n8n 6.3 graph was extended only at the delivery boundary using a bodyless commerce `/deliver` call followed by the existing finite Wait/poll path.
+FAZ 6.4 was implemented only from the Reviewer-authorized frozen base. Package `sitescore-commerce==0.5.0`, migration `0004_delivery_email`, digest-only seven-day revocable grants, verified public download proxy, Postmark acceptance evidence, bounded delivery retries, explicit revocation, logging guidance, and the minimum bodyless n8n delivery branch are implemented. No FAZ 3/4/5 frozen source mutation and no FAZ 6.5 work occurred.
 
 At validated SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`, commerce+n8n run `32306516241` / job `96240342784` and frozen run `32306516300` / job `96240342892` both succeeded. Commerce 313 PASS, frozen 1504 PASS, n8n static 9 PASS; PostgreSQL 16 migration cycle, private S3, Redis/Celery, secret/scope scans and n8n 2.33.4 runtime integration all passed.
 
