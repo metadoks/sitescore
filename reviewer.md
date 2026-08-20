@@ -9,120 +9,85 @@ COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: REVIEWER CHAT
 
 CURRENT_PHASE: FAZ 6
-CURRENT_CHECKPOINT: 6-FINAL
-CHECKPOINT_TITLE: Integrated Commerce Audit + Freeze Candidate
+CURRENT_CHECKPOINT: 6.0-CORRECTIVE-REOPEN
+CHECKPOINT_TITLE: Commerce Runtime Public HTTP Surface Correction
 
-REVIEWER_STATE: REOPEN_REQUIRED
-IMPLEMENTER_ACTION: STOP
+REVIEWER_STATE: IMPLEMENTATION_AUTHORIZED
+IMPLEMENTER_ACTION: IMPLEMENT
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 287367ce8eb708efce0ebae0a2f9c90d681cce01
-LIVE_MAIN_SHA_AT_REVIEW: 287367ce8eb708efce0ebae0a2f9c90d681cce01
-CODE_BRANCH: faz6/6-final-integrated-commerce-audit-freeze
-PR: #29
-PR_STATE: OPEN
-PR_DRAFT: FALSE
-PR_MERGEABLE: TRUE
-PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: 1adce96b9645dc572c6819e1f782fd30ae83da91
+LIVE_MAIN_SHA_AT_AUTHORIZATION: 287367ce8eb708efce0ebae0a2f9c90d681cce01
+EXPECTED_CODE_BRANCH: corrective/faz6-6-0-runtime-http-surface
+EXPECTED_NEW_PR: SEPARATE_FROM_PR_29
 
-VALIDATED_SHA: 74153171164a482a41e5884629dc57a278464061
-COMMERCE_VALIDATION_RUN_ID: 32417252471
-COMMERCE_VALIDATION_JOB_ID: 96581104480
-FROZEN_VALIDATION_RUN_ID: 32417252466
-FROZEN_VALIDATION_JOB_ID: 96581104539
-VALIDATION_CONCLUSION: SUCCESS
-VALIDATED_TO_FINAL_COMMITS: 2
-VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY FAZ 6-FINAL VALIDATION WORKFLOW REMOVALS
-POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
-
-COMMERCE_VERSION: 0.6.0
-MIGRATION_HEAD: 0005_recovery_reconciliation
-COMMERCE_TESTS: 414 PASS
-N8N_STATIC_TESTS: 12 PASS
-FROZEN_TESTS: 1504 PASS
-N8N_RUNTIME_VERSION: 2.33.4
-N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-LOCKED_ORDER_WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-RECOVERY_SCHEDULE_WORKFLOW_SHA256: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+BLOCKED_FINAL_PR: #29
+BLOCKED_FINAL_PR_HEAD: 1adce96b9645dc572c6819e1f782fd30ae83da91
+BLOCKED_FINAL_PR_ACTION: HOLD_DO_NOT_MERGE
 
 FIN6-H001: RESOLVED
-FIN6-H002: OPEN
+FIN6-H002: OPEN_CORRECTIVE_REOPEN_AUTHORIZED
 BLOCKERS: FIN6-H002
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 1
-AFFECTED_LOCKED_CHECKPOINT: 6.0 COMMERCE API/APPLICATION FOUNDATION (PERSISTS THROUGH 6.5)
+ADDITIONAL_REOPEN_REQUIRED: 0
+REOPEN_REASON: FIN6-H002
 
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
-FAZ_6_0_STATUS: REOPEN_REQUIRED
+FAZ_6_0_STATUS: CORRECTIVE_REOPEN_IN_PROGRESS
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
 FAZ_6_3_STATUS: LOCKED
 FAZ_6_4_STATUS: LOCKED
 FAZ_6_5_STATUS: LOCKED
-FAZ_6_FINAL_STATUS: BLOCKED_BY_REOPEN
+FAZ_6_FINAL_STATUS: PAUSED_PENDING_CORRECTIVE_LOCK
 START_POST_FAZ6: NO
 ```
 
 ---
 
-# 1. EXACT STATE REVIEWED
+# 1. AUTHORITY DECISION
 
-Reviewer independently re-read live `reviewer.md`, live `implementer.md`, live `main`, PR #29, exact final head, permanent diff, production `api.py`, fresh exact-SHA validation runs/jobs, and validated-to-final cleanup delta.
+Reviewer authorizes one narrow corrective reopen of the Commerce API/application foundation for the runtime-surface defect discovered during FAZ 6-FINAL.
 
-```text
-main:
-287367ce8eb708efce0ebae0a2f9c90d681cce01
+This is NOT a general reopen of FAZ 6.0 and is NOT permission to redesign commerce, payment, fulfillment, refund, delivery, recovery, or n8n behavior.
 
-PR #29:
-OPEN / non-draft / mergeable / unmerged
-base: 287367ce8eb708efce0ebae0a2f9c90d681cce01
-head: 1adce96b9645dc572c6819e1f782fd30ae83da91
-
-validated SHA:
-74153171164a482a41e5884629dc57a278464061
-```
-
-Permanent PR scope remains exactly:
+The sole invariant to correct is:
 
 ```text
-sitescore-commerce/docs/FAZ6_FINAL_INTEGRATED_COMMERCE_AUDIT.md
-sitescore-commerce/tests/test_faz6_final_freeze_gate.py
+resolved runtime public HTTP route set == exact authorized seven-route Commerce surface
 ```
 
-Validated SHA -> final head is exactly two commits removing only the two temporary final-validation workflow files. No permanent semantic delta exists after validation.
+The existing FAZ 6-FINAL PR #29 remains open but blocked. It must not be merged, rebased, or used as the production-fix PR before this corrective reopen is independently reviewed and user-LOCKed.
 
 ---
 
-# 2. FIN6-H001 — RESOLVED
+# 2. EXACT DEFECT — FIN6-H002
 
-The previous GET/POST-only regex freeze-gate defect is resolved.
+Current production construction is effectively:
 
-The permanent test now uses structured AST inspection and explicitly accounts for direct:
-
-```text
-GET POST PUT PATCH DELETE OPTIONS HEAD TRACE
+```python
+app = FastAPI(title="SiteScore Commerce API", version="0.6.0")
 ```
 
-plus literal `app.api_route(..., methods=[...])`, and fails closed for the tested router/alternate registration forms and dynamic literal uncertainty. The adversarial helper proof is executable and the fresh Commerce suite passes at 414 tests.
+FastAPI default application setup can register OpenAPI/documentation routes in addition to the seven intended Commerce routes. Those framework-injected routes are not visible to the source-only AST freeze extractor.
+
+Therefore the current final-freeze claim of an exact seven-route runtime surface is not yet proven and is not accepted.
 
 ```text
-FIN6-H001: RESOLVED
+FIN6-H002: OPEN_CORRECTIVE_REOPEN_AUTHORIZED
 ```
 
 ---
 
-# 3. FIN6-H002 — OPEN
+# 3. EXACT AUTHORIZED PUBLIC SURFACE
 
-## The claimed exact seven-route public HTTP surface is false at runtime because FastAPI adds implicit documentation/OpenAPI routes
-
-The 6-FINAL contract freezes the exact allowed Commerce public HTTP surface as only:
+After correction the resolved runtime application must expose only these Commerce route registrations:
 
 ```text
 POST /v1/orders
@@ -134,111 +99,187 @@ POST /v1/automation/recovery/run
 GET  /d/{opaque_token}
 ```
 
-However production `sitescore-commerce/src/sitescore_commerce/api.py` currently constructs the application as:
+No public OpenAPI, Swagger, ReDoc, OAuth2 redirect helper, router mount, websocket route, or other implicit/explicit route is authorized by this corrective reopen.
+
+---
+
+# 4. AUTHORIZED IMPLEMENTATION SCOPE
+
+Create a separate corrective branch only from exact:
+
+```text
+main@287367ce8eb708efce0ebae0a2f9c90d681cce01
+```
+
+Expected branch:
+
+```text
+corrective/faz6-6-0-runtime-http-surface
+```
+
+Expected minimal production correction is at application construction in:
+
+```text
+sitescore-commerce/src/sitescore_commerce/api.py
+```
+
+Acceptable correction direction is explicit disabling of framework-generated documentation/OpenAPI surfaces, including the relevant FastAPI constructor controls such as:
 
 ```python
-app = FastAPI(title="SiteScore Commerce API", version="0.6.0")
+openapi_url=None
+docs_url=None
+redoc_url=None
+swagger_ui_oauth2_redirect_url=None
 ```
 
-with no explicit disabling of FastAPI's default OpenAPI/documentation routes.
+Use the smallest production change that makes the resolved runtime route table conform to the already-authorized seven-route contract.
 
-FastAPI's documented defaults expose at least:
+Authorized test changes are limited to Commerce API/runtime-surface regression proof. Prefer an existing API test file if appropriate; otherwise one narrowly named test file is acceptable.
 
-```text
-/openapi.json
-/docs
-/redoc
-```
-
-(and the Swagger OAuth2 redirect helper has its own default URL).
-
-These routes are registered internally by FastAPI during application setup, not through `@app.get`/`@app.post` decorators in `api.py`. Therefore the new AST extractor does not see them and can report the seven explicit business routes as "exact" while the real runtime application exposes additional HTTP paths.
-
-This is a current runtime/public-surface mismatch, not merely a future static-analysis edge case.
-
-Consequences:
-
-1. The 6-FINAL exact-surface claim is not true for the current production app.
-2. The permanent freeze gate does not inspect the actual resolved runtime route table, so it cannot prove the intended invariant.
-3. Fixing the runtime to the already-authorized seven-route contract requires a production `api.py` change such as explicitly disabling the default OpenAPI/docs surfaces, and then proving the resolved runtime route table.
-4. Production source changes are forbidden inside the current audit-only 6-FINAL candidate.
-5. Therefore an already locked Commerce API/application foundation must be narrowly reopened before 6-FINAL can become READY_TO_LOCK.
-
-```text
-FIN6-H002: OPEN
-ADDITIONAL_REOPEN_REQUIRED: 1
-```
+Temporary exact-SHA validation workflows under `.github/workflows/` are allowed only for validation and must be removed before READY_FOR_REVIEW unless repository policy requires otherwise.
 
 ---
 
-# 4. REQUIRED CORRECTIVE REOPEN SCOPE
+# 5. STRICTLY FORBIDDEN IN THIS REOPEN
 
-Do not modify PR #29 production behavior while it remains the audit-only 6-FINAL candidate.
-
-Required next authority step is a narrow corrective reopen of the Commerce API/application foundation established in 6.0 and carried forward through 6.5.
-
-The corrective implementation must be limited to this invariant:
+Do NOT change:
 
 ```text
-resolved runtime public HTTP route set == exact authorized seven-route Commerce surface
+order/catalog semantics
+Stripe Checkout semantics
+Stripe webhook/payment authority
+payment state machine
+order.paid.v1 identity/outbox behavior
+SiteScore /v1 integration contracts
+analysis/report truth
+refund authority or refund amount semantics
+delivery grant/token semantics
+Postmark semantics
+recovery/reconciliation semantics
+n8n workflow JSON or runtime version
+migration chain or schema
+package version
+runtime dependency pins
+frozen FAZ 3/4/5 source
+FAZ 6-FINAL audit artifacts on PR #29
+post-FAZ6 implementation
 ```
 
-Expected correction direction:
+No endpoint may be added or removed except the unintended framework-generated documentation/OpenAPI surfaces being disabled.
 
-- disable unintended FastAPI OpenAPI/Swagger/ReDoc default public routes at application construction;
-- preserve all seven authorized Commerce routes and their current semantics exactly;
-- do not add new endpoint, state, payment/refund/delivery/recovery authority, migration, dependency, version bump, or n8n semantic change;
-- add a runtime-resolved route-table regression that proves the real FastAPI application has exactly the authorized surface rather than only parsing explicit decorators;
-- re-run the full affected Commerce suite, frozen 1504 baseline, migration cycle, and n8n regressions;
-- after the corrective reopen is separately reviewed and user-LOCKed, rebase/recreate the 6-FINAL audit candidate from the new locked main and re-run fresh exact-head final validation.
+If fixing FIN6-H002 unexpectedly requires any broader production behavior or contract change, STOP and report:
 
-If the intended product decision is instead to keep public OpenAPI/docs routes, that would change the already-authorized exact seven-route freeze contract and requires `CONTRACT_CHANGE_REQUIRED: 1`; no such contract change is authorized by this review.
+```text
+CONTRACT_CHANGE_REQUIRED: 1
+```
+
+or, if architectural redesign is required:
+
+```text
+DESIGN_DECISION_REVIEW_REQUIRED: 1
+```
+
+Do not self-authorize expansion.
 
 ---
 
-# 5. VALIDATION EVIDENCE REMAINS POSITIVE BUT CANNOT OVERRIDE THE RUNTIME-SURFACE MISMATCH
+# 6. MANDATORY RUNTIME PROOF
 
-Fresh exact-SHA validation at `74153171164a482a41e5884629dc57a278464061` is valid positive evidence:
+Source parsing alone is insufficient.
 
-```text
-Commerce: 414 PASS
-n8n static: 12 PASS
-migration 0001 -> 0005 / downgrade base / re-upgrade: PASS
-n8n runtime: exact 2.33.4 pinned image
-recovery scheduler/replay: PASS
-frozen FAZ3-5 total: 1504 PASS
-private S3: PASS
-Redis/Celery: PASS
-frozen scope: PASS
-secret boundary: PASS
-Python: 3.11.16
-PostgreSQL: 16.15
-```
+Add executable proof using the actual constructed FastAPI application and its resolved runtime route table (`app.routes` or an equivalently authoritative runtime inspection).
 
-The issue is that the permanent exact-surface assertion is based on source registration extraction and therefore does not test framework-injected runtime routes.
+The proof must establish at minimum:
+
+1. `/openapi.json` is absent.
+2. `/docs` is absent.
+3. `/redoc` is absent.
+4. the Swagger OAuth2 redirect helper route is absent.
+5. no other unexpected route registration exists.
+6. the seven approved Commerce routes remain present with their expected methods.
+7. all existing endpoint behavior remains unchanged.
+
+The test must fail if a future FastAPI constructor/config drift re-enables an implicit documentation/OpenAPI route.
+
+Do not replace this with another source regex/AST-only assertion.
 
 ---
 
-# 6. REVIEWER DECISION
+# 7. REQUIRED REGRESSION / VALIDATION GATES
+
+Before READY_FOR_REVIEW, produce fresh exact-SHA evidence for the corrective head.
+
+Required:
 
 ```text
-FAZ 6-FINAL: BLOCKED_BY_REOPEN
-PR: #29
-REVIEWED_HEAD_SHA: 1adce96b9645dc572c6819e1f782fd30ae83da91
-VALIDATED_SHA: 74153171164a482a41e5884629dc57a278464061
+full sitescore-commerce suite PASS
+runtime route-table regression PASS
+migration 0001 -> 0005 / downgrade base / re-upgrade PASS
+migration head == 0005_recovery_reconciliation
+n8n static 12 baseline PASS
+locked order n8n 2.33.4 runtime regression PASS
+recovery scheduler/replay regression PASS
+frozen FAZ 3/4/5 total 1504 PASS
+private S3 regression PASS
+Redis/Celery transport PASS
+frozen scope scan PASS
+secret boundary scan PASS
+```
 
-FIN6-H001: RESOLVED
-FIN6-H002: OPEN
-BLOCKERS: FIN6-H002
+Also prove:
 
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 1
+```text
+sitescore-commerce version == 0.6.0
+n8n runtime == 2.33.4
+order workflow SHA256 == 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+recovery workflow SHA256 == f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+```
 
-REVIEWER_STATE: REOPEN_REQUIRED
+Fresh CI must checkout the exact validated corrective SHA. If temporary validation workflows are deleted after validation, validated-SHA -> final-head delta must contain only those non-semantic workflow removals.
+
+---
+
+# 8. IMPLEMENTER HANDOFF REQUIREMENTS
+
+When complete, write `implementer.md` with at least:
+
+```text
+IMPLEMENTER_STATE: READY_FOR_REVIEW
 IMPLEMENTER_ACTION: STOP
+EXPECTED_BASE_SHA: 287367ce8eb708efce0ebae0a2f9c90d681cce01
+CODE_BRANCH: corrective/faz6-6-0-runtime-http-surface
+PR: <new corrective PR>
+FINAL_HEAD_SHA: <exact SHA>
+VALIDATED_SHA: <exact SHA>
+FIN6-H002: RESOLVED_BY_IMPLEMENTER_PENDING_REVIEW
+BLOCKERS: NONE
 USER_LOCK_AUTHORIZED: NO
-START_POST_FAZ6: NO
+FAZ_6_FINAL_RESUME: NO
 ```
 
-No LOCK is authorized. Reviewer STOP pending the narrow corrective-reopen authority step.
+Record exact changed files, CI run/job IDs, test totals, runtime route-table evidence, and validated-to-final delta.
+
+Then STOP.
+
+Do not merge. Do not touch PR #29 production semantics. Do not resume FAZ 6-FINAL until Reviewer verifies the corrective candidate and the user separately authorizes LOCK.
+
+---
+
+# 9. REVIEWER NEXT GATE
+
+On the next Reviewer `Devam`, Reviewer will independently verify:
+
+- live main is still the exact expected base;
+- corrective PR base/head and scope;
+- production diff is minimal;
+- real runtime route table is exact;
+- docs/OpenAPI/OAuth helper routes are absent;
+- all seven intended endpoints and semantics remain intact;
+- full Commerce + n8n + frozen validation is fresh and exact-SHA bound;
+- no scope creep exists.
+
+Only if all gates pass may Reviewer issue `READY_TO_LOCK` for the corrective PR.
+
+After user-authorized corrective LOCK and post-merge verification, FAZ 6-FINAL will be recreated/rebased from the new locked main and revalidated. Existing PR #29 is not currently lock-authorized.
+
+Reviewer STOP.
