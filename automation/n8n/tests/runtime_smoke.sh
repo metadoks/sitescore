@@ -75,6 +75,7 @@ NOT_SCORE_READY=00000000-0000-4000-8000-000000000003; ANALYSIS_FAILED=00000000-0
 ANALYSIS_PENDING=00000000-0000-4000-8000-000000000007; ATTENTION=00000000-0000-4000-8000-000000000008; EXPIRED=00000000-0000-4000-8000-000000000009; REFUND_PENDING=00000000-0000-4000-8000-000000000010
 ANALYSIS_RUNNING=00000000-0000-4000-8000-000000000011; PERMANENT_ADVANCE=00000000-0000-4000-8000-000000000012; HTTP_5XX=00000000-0000-4000-8000-000000000013; UNCERTAIN_RESPONSE=00000000-0000-4000-8000-000000000014
 RESTART_ADVANCE=00000000-0000-4000-8000-000000000015; DUPLICATE_ADVANCE=00000000-0000-4000-8000-000000000016; DELIVERY_RETRY=00000000-0000-4000-8000-000000000017; DELIVERY_FAILED=00000000-0000-4000-8000-000000000018
+DELIVERY_RESTART=00000000-0000-4000-8000-000000000019; DELIVERY_PERMANENT_RETRY=00000000-0000-4000-8000-000000000020
 READINESS_PAYLOAD="$(make_payload 10000000-0000-4000-8000-00000000aa01 "$DELIVERY")"
 wait_webhook_ready(){ local code=000; for _ in $(seq 1 60); do code="$(post_code __none__ "$READINESS_PAYLOAD" || true)"; [[ "$code" = 401 ]] && { echo N8N_PRODUCTION_WEBHOOK_READY=PASS; return 0; }; [[ "$code" = 404 || "$code" = 000 ]] || return 1; sleep 1; done; return 1; }
 assert_paced_order(){ python - "$1" "$2" <<'PY'
@@ -117,6 +118,66 @@ posts=[x for x in r if x['method']=='POST']; assert len(posts)==2 and all(x['pat
 assert d['delivery_effects'][o]==1,d
 PY
 echo N8N_DELIVERY_RETRY_PACING=PASS
+
+# Delivery-specific persisted Wait restart: first /deliver leaves commerce authoritative state pending,
+# n8n is stopped while waiting, then the same durable n8n volume resumes/converges without /advance.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload dr "$DELIVERY_RESTART")")" = 202
+DELIVERY_RESTART_CALLS=0
+for _ in $(seq 1 50); do
+  DELIVERY_RESTART_CALLS="$(python - "$DELIVERY_RESTART" <<'PY'
+import json,sys,urllib.request
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); print(d['state'][sys.argv[1]]['deliver_calls'])
+PY
+)"
+  [[ "$DELIVERY_RESTART_CALLS" = 1 ]] && break
+  sleep .1
+done
+test "$DELIVERY_RESTART_CALLS" = 1
+python - "$DELIVERY_RESTART" "$AUTOMATION_KEY" <<'PY'
+import json,sys,urllib.request
+o,key=sys.argv[1:]
+req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
+p=json.load(urllib.request.urlopen(req)); assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['retryable'] is True and p['next_action']=='delivery' and p['terminal'] is False,p
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+assert d['delivery_effects'][o]==0 and d['state'][o]['deliver_calls']==1,d
+assert set(d['state'][o])=={'deliver_calls','delivery_effects'},d['state'][o]
+assert all(not x['path'].endswith('/advance') for x in r),r
+PY
+docker stop "$CONTAINER" >/dev/null; docker start "$CONTAINER" >/dev/null; wait_health; wait_webhook_ready; sleep 5
+assert_paced_order "$DELIVERY_RESTART" 2
+python - "$DELIVERY_RESTART" "$AUTOMATION_KEY" <<'PY'
+import json,sys,urllib.request
+o,key=sys.argv[1:]
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+posts=[x for x in r if x['method']=='POST']; assert len(posts)==2 and all(x['path'].endswith('/deliver') for x in posts),r
+assert d['state'][o]['deliver_calls']==2 and d['delivery_effects'][o]==1,d
+assert all(not x['path'].endswith('/advance') for x in r),r
+req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
+p=json.load(urllib.request.urlopen(req)); assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='completed' and p['order_state']=='fulfilled' and p['next_action']=='none' and p['terminal'] is True,p
+PY
+echo N8N_DELIVERY_WAIT_RESTART=PASS
+
+# Permanently retryable delivery stays pending and is bounded by the shared finite poll horizon.
+test "$(post_code "$INGRESS_SECRET" "$(make_payload dh "$DELIVERY_PERMANENT_RETRY")")" = 202; sleep 8
+DELIVERY_BEFORE="$(python - "$DELIVERY_PERMANENT_RETRY" <<'PY'
+import json,sys,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); print(d['state'][sys.argv[1]]['deliver_calls'])
+PY
+)"; sleep 2
+DELIVERY_AFTER="$(python - "$DELIVERY_PERMANENT_RETRY" <<'PY'
+import json,sys,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); print(d['state'][sys.argv[1]]['deliver_calls'])
+PY
+)"; test "$DELIVERY_BEFORE" = "$DELIVERY_AFTER"; test "$DELIVERY_AFTER" -ge 5; test "$DELIVERY_AFTER" -le 6
+assert_paced_order "$DELIVERY_PERMANENT_RETRY" 5
+python - "$DELIVERY_PERMANENT_RETRY" "$AUTOMATION_KEY" <<'PY'
+import json,sys,urllib.request
+o,key=sys.argv[1:]
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+posts=[x for x in r if x['method']=='POST']; assert len(posts) in {5,6} and all(x['path'].endswith('/deliver') for x in posts),r
+assert d['delivery_effects'][o]==0 and all(not x['path'].endswith('/advance') for x in r),d
+req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
+p=json.load(urllib.request.urlopen(req)); assert p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['next_action']=='delivery' and p['terminal'] is False,p
+PY
+echo N8N_DELIVERY_POLL_HORIZON=PASS
 
 # Nonretryable delivery failure returns next_action none; n8n cannot fabricate fulfilled.
 test "$(post_code "$INGRESS_SECRET" "$(make_payload d3 "$DELIVERY_FAILED")")" = 202; sleep 3
