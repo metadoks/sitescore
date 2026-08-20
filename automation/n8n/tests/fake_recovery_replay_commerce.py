@@ -18,8 +18,8 @@ DELIVERY = "65000000-0000-4000-8000-000000000104"
 
 LOCK = threading.Lock()
 STATE = {
-    ANALYSIS: {"advance_calls": 0, "deliver_calls": 0, "analysis_identity_mints": 1},
-    REPORT: {"advance_calls": 0, "deliver_calls": 0, "analysis_identity_mints": 1},
+    ANALYSIS: {"advance_calls": 0, "deliver_calls": 0, "delivery_effects": 0, "analysis_identity_mints": 1},
+    REPORT: {"advance_calls": 0, "deliver_calls": 0, "delivery_effects": 0, "analysis_identity_mints": 1},
     REFUND: {"stage": 0, "advance_calls": 0, "pending_reads": 0, "refund_effects": 0, "response_loss_injected": 0},
     DELIVERY: {"deliver_calls": 0, "delivery_effects": 0, "provider_uncertain_observations": 0},
 }
