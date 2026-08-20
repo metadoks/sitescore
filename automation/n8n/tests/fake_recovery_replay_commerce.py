@@ -165,9 +165,12 @@ class Handler(BaseHTTPRequestHandler):
                 payload = projection(order_id)
             elif operation == "deliver" and order_id in {ANALYSIS, REPORT, DELIVERY}:
                 row["deliver_calls"] += 1
-                if order_id == DELIVERY and row["deliver_calls"] < 7:
-                    row["provider_uncertain_observations"] += 1
-                if row["deliver_calls"] >= 7 and row.get("delivery_effects", 0) == 0:
+                if order_id == DELIVERY:
+                    if row["deliver_calls"] < 7:
+                        row["provider_uncertain_observations"] += 1
+                    elif row["delivery_effects"] == 0:
+                        row["delivery_effects"] = 1
+                elif row["delivery_effects"] == 0:
                     row["delivery_effects"] = 1
                 record("POST", parsed.path, len(body), valid)
                 payload = projection(order_id)
