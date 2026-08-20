@@ -34,6 +34,14 @@ DELIVERY_FAILED = "00000000-0000-4000-8000-000000000018"
 DELIVERY_RESTART = "00000000-0000-4000-8000-000000000019"
 DELIVERY_PERMANENT_RETRY = "00000000-0000-4000-8000-000000000020"
 
+DELIVERY_FIXTURES = (
+    DELIVERY,
+    DELIVERY_RETRY,
+    DELIVERY_FAILED,
+    DELIVERY_RESTART,
+    DELIVERY_PERMANENT_RETRY,
+)
+
 LOCK = threading.Lock()
 STATE = {
     DELIVERY: {"deliver_calls": 0, "delivery_effects": 0},
@@ -84,6 +92,10 @@ def delivery_projection(order_id):
         if calls == 0:
             return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
         return status(order_id, "attention_required", "paid", "delivery_failed", False, False, "none")
+    if order_id == DELIVERY:
+        if calls > 0:
+            return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
+        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
     if "deliver_calls" in row and calls > 0:
         return status(order_id, "fulfilled", "paid", "completed", False, True, "none")
     return None
@@ -92,10 +104,8 @@ def delivery_projection(order_id):
 def projection(order_id):
     delivered = delivery_projection(order_id)
     if delivered is not None:
-        if order_id in {DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY} or STATE[order_id].get("deliver_calls", 0) > 0:
+        if order_id in {DELIVERY, DELIVERY_RETRY, DELIVERY_FAILED, DELIVERY_RESTART, DELIVERY_PERMANENT_RETRY} or STATE[order_id].get("deliver_calls", 0) > 0:
             return delivered
-    if order_id == DELIVERY:
-        return status(order_id, "fulfillment_in_progress", "paid", "delivery_pending", True, False, "delivery")
     if order_id == ATTENTION:
         return status(order_id, "attention_required", "paid", "analysis_failed", False, True, "none")
     if order_id == EXPIRED:
@@ -214,11 +224,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def json_response(self, code, payload):
         body = json.dumps(payload, separators=(",", ":")).encode()
-        self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers()
-        try: self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError): pass
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
-    def auth_valid(self): return self.headers.get("Authorization") == f"Bearer {EXPECTED_KEY}"
+    def auth_valid(self):
+        return self.headers.get("Authorization") == f"Bearer {EXPECTED_KEY}"
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -229,47 +245,83 @@ class Handler(BaseHTTPRequestHandler):
                     "logical_effects": {k: v.get("logical_effects", 0) for k, v in STATE.items()},
                     "delivery_effects": {k: v.get("delivery_effects", 0) for k, v in STATE.items()},
                     "state": json.loads(json.dumps(STATE)),
+                    "delivery_projections": {k: delivery_projection(k) for k in DELIVERY_FIXTURES},
                 }
-            self.json_response(200, payload); return
+            self.json_response(200, payload)
+            return
         prefix = "/v1/automation/orders/"
-        if not parsed.path.startswith(prefix): self.json_response(404,{"error":"not_found"}); return
-        order_id = parsed.path[len(prefix):]; valid=self.auth_valid()
+        if not parsed.path.startswith(prefix):
+            self.json_response(404, {"error": "not_found"})
+            return
+        order_id = parsed.path[len(prefix):]
+        valid = self.auth_valid()
         with LOCK:
             if order_id == HTTP_5XX and STATE[order_id]["get_5xx_remaining"] > 0 and valid:
-                STATE[order_id]["get_5xx_remaining"] -= 1; STATE[order_id]["get_5xx_injected"] += 1
-                record("GET",parsed.path,0,valid,"injected_5xx"); self.json_response(500,{"error":"temporary_failure"}); return
-            record("GET",parsed.path,0,valid)
-            if not valid: self.json_response(401,{"error":"unauthorized"}); return
-            try: payload=projection(order_id)
-            except KeyError: self.json_response(404,{"error":"not_found"}); return
-        self.json_response(200,payload)
+                STATE[order_id]["get_5xx_remaining"] -= 1
+                STATE[order_id]["get_5xx_injected"] += 1
+                record("GET", parsed.path, 0, valid, "injected_5xx")
+                self.json_response(500, {"error": "temporary_failure"})
+                return
+            record("GET", parsed.path, 0, valid)
+            if not valid:
+                self.json_response(401, {"error": "unauthorized"})
+                return
+            try:
+                payload = projection(order_id)
+            except KeyError:
+                self.json_response(404, {"error": "not_found"})
+                return
+        self.json_response(200, payload)
 
     def do_POST(self):
-        parsed=urlparse(self.path); prefix="/v1/automation/orders/"
-        if not parsed.path.startswith(prefix): self.json_response(404,{"error":"not_found"}); return
-        operation=None
-        if parsed.path.endswith("/advance"): operation="advance"; order_id=parsed.path[len(prefix):-len("/advance")]
-        elif parsed.path.endswith("/deliver"): operation="deliver"; order_id=parsed.path[len(prefix):-len("/deliver")]
-        else: self.json_response(404,{"error":"not_found"}); return
-        length=int(self.headers.get("Content-Length","0") or "0"); body=self.rfile.read(length) if length else b""; valid=self.auth_valid()
+        parsed = urlparse(self.path)
+        prefix = "/v1/automation/orders/"
+        if not parsed.path.startswith(prefix):
+            self.json_response(404, {"error": "not_found"})
+            return
+        operation = None
+        if parsed.path.endswith("/advance"):
+            operation = "advance"
+            order_id = parsed.path[len(prefix):-len("/advance")]
+        elif parsed.path.endswith("/deliver"):
+            operation = "deliver"
+            order_id = parsed.path[len(prefix):-len("/deliver")]
+        else:
+            self.json_response(404, {"error": "not_found"})
+            return
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(length) if length else b""
+        valid = self.auth_valid()
         if not valid:
-            with LOCK: record("POST",parsed.path,len(body),valid)
-            self.json_response(401,{"error":"unauthorized"}); return
-        if body not in {b"",b"{}"}:
-            with LOCK: record("POST",parsed.path,len(body),valid,"invalid_body")
-            self.json_response(400,{"error":"body_must_be_empty"}); return
-        uncertain=False
+            with LOCK:
+                record("POST", parsed.path, len(body), valid)
+            self.json_response(401, {"error": "unauthorized"})
+            return
+        if body not in {b"", b"{}"}:
+            with LOCK:
+                record("POST", parsed.path, len(body), valid, "invalid_body")
+            self.json_response(400, {"error": "body_must_be_empty"})
+            return
+        uncertain = False
         with LOCK:
-            try: payload=advance(order_id) if operation=="advance" else deliver(order_id)
+            try:
+                payload = advance(order_id) if operation == "advance" else deliver(order_id)
             except KeyError:
-                record("POST",parsed.path,len(body),valid,"not_found"); self.json_response(404,{"error":"not_found"}); return
-            if operation=="advance" and order_id==UNCERTAIN_RESPONSE and STATE[order_id]["uncertain_post_injected"]==0:
-                STATE[order_id]["uncertain_post_injected"]=1; uncertain=True; record("POST",parsed.path,len(body),valid,"accepted_response_delayed")
-            else: record("POST",parsed.path,len(body),valid)
-        if uncertain: time.sleep(11.0)
-        self.json_response(200,payload)
+                record("POST", parsed.path, len(body), valid, "not_found")
+                self.json_response(404, {"error": "not_found"})
+                return
+            if operation == "advance" and order_id == UNCERTAIN_RESPONSE and STATE[order_id]["uncertain_post_injected"] == 0:
+                STATE[order_id]["uncertain_post_injected"] = 1
+                uncertain = True
+                record("POST", parsed.path, len(body), valid, "accepted_response_delayed")
+            else:
+                record("POST", parsed.path, len(body), valid)
+        if uncertain:
+            time.sleep(11.0)
+        self.json_response(200, payload)
 
 
 if __name__ == "__main__":
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True); LOG_PATH.write_text("")
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOG_PATH.write_text("")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
