@@ -29,6 +29,29 @@ LOCK_CHAIN = (
     (FAZ6_LOCKED_MAIN, "bdf43a891ca14941ba2f2c4f115e4a15bec0015a", "4ed902dd9ebf230dcb983392705ab0d95bb0c846"),
 )
 
+_ALLOWED_HTTP_SURFACE = {
+    ("POST", "/v1/orders"),
+    ("POST", "/v1/webhooks/stripe"),
+    ("POST", "/v1/automation/orders/{order_id}/advance"),
+    ("POST", "/v1/automation/orders/{order_id}/deliver"),
+    ("GET", "/v1/automation/orders/{order_id}"),
+    ("POST", "/v1/automation/recovery/run"),
+    ("GET", "/d/{opaque_token}"),
+}
+_DIRECT_ROUTE_METHODS = frozenset({"get", "post", "put", "patch", "delete", "options", "head", "trace"})
+_FORBIDDEN_ROUTE_REGISTRARS = frozenset(
+    {
+        "include_router",
+        "add_api_route",
+        "route",
+        "add_route",
+        "mount",
+        "websocket",
+        "websocket_route",
+        "add_websocket_route",
+    }
+)
+
 
 def _git(*args: str) -> str:
     return subprocess.run(
@@ -52,6 +75,74 @@ def _imports(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             found.add(node.module)
     return found
+
+
+def _attribute_chain(node: ast.AST) -> tuple[str, ...] | None:
+    parts: list[str] = []
+    current = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return tuple(reversed(parts))
+
+
+def _literal_path(call: ast.Call) -> str:
+    candidates: list[ast.AST] = []
+    if call.args:
+        candidates.append(call.args[0])
+    candidates.extend(keyword.value for keyword in call.keywords if keyword.arg == "path")
+    if len(candidates) != 1:
+        raise AssertionError("route registration must declare exactly one literal path")
+    value = candidates[0]
+    if not isinstance(value, ast.Constant) or not isinstance(value.value, str) or not value.value.startswith("/"):
+        raise AssertionError("route registration path must be a literal absolute path")
+    return value.value
+
+
+def _literal_api_route_methods(call: ast.Call) -> tuple[str, ...]:
+    values = [keyword.value for keyword in call.keywords if keyword.arg == "methods"]
+    if len(values) != 1:
+        raise AssertionError("app.api_route must declare one literal methods collection")
+    container = values[0]
+    if not isinstance(container, (ast.List, ast.Tuple, ast.Set)) or not container.elts:
+        raise AssertionError("app.api_route methods must be a non-empty literal collection")
+    methods: list[str] = []
+    for item in container.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str) or not item.value.strip():
+            raise AssertionError("app.api_route methods must contain only literal method strings")
+        methods.append(item.value.strip().upper())
+    return tuple(methods)
+
+
+def _extract_public_http_surface(source: str) -> set[tuple[str, str]]:
+    tree = ast.parse(source)
+    routes: set[tuple[str, str]] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        chain = _attribute_chain(node.func)
+        if not chain or chain[0] != "app":
+            continue
+
+        registrar = chain[-1]
+        if len(chain) == 2 and registrar in _DIRECT_ROUTE_METHODS:
+            routes.add((registrar.upper(), _literal_path(node)))
+            continue
+        if len(chain) == 2 and registrar == "api_route":
+            path = _literal_path(node)
+            routes.update((method, path) for method in _literal_api_route_methods(node))
+            continue
+
+        # Current frozen API intentionally has no routers, mounts, websocket routes,
+        # imperative add_api_route calls, or app.router mutations. Any such mechanism
+        # could expand the externally reachable surface outside the enumerated set and
+        # therefore fails closed until this gate is explicitly extended to resolve it.
+        if registrar in _FORBIDDEN_ROUTE_REGISTRARS or "router" in chain[1:]:
+            raise AssertionError(f"unresolved route registration mechanism: {'.'.join(chain)}")
+    return routes
 
 
 def test_exact_lock_provenance_and_linear_main_parentage():
@@ -108,16 +199,7 @@ def test_n8n_runtime_and_locked_workflow_bytes_are_exact():
 
 def test_public_http_surface_is_exact_and_automation_posts_are_server_owned_empty_body():
     text = (SRC / "api.py").read_text()
-    routes = set(re.findall(r'@app\.(get|post)\("([^"]+)"', text))
-    assert routes == {
-        ("post", "/v1/orders"),
-        ("post", "/v1/webhooks/stripe"),
-        ("post", "/v1/automation/orders/{order_id}/advance"),
-        ("post", "/v1/automation/orders/{order_id}/deliver"),
-        ("get", "/v1/automation/orders/{order_id}"),
-        ("post", "/v1/automation/recovery/run"),
-        ("get", "/d/{opaque_token}"),
-    }
+    assert _extract_public_http_surface(text) == _ALLOWED_HTTP_SURFACE
     assert text.count("authorize_automation(authorization)") >= 4
     for phrase in (
         "automation advance request body must be empty",
@@ -127,6 +209,33 @@ def test_public_http_surface_is_exact_and_automation_posts_are_server_owned_empt
         assert phrase in text
     for header in ("Cache-Control", "private, no-store", "Referrer-Policy", "no-referrer", "X-Content-Type-Options", "nosniff"):
         assert header in text
+
+
+def test_public_http_surface_helper_detects_method_router_and_dynamic_registration_drift():
+    base = '@app.get("/ok")\ndef ok():\n    return None\n'
+    assert _extract_public_http_surface(base) == {("GET", "/ok")}
+
+    for method in ("put", "patch", "delete", "options", "head", "trace"):
+        drifted = base + f'@app.{method}("/drift")\ndef drift():\n    return None\n'
+        assert (method.upper(), "/drift") in _extract_public_http_surface(drifted)
+
+    api_route = base + '@app.api_route("/multi", methods=["PUT", "DELETE"])\ndef multi():\n    return None\n'
+    assert _extract_public_http_surface(api_route) == {("GET", "/ok"), ("PUT", "/multi"), ("DELETE", "/multi")}
+
+    fail_closed = (
+        'app.include_router(router)',
+        'app.add_api_route("/hidden", endpoint, methods=["GET"])',
+        'app.router.add_api_route("/hidden", endpoint, methods=["GET"])',
+        'app.api_route(dynamic_path, methods=["GET"])(endpoint)',
+        'app.api_route("/hidden", methods=dynamic_methods)(endpoint)',
+    )
+    for registration in fail_closed:
+        try:
+            _extract_public_http_surface(registration)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"route drift was silently ignored: {registration}")
 
 
 def test_commerce_runtime_does_not_import_frozen_sitescore_authority():
