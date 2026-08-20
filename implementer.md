@@ -5,7 +5,6 @@ HANDOFF_PROTOCOL_VERSION: 1.0
 AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: IMPLEMENTER CHAT
-
 CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.4
 CHECKPOINT_TITLE: Delivery Grant + Transactional Email
@@ -13,7 +12,6 @@ IMPLEMENTER_STATE: READY_FOR_REVIEW
 IMPLEMENTER_ACTION: STOP
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
-
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
 LIVE_MAIN_SHA: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
@@ -26,63 +24,28 @@ PR_MERGED: FALSE
 HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
 VALIDATED_SHA: 2501d6af71b4c9057a8f5b3008d9c4db3ba15377
 VALIDATED_TO_FINAL_COMMITS: 2
-VALIDATED_TO_FINAL_DIFF: ONLY .github/workflows/faz6-6-4-validation.yml AND .github/workflows/faz6-6-4-frozen-validation.yml REMOVED
+VALIDATED_TO_FINAL_DIFF: ONLY TEMPORARY 6.4 VALIDATION WORKFLOWS REMOVED
 POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
-
 EXPECTED_COMMERCE_VERSION: 0.5.0
 EXPECTED_MIGRATION_HEAD: 0004_delivery_email
 N8N_RUNTIME_VERSION: 2.33.4
 N8N_VALIDATED_IMAGE_DIGEST: sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
 WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-
 COMMERCE_CI_RUN_ID: 32306516241
 COMMERCE_CI_JOB_ID: 96240342784
 COMMERCE_CI_CONCLUSION: SUCCESS
 FROZEN_CI_RUN_ID: 32306516300
 FROZEN_CI_JOB_ID: 96240342892
 FROZEN_CI_CONCLUSION: SUCCESS
-
 COMMERCE_TESTS: 313 PASS
 N8N_STATIC_TESTS: 9 PASS
 FROZEN_TOTAL_TESTS: 1504 PASS
 COMBINED_COMMERCE_FROZEN_PYTEST: 1817 PASS
-
-POSTGRESQL_16_MIGRATION_UPGRADE_DOWNGRADE_UPGRADE: PASS
-DELIVERY_0004: PASS
-SECRET_BOUNDARY_SCAN: PASS
-PRIVATE_S3_REGRESSION: PASS
-REDIS_CELERY_TRANSPORT: PASS
-N8N_DELIVERY_ACCEPTED_TO_FULFILLED: PASS
-N8N_DELIVERY_RETRY_PACING: PASS
-N8N_DELIVERY_FAILED_STOP: PASS
-N8N_DUPLICATE_REPLAY_CONVERGENCE: PASS
-N8N_WAIT_RESTART: PASS
-N8N_COMMERCE_5XX_RECOVERY: PASS
-N8N_COMMERCE_TIMEOUT_REPLAY_CONVERGENCE: PASS
-N8N_REAL_ADVANCE_POLL_HORIZON: PASS
-
-DELIVERY_GRANT_DIGEST_ONLY: IMPLEMENTED
-DELIVERY_GRANT_EXACT_7_DAY_EXPIRY: IMPLEMENTED
-DELIVERY_GRANT_REVOCATION_AUTHORITY: IMPLEMENTED
-PUBLIC_DOWNLOAD_PROXY: IMPLEMENTED
-FROZEN_REPORT_CONTENT_REVERIFICATION: IMPLEMENTED
-POSTMARK_ACCEPTANCE_EVIDENCE: IMPLEMENTED
-BOUNDED_DELIVERY_RETRIES: IMPLEMENTED
-RAW_TOKEN_ACCESS_LOG_HARDENING_DOC: IMPLEMENTED
-N8N_BODYLESS_DELIVER_EXTENSION: IMPLEMENTED
-
-REVIEWER_STATE_SEEN: IMPLEMENTATION_REQUESTED
-IMPLEMENTER_ACTION_SEEN: IMPLEMENT
 DEL64-H001: NOT_OPENED
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-
-FAZ_3_STATUS: FROZEN
-FAZ_4_STATUS: FROZEN
-FAZ_5_STATUS: FROZEN
-FAZ_6_STATUS: IN_PROGRESS
 FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
@@ -91,12 +54,10 @@ FAZ_6_4_STATUS: READY_FOR_REVIEW
 START_6_5: NO
 ```
 
-FAZ 6.4 was implemented only from the Reviewer-authorized frozen base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba` on PR #27. Package `sitescore-commerce==0.5.0`, migration `0004_delivery_email`, digest-only seven-day revocable grants, verified public download proxy, Postmark acceptance evidence, bounded delivery retries, explicit revocation, logging guidance, and the minimum bodyless n8n delivery branch are implemented. No FAZ 3/4/5 frozen source mutation and no FAZ 6.5 work occurred.
+FAZ 6.4 is implemented only from the Reviewer-authorized base. Delivery grants are high-entropy, digest-only, exact seven-day, revocable and report/order-bound. The commerce public download proxy freshly verifies the frozen report/content and PDF integrity. Postmark remains commerce-only with durable accepted/rejected/uncertain evidence and bounded retries. Fulfillment completion requires paid order, exact completed analysis, exact ready report, valid grant and durable provider acceptance. Delivery failure does not rewrite payment or frozen analytical/report truth. The locked n8n 6.3 graph was extended only at the delivery boundary using a bodyless commerce `/deliver` call followed by the existing finite Wait/poll path.
 
-Authoritative commerce+n8n validation at exact SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`: run `32306516241`, job `96240342784`, SUCCESS; commerce 313 PASS, n8n static 9 PASS, PostgreSQL 16 migration cycle and pinned n8n 2.33.4 delivery/retry/restart/fault integration PASS.
+At validated SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`, commerce+n8n run `32306516241` / job `96240342784` and frozen run `32306516300` / job `96240342892` both succeeded. Commerce 313 PASS, frozen 1504 PASS, n8n static 9 PASS; PostgreSQL 16 migration cycle, private S3, Redis/Celery, secret/scope scans and n8n 2.33.4 runtime integration all passed.
 
-Separate frozen validation at the same SHA: run `32306516300`, job `96240342892`, SUCCESS; frozen total 1504 PASS, private S3, Redis/Celery, scope and secret-boundary scans PASS. Commerce + frozen pytest total: 1817 PASS.
+Final review HEAD is `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762`. GitHub compare from validated SHA is exactly two commits ahead, solely removing `.github/workflows/faz6-6-4-validation.yml` and `.github/workflows/faz6-6-4-frozen-validation.yml`; no product code changed after validation. PR #27 remains OPEN / mergeable / non-draft / unmerged and live main remains the exact expected base.
 
-Validated SHA -> final review HEAD `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762` is exactly two commits ahead and only removes the two temporary validation workflows. No product code changed after validation. PR #27 remains open, mergeable, non-draft and unmerged; live main remains the exact expected base.
-
-FAZ 6.4 is READY_FOR_REVIEW. No LOCK/merge. START_6_5=NO. Implementer STOP.
+No merge/LOCK was performed. FAZ 6.5 was not started. Implementer STOP pending fresh Reviewer decision.
