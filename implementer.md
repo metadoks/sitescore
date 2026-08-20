@@ -26,7 +26,7 @@ PR_MERGED: FALSE
 FINAL_REVIEW_HEAD_SHA: 4ed902dd9ebf230dcb983392705ab0d95bb0c846
 VALIDATED_SHA: 415d394e114316a908c58c1b8daeaf44a3136401
 VALIDATED_TO_FINAL_COMMITS: 2
-VALIDATED_TO_FINAL_DIFF: ONLY .github/workflows/faz6-6-5-validation.yml AND .github/workflows/faz6-6-5-frozen-validation.yml REMOVED
+VALIDATED_TO_FINAL_DIFF: ONLY TEMPORARY 6.5 VALIDATION WORKFLOWS REMOVED
 POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
 
 EXPECTED_COMMERCE_VERSION: 0.6.0
@@ -61,30 +61,6 @@ CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-R65_A_STALE_REAL_STRIPE_INBOX_RESUME: PASS
-R65_B_SERVER_POLL_PAYMENT_RECONCILIATION: PASS
-R65_C_UNPUBLISHED_OUTBOX_RECOVERY: PASS
-R65_D_PUBLISHED_SAME_IDENTITY_REPLAY: PASS
-R65_E_DOWNSTREAM_STUCK_REPLAY_CONVERGENCE: PASS
-R65_F_INVARIANT_FINDING_FAIL_CLOSED: PASS
-RECOVERY_LEASE_CRASH_RECLAIM: PASS
-RECOVERY_STALE_WORKER_NO_OVERWRITE: PASS
-RECOVERY_BOUNDED_BATCH_BACKOFF: PASS
-NO_DB_TRANSACTION_ACROSS_EXTERNAL_HTTP: PASS
-NO_SYNTHETIC_STRIPE_EVENT_IDENTITY: PASS
-POLL_RECEIPT_ATOMICITY: PASS
-WEBHOOK_VS_POLL_CONVERGENCE: PASS
-
-N8N_RECOVERY_SCHEDULE_IMPORT: PASS
-N8N_RECOVERY_SCHEDULE_PUBLISH: PASS
-N8N_RECOVERY_NATURAL_SCHEDULE_TRIGGER: PASS
-N8N_RECOVERY_SINGLE_BOUNDED_CALL: PASS
-N8N_RECOVERY_REPLAY_ANALYSIS_PENDING: PASS
-N8N_RECOVERY_REPLAY_REPORT_PENDING: PASS
-N8N_RECOVERY_REPLAY_REFUND_RESPONSE_LOSS: PASS
-N8N_RECOVERY_REPLAY_DELIVERY_UNCERTAIN: PASS
-N8N_RECOVERY_REPLAY_LOCKED_WORKFLOW_CONVERGENCE: PASS
-
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
@@ -100,100 +76,81 @@ START_6_FINAL: NO
 
 ## Reviewer hardening closure
 
-Reviewer reviewed prior head `9a8cb1bccf36447f273dc52c16533f57f81dde22` and opened `REC65-H001` and `REC65-H002`. Both were hardened on the same FAZ 6.5 branch/PR without widening checkpoint authority.
+Reviewer opened `REC65-H001` and `REC65-H002` against prior reviewed head `9a8cb1bccf36447f273dc52c16533f57f81dde22`. Both were hardened on the same branch and PR without widening FAZ 6.5 authority.
 
 ### REC65-H001 — legacy 0004 -> 0005 received-event lineage
 
-Resolved behavior:
+Migration `0005_recovery_reconciliation` now handles a populated FAZ 6.4 database safely. Existing real Stripe inbox rows still in `received` can be deterministically correlated only through their stored exact Checkout Session identity to the structurally unique local Checkout Session binding. A safely correlated legacy row resumes using the original real `stripe_event_id`; no synthetic Event ID, fake webhook/inbox row, or fabricated verified-event lineage is created. An orphan/uncorrelatable legacy row is quarantined to sanitized `attention_required`. New post-0005 verified events remain bound to `verified_event_v1` candidate-order lineage and cannot use the legacy fallback when that immutable candidate correlation is absent.
 
-- migration `0005_recovery_reconciliation` preserves populated pre-0005 `stripe_event_inbox` rows in `received`;
-- a legacy received row may be correlated only through its exact stored Stripe Checkout Session identity to the structurally unique local `checkout_sessions.stripe_checkout_session_id` binding;
-- safely correlated legacy rows resume with the original real `stripe_event_id`; no synthetic Stripe Event ID, fake webhook, fake inbox row, or fabricated verified-event lineage marker is created;
-- legacy rows that cannot be correlated safely are migrated fail-closed to `attention_required` with sanitized `legacy_event_session_correlation_invalid`;
-- post-0005 newly verified events remain under immutable `verified_event_v1` candidate-order lineage and cannot fall back to legacy session correlation when that signed candidate lineage is absent.
+PostgreSQL hardening tests cover populated 0004 -> 0005 paid and expired resumption, original-event preservation, orphan quarantine, unique local Checkout Session correlation, and post-0005 missing-candidate fail-closed behavior.
 
-PostgreSQL adversarial proof covers populated 0004 -> 0005 upgrade for both real completed/paid and expired/unpaid events, orphan legacy sessions, uniqueness of local Checkout Session binding, and post-0005 missing-candidate fail-closed behavior.
+### REC65-H002 — durable paid authority before outbox publish/replay
 
-### REC65-H002 — durable paid Stripe authority before n8n publish/replay
+Before any recovery n8n publish/replay I/O, the implementation now proves coherent durable paid Stripe authority: local payment truth is paid, an exact Checkout Session binding exists, stored session/payment state is `complete/paid`, PaymentIntent exists, livemode is present and matches configuration, reconciliation evidence exists, and the winning poll receipt or processed real Stripe event is coherent with that binding.
 
-Resolved behavior:
+Adversarial PostgreSQL tests independently corrupt missing PaymentIntent, session-not-complete, payment-not-paid, absent livemode, livemode mismatch, session identity conflict, and missing reconciliation timestamp for both unpublished and already-published outbox cases. Each corrupted shape fails closed to a sanitized `paid_*` recovery finding with zero n8n calls, zero replay audit, and no change to original outbox publication history. Valid shapes still send the exact original outbox UUID and original `occurred_at`.
 
-Before either unpublished `order.paid.v1` publication or stale published-event replay can perform n8n I/O, recovery now validates durable paid authority. The fail-closed guard requires coherent durable evidence including exact bound Checkout Session, paid payment state, `complete/paid`, PaymentIntent identity, expected livemode, reconciliation timestamp, and coherence with the winning poll receipt or processed real Stripe event authority.
+## Recovery invariants retained
 
-Adversarial PostgreSQL tests corrupt each of the following independently for both unpublished and published outbox paths:
+- stale real Stripe `received` recovery uses the original real Event identity;
+- direct server poll does not fabricate Stripe Events/inbox rows and persists its own immutable payment-poll receipt only when its terminal transition wins;
+- webhook/poll races converge to one terminal payment truth and at most one `order.paid.v1` event;
+- unpublished outbox publication and stale published replay use the same durable outbox identity;
+- published replay never clears or rewrites historical `published_at`;
+- downstream analysis/report/refund/delivery recovery re-enters the locked Commerce/n8n authority path rather than duplicating those state machines;
+- claim/lease commits occur before provider I/O and no recovery DB transaction/row lock is held across external HTTP;
+- expired leases are reclaimable and stale workers cannot finalize after lease loss;
+- bounded server-owned batch/backoff prevents hot loops;
+- terminal/attention states are not automatically reopened;
+- impossible paid/outbox/identity shapes fail closed to durable sanitized findings.
 
-- missing PaymentIntent;
-- Checkout Session not complete;
-- payment status not paid;
-- livemode absent;
-- livemode mismatch;
-- Checkout Session identity conflict;
-- reconciliation timestamp absent.
+## Protected scheduler boundary
 
-Every corrupted case produces a sanitized durable `paid_*` recovery finding, performs zero n8n I/O, creates no replay audit, and preserves the original outbox identity/publication history. Valid paid bindings still publish/replay the exact original outbox UUID and original `occurred_at`.
+Production control remains:
+
+```text
+POST /v1/automation/recovery/run
+Authorization: existing COMMERCE_AUTOMATION_API_KEY
+request body: empty
+```
+
+The response exposes aggregate counts only. Caller/n8n cannot choose order ID, target state, provider truth, retry count, timestamps, batch size, payment/refund/delivery truth, or analytics identity.
+
+The separate native n8n recovery schedule workflow runs every five minutes and only invokes this bounded Commerce endpoint. It contains no Code/Function business logic and receives no Stripe/Postmark/SiteScore/DB/S3/Redis/Celery/customer/delivery-token material. n8n remains exactly 2.33.4.
+
+The already-LOCKED order workflow remains byte-for-byte at SHA-256 `02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1`.
 
 ## Exact-head validation
 
-Authoritative hardening validation SHA:
+Authoritative validated SHA:
 
 `415d394e114316a908c58c1b8daeaf44a3136401`
 
 Commerce/n8n run `32406078523`, job `96545367855`: SUCCESS.
 
-Evidence:
-
-- Python 3.11.16;
-- PostgreSQL 16.15;
-- `sitescore-commerce==0.6.0`;
-- migration upgrade -> downgrade base -> re-upgrade PASS;
-- migration head `0005_recovery_reconciliation` PASS;
-- full Commerce suite 403 PASS, including Reviewer H001/H002 PostgreSQL hardening cases;
-- n8n static 12 PASS;
-- n8n runtime exactly 2.33.4 at pinned digest;
-- locked `sitescore-order-paid-v1` workflow remains byte-for-byte SHA-256 `02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1`;
-- delivery/analysis/report/refund/restart/horizon locked-workflow regressions PASS;
-- recovery scheduler import/publication/natural schedule/single bounded call PASS;
-- same-identity recovery replay convergence for analysis pending, report pending, refund response loss, and delivery uncertainty PASS.
+Evidence includes Python 3.11.16, PostgreSQL 16.15, package 0.6.0, migration upgrade/downgrade/re-upgrade at `0005_recovery_reconciliation`, full Commerce **403 PASS**, n8n static **12 PASS**, exact pinned n8n runtime/digest, locked order-workflow regressions, recovery scheduler import/publication/natural 5-minute trigger/single bounded call, and same-identity recovery replay convergence for analysis pending, report pending, refund response loss and delivery uncertainty.
 
 Frozen run `32406078549`, job `96545368022`: SUCCESS.
 
-Frozen evidence:
+Frozen regression remains **1504 PASS**: report 24 + API 105 + app 19 + pipeline 53 + benchmarks 191 + metrics 67 + spatial 180 + providers 418 + data 361 + core 86. Private S3, Redis/Celery transport, frozen-scope and secret-boundary proofs also PASS.
 
-- report 24 PASS;
-- API 105 PASS;
-- app 19 PASS;
-- pipeline 53 PASS;
-- benchmarks 191 PASS;
-- metrics 67 PASS;
-- spatial 180 PASS;
-- providers 418 PASS;
-- data 361 PASS;
-- core 86 PASS;
-- frozen total 1504 PASS;
-- private S3 PASS;
-- Redis/Celery transport PASS;
-- frozen-scope scan PASS;
-- secret-boundary scan PASS.
+Commerce + frozen pytest total = **1907 PASS**.
 
-Commerce + frozen pytest total = 1907 PASS.
-
-After successful exact-head validation, only the two temporary checkpoint validation workflows were removed. GitHub compare proves:
+After exact-head validation, only the two temporary validation workflows were removed. GitHub compare proves:
 
 ```text
-415d394e114316a908c58c1b8daeaf44a3136401
--> 4ed902dd9ebf230dcb983392705ab0d95bb0c846
-commits: 2
-files changed: exactly 2
-.github/workflows/faz6-6-5-validation.yml: removed
-.github/workflows/faz6-6-5-frozen-validation.yml: removed
+validated: 415d394e114316a908c58c1b8daeaf44a3136401
+final:     4ed902dd9ebf230dcb983392705ab0d95bb0c846
+ahead_by: 2
+changed paths:
+  .github/workflows/faz6-6-5-validation.yml              REMOVED
+  .github/workflows/faz6-6-5-frozen-validation.yml       REMOVED
 ```
 
-No product/source/test semantic change exists after validation.
+No product/source/test semantic changes exist after validation.
 
-## Final handoff
+## Handoff
 
-PR #28 is open, non-draft, mergeable and unmerged at exact final review head `4ed902dd9ebf230dcb983392705ab0d95bb0c846`. Live `main` remains exact expected pre-lock base `bdf43a891ca14941ba2f2c4f115e4a15bec0015a`.
+PR #28 is open, non-draft, mergeable and unmerged at exact final head `4ed902dd9ebf230dcb983392705ab0d95bb0c846`. Live `main` remains exact expected base `bdf43a891ca14941ba2f2c4f115e4a15bec0015a`.
 
-Implementer reports `REC65-H001` and `REC65-H002` resolved with fresh exact-head evidence and requests Reviewer re-review of the final head. No merge/LOCK is assumed or performed.
-
-FAZ 6.5 is READY_FOR_REVIEW. Implementer STOP. FAZ 6-FINAL has not been started and remains prohibited until a later Reviewer `READY_TO_LOCK`, literal user `LOCK`, successful exact merge verification, and a separate fresh Reviewer transition.
+Implementer reports both Reviewer blockers resolved with fresh exact-head evidence and STOPs for independent Reviewer re-review. No merge or LOCK was performed or assumed. FAZ 6-FINAL remains NOT STARTED.
