@@ -133,27 +133,23 @@ PY
   sleep .1
 done
 test "$DELIVERY_RESTART_CALLS" = 1
-python - "$DELIVERY_RESTART" "$AUTOMATION_KEY" <<'PY'
+python - "$DELIVERY_RESTART" <<'PY'
 import json,sys,urllib.request
-o,key=sys.argv[1:]
-req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
-p=json.load(urllib.request.urlopen(req)); assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['retryable'] is True and p['next_action']=='delivery' and p['terminal'] is False,p
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); p=d['delivery_projections'][o]; r=[x for x in d['requests'] if o in x['path']]
+assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['retryable'] is True and p['next_action']=='delivery' and p['terminal'] is False,p
 assert d['delivery_effects'][o]==0 and d['state'][o]['deliver_calls']==1,d
 assert set(d['state'][o])=={'deliver_calls','delivery_effects'},d['state'][o]
 assert all(not x['path'].endswith('/advance') for x in r),r
 PY
 docker stop "$CONTAINER" >/dev/null; docker start "$CONTAINER" >/dev/null; wait_health; wait_webhook_ready; sleep 5
 assert_paced_order "$DELIVERY_RESTART" 2
-python - "$DELIVERY_RESTART" "$AUTOMATION_KEY" <<'PY'
+python - "$DELIVERY_RESTART" <<'PY'
 import json,sys,urllib.request
-o,key=sys.argv[1:]
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]; p=d['delivery_projections'][o]
 posts=[x for x in r if x['method']=='POST']; assert len(posts)==2 and all(x['path'].endswith('/deliver') for x in posts),r
 assert d['state'][o]['deliver_calls']==2 and d['delivery_effects'][o]==1,d
 assert all(not x['path'].endswith('/advance') for x in r),r
-req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
-p=json.load(urllib.request.urlopen(req)); assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='completed' and p['order_state']=='fulfilled' and p['next_action']=='none' and p['terminal'] is True,p
+assert p['order_id']==o and p['payment_state']=='paid' and p['fulfillment_state']=='completed' and p['order_state']=='fulfilled' and p['next_action']=='none' and p['terminal'] is True,p
 PY
 echo N8N_DELIVERY_WAIT_RESTART=PASS
 
@@ -168,14 +164,12 @@ import json,sys,urllib.request; d=json.load(urllib.request.urlopen('http://127.0
 PY
 )"; test "$DELIVERY_BEFORE" = "$DELIVERY_AFTER"; test "$DELIVERY_AFTER" -ge 5; test "$DELIVERY_AFTER" -le 6
 assert_paced_order "$DELIVERY_PERMANENT_RETRY" 5
-python - "$DELIVERY_PERMANENT_RETRY" "$AUTOMATION_KEY" <<'PY'
+python - "$DELIVERY_PERMANENT_RETRY" <<'PY'
 import json,sys,urllib.request
-o,key=sys.argv[1:]
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]
+o=sys.argv[1]; d=json.load(urllib.request.urlopen('http://127.0.0.1:18080/__stats')); r=[x for x in d['requests'] if o in x['path']]; p=d['delivery_projections'][o]
 posts=[x for x in r if x['method']=='POST']; assert len(posts) in {5,6} and all(x['path'].endswith('/deliver') for x in posts),r
 assert d['delivery_effects'][o]==0 and all(not x['path'].endswith('/advance') for x in r),d
-req=urllib.request.Request(f'http://127.0.0.1:18080/v1/automation/orders/{o}',headers={'Authorization':f'Bearer {key}'})
-p=json.load(urllib.request.urlopen(req)); assert p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['next_action']=='delivery' and p['terminal'] is False,p
+assert p['payment_state']=='paid' and p['fulfillment_state']=='delivery_pending' and p['next_action']=='delivery' and p['terminal'] is False,p
 PY
 echo N8N_DELIVERY_POLL_HORIZON=PASS
 
