@@ -100,35 +100,34 @@ curl -fsS http://127.0.0.1:18081/__stats >/dev/null
 # requires an Execute Workflow Trigger. The production artifact must remain a
 # pure Schedule Trigger -> Commerce HTTP workflow, so exercise the exact saved
 # workflow through n8n's manual-run API and explicitly select the Schedule
-# Trigger as the start node. The HTTP listener uses 5680 so it cannot collide
-# with n8n's internal task-broker listener.
+# Trigger as the start node. n8n 2.33.4 may return HTTP 200 with an empty body
+# for this endpoint, so the proof is acceptance plus the exact Commerce side
+# effect rather than a non-contractual response-body shape.
 docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5680:5680 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
 RUN_CODE=$(curl -sS -b "$COOKIE_JAR" -o "$TMP_DIR/run.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST "http://127.0.0.1:5680/rest/workflows/$WORKFLOW_ID/run" -d '{"triggerToStartFrom":{"name":"Recovery Schedule"}}')
-cat "$TMP_DIR/run.body"
 test "$RUN_CODE" = 200
-python - "$TMP_DIR/run.body" <<'PY'
-import json,sys
-payload=json.load(open(sys.argv[1])); data=payload.get('data',payload)
-assert isinstance(data,dict) and data.get('executionId'),payload
-PY
-echo N8N_RECOVERY_MANUAL_TRIGGER_API=PASS
+echo N8N_RECOVERY_MANUAL_TRIGGER_HTTP=PASS
 
+COUNT=0
 for _ in $(seq 1 100); do
-  COUNT="$(python - <<'PY'
-import json,urllib.request
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18081/__stats'))
-print(len(d['requests']))
+  if curl -fsS http://127.0.0.1:18081/__stats -o "$TMP_DIR/stats.json" 2>/dev/null && python - "$TMP_DIR/stats.json" >/tmp/n8n65-count 2>/dev/null <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1])); print(len(d['requests']))
 PY
-)"
+  then
+    COUNT="$(cat /tmp/n8n65-count)"
+  else
+    COUNT=0
+  fi
   [[ "$COUNT" = 1 ]] && break
   sleep .1
 done
 
-python - <<'PY'
-import json,urllib.request
-d=json.load(urllib.request.urlopen('http://127.0.0.1:18081/__stats'))
-r=d['requests']
+test "$COUNT" = 1
+python - "$TMP_DIR/stats.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1])); r=d['requests']
 assert len(r)==1,r
 assert r[0]['method']=='POST' and r[0]['path']=='/v1/automation/recovery/run',r
 assert r[0]['body_len']==0 and r[0]['auth_valid'] is True,r
