@@ -10,8 +10,6 @@ VOLUME="sitescore-n8n65-${RUN_TOKEN}"
 CONTAINER="sitescore-n8n65-${RUN_TOKEN}"
 TMP_DIR="$(mktemp -d)"
 EXPORT_DIR="$TMP_DIR/export"
-COOKIE_JAR="$TMP_DIR/cookies.txt"
-OWNER_EMAIL="sitescore-recovery-ci@example.test"
 mkdir -p "$EXPORT_DIR"; chmod 777 "$EXPORT_DIR"
 RUNTIME_OK=0
 
@@ -57,7 +55,7 @@ wait_health(){ for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:5680/healthz
 
 docker run -d --name "$CONTAINER" -p 5680:5680 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
-SETUP_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/owner/setup -d '{"email":"'"$OWNER_EMAIL"'","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
+SETUP_CODE=$(curl -sS -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/owner/setup -d '{"email":"sitescore-recovery-ci@example.test","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
 test "$SETUP_CODE" = 200
 echo N8N_RECOVERY_INSTANCE_PROVISIONING=PASS
 docker stop "$CONTAINER" >/dev/null; docker rm "$CONTAINER" >/dev/null
@@ -72,6 +70,8 @@ m=[x for x in items if x.get('name')=='SiteScore Recovery Scheduler v1.0.0']
 assert len(m)==1,m
 assert m[0].get('id')=='sitescoreRecoveryScheduleV1',m[0]
 assert [n['type'] for n in m[0]['nodes']]==['n8n-nodes-base.scheduleTrigger','n8n-nodes-base.httpRequest']
+interval=m[0]['nodes'][0]['parameters']['rule']['interval']
+assert interval==[{'field':'minutes','minutesInterval':5}],interval
 print(m[0]['id'])
 PY
 )"
@@ -96,41 +96,16 @@ FAKE_RECOVERY_AUTOMATION_KEY="$AUTOMATION_KEY" python "$FAKE_SERVER" >/tmp/n8n65
 for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:18081/__stats >/dev/null 2>&1 && break; sleep .2; done
 curl -fsS http://127.0.0.1:18081/__stats >/dev/null
 
-# Exercise the exact saved Schedule Trigger workflow through n8n's manual-run
-# API. Re-authenticate after the import/publish stop-start cycle instead of
-# relying on a setup-session cookie. n8n 2.33.4 may return HTTP 200 with an
-# empty body here, so acceptance plus the exact Commerce side effect is the
-# authoritative runtime proof.
+# Production-faithful runtime proof: start the published workflow and let the
+# exact five-minute Schedule Trigger fire naturally. This avoids relying on
+# n8n's private/editor manual-run API and proves the autonomous scheduler path.
 docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5680:5680 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
-rm -f "$COOKIE_JAR"
-LOGIN_CODE=000
-for _ in $(seq 1 30); do
-  set +e
-  LOGIN_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/login.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5680/rest/login -d '{"emailOrLdapLoginId":"'"$OWNER_EMAIL"'","password":"'"$OWNER_PASSWORD"'"}')
-  CURL_STATUS=$?
-  set -e
-  [[ "$CURL_STATUS" = 0 && "$LOGIN_CODE" = 200 ]] && break
-  sleep .5
-done
-test "$LOGIN_CODE" = 200
-test -s "$COOKIE_JAR"
-echo N8N_RECOVERY_RELOGIN=PASS
-
-RUN_CODE=000
-for _ in $(seq 1 30); do
-  set +e
-  RUN_CODE=$(curl -sS -b "$COOKIE_JAR" -o "$TMP_DIR/run.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST "http://127.0.0.1:5680/rest/workflows/$WORKFLOW_ID/run" -d '{"triggerToStartFrom":{"name":"Recovery Schedule"}}')
-  CURL_STATUS=$?
-  set -e
-  [[ "$CURL_STATUS" = 0 && "$RUN_CODE" = 200 ]] && break
-  sleep .5
-done
-test "$RUN_CODE" = 200
-echo N8N_RECOVERY_MANUAL_TRIGGER_HTTP=PASS
 
 COUNT=0
-for _ in $(seq 1 100); do
+# A 5-minute interval may align to a clock boundary; 330 seconds safely covers
+# one full interval plus startup jitter without changing the production artifact.
+for _ in $(seq 1 330); do
   if curl -fsS http://127.0.0.1:18081/__stats -o "$TMP_DIR/stats.json" 2>/dev/null && python - "$TMP_DIR/stats.json" >/tmp/n8n65-count 2>/dev/null <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1])); print(len(d['requests']))
@@ -141,7 +116,7 @@ PY
     COUNT=0
   fi
   [[ "$COUNT" = 1 ]] && break
-  sleep .1
+  sleep 1
 done
 
 test "$COUNT" = 1
@@ -152,6 +127,7 @@ assert len(r)==1,r
 assert r[0]['method']=='POST' and r[0]['path']=='/v1/automation/recovery/run',r
 assert r[0]['body_len']==0 and r[0]['auth_valid'] is True,r
 PY
+echo N8N_RECOVERY_NATURAL_SCHEDULE_TRIGGER=PASS
 echo N8N_RECOVERY_SINGLE_BOUNDED_CALL=PASS
 
 RUNTIME_OK=1
