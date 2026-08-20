@@ -10,6 +10,7 @@ VOLUME="sitescore-n8n65-${RUN_TOKEN}"
 CONTAINER="sitescore-n8n65-${RUN_TOKEN}"
 TMP_DIR="$(mktemp -d)"
 EXPORT_DIR="$TMP_DIR/export"
+COOKIE_JAR="$TMP_DIR/cookies.txt"
 mkdir -p "$EXPORT_DIR"; chmod 777 "$EXPORT_DIR"
 RUNTIME_OK=0
 
@@ -55,8 +56,9 @@ wait_health(){ for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:5679/healthz
 
 docker run -d --name "$CONTAINER" -p 5679:5679 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
 wait_health
-SETUP_CODE=$(curl -sS -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5679/rest/owner/setup -d '{"email":"sitescore-recovery-ci@example.test","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
+SETUP_CODE=$(curl -sS -c "$COOKIE_JAR" -o "$TMP_DIR/owner.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST http://127.0.0.1:5679/rest/owner/setup -d '{"email":"sitescore-recovery-ci@example.test","firstName":"SiteScore","lastName":"Recovery","password":"'"$OWNER_PASSWORD"'"}')
 test "$SETUP_CODE" = 200
+test -s "$COOKIE_JAR"
 echo N8N_RECOVERY_INSTANCE_PROVISIONING=PASS
 docker stop "$CONTAINER" >/dev/null; docker rm "$CONTAINER" >/dev/null
 
@@ -94,12 +96,34 @@ FAKE_RECOVERY_AUTOMATION_KEY="$AUTOMATION_KEY" python "$FAKE_SERVER" >/tmp/n8n65
 for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:18081/__stats >/dev/null 2>&1 && break; sleep .2; done
 curl -fsS http://127.0.0.1:18081/__stats >/dev/null
 
-set +e
-docker run --rm --add-host=host.docker.internal:host-gateway "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" execute --id="$WORKFLOW_ID" >/tmp/n8n65-execute.log 2>&1
-EXECUTE_EXIT=$?
-set -e
-cat /tmp/n8n65-execute.log
-test "$EXECUTE_EXIT" = 0
+# The n8n CLI execute command is a sub-workflow entry path and intentionally
+# requires an Execute Workflow Trigger.  The production artifact must remain a
+# pure Schedule Trigger -> Commerce HTTP workflow, so exercise the exact saved
+# workflow through n8n's manual-run API and explicitly select the Schedule
+# Trigger as the start node.  This is the same manual trigger path used by the
+# editor and does not mutate the production five-minute schedule definition.
+docker run -d --name "$CONTAINER" --add-host=host.docker.internal:host-gateway -p 5679:5679 "${common_env[@]}" -v "$VOLUME:/home/node/.n8n" "$IMAGE" >/dev/null
+wait_health
+RUN_CODE=$(curl -sS -b "$COOKIE_JAR" -o "$TMP_DIR/run.body" -w '%{http_code}' -H 'Content-Type: application/json' -X POST "http://127.0.0.1:5679/rest/workflows/$WORKFLOW_ID/run" -d '{"triggerToStartFrom":{"name":"Recovery Schedule"}}')
+cat "$TMP_DIR/run.body"
+test "$RUN_CODE" = 200
+python - "$TMP_DIR/run.body" <<'PY'
+import json,sys
+payload=json.load(open(sys.argv[1])); data=payload.get('data',payload)
+assert isinstance(data,dict) and data.get('executionId'),payload
+PY
+echo N8N_RECOVERY_MANUAL_TRIGGER_API=PASS
+
+for _ in $(seq 1 100); do
+  COUNT="$(python - <<'PY'
+import json,urllib.request
+d=json.load(urllib.request.urlopen('http://127.0.0.1:18081/__stats'))
+print(len(d['requests']))
+PY
+)"
+  [[ "$COUNT" = 1 ]] && break
+  sleep .1
+done
 
 python - <<'PY'
 import json,urllib.request
