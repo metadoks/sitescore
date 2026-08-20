@@ -95,57 +95,19 @@ START_6_5: NO
 
 FAZ 6.4 was implemented only from the Reviewer-authorized frozen base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba` on `faz6/6-4-delivery-grant-email` / PR #27. No FAZ 3/4/5 frozen source was modified and FAZ 6.5 was not started.
 
-The commerce package is `sitescore-commerce==0.5.0` with additive migration head `0004_delivery_email`. Commerce owns high-entropy opaque customer delivery grants with digest-only SHA-256 persistence, exact seven-day expiry, revocation, order/report binding, and multiple safe historical grants when uncertain provider outcomes require at-least-once replay. No plaintext, reversible, encrypted-recovery token or complete customer delivery URL is persisted.
-
-The customer-facing `/d/{opaque_token}` capability path hashes the incoming token, verifies grant validity and binding, re-reads the exact frozen SiteScore report resource and report content using the server-owned credential, verifies report/analysis identity, ready state, MIME, content length/hash and local PDF integrity, and returns only safe PDF download semantics. Application code does not log the raw token; production reverse-proxy/access-log suppression/redaction requirements are documented without claiming deployment-wide FAZ 7 hardening is complete.
-
-Postmark remains behind commerce. Recipient, sender, template alias, public link base and provider credential are server-owned. Provider acceptance is recognized only from the required response evidence, including HTTP success, ErrorCode=0, non-empty MessageID, exact durable recipient, and parseable SubmittedAt. Provider I/O occurs outside the durable DB transaction/row lock. Accepted, rejected and uncertain outcomes remain distinct. Known acceptance deduplicates later triggers; uncertain outcome replay may create a fresh grant without revoking a potentially delivered earlier link. No exactly-once email claim is made.
-
-Commerce reaches `order_state=fulfilled`, `payment_state=paid`, `fulfillment_state=completed` only after exact paid-order / completed-analysis / ready-report / valid grant / durably accepted Postmark evidence. Retry exhaustion or non-retryable delivery failure moves only the delivery/order projection to `attention_required` / `delivery_failed`; payment remains paid and frozen analysis/report truth is unchanged.
+The commerce package is `sitescore-commerce==0.5.0` with additive migration head `0004_delivery_email`. Commerce owns high-entropy opaque customer delivery grants with digest-only SHA-256 persistence, exact seven-day expiry, revocation, order/report binding, and safe at-least-once retry semantics. The public `/d/{opaque_token}` proxy re-verifies the exact frozen report resource/content and PDF integrity. Postmark remains commerce-only, provider acceptance is durable evidence rather than a human-delivery claim, and delivery failure never rewrites payment or frozen analytical/report truth.
 
 The locked 6.3 n8n boundary was extended only at `next_action=delivery`: n8n performs the bodyless authenticated commerce `/deliver` operation and returns through the existing finite horizon + Wait + GET state-observation path. n8n receives no raw delivery token, recipient, report bytes, Postmark token, SiteScore service key, DB/Redis/S3 credential, Stripe secret or provider-result authority.
 
 ## Exact validation evidence
 
-The authoritative commerce+n8n validation checked out exact SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377` and completed successfully as run `32306516241`, job `96240342784`:
+Authoritative commerce+n8n validation at exact SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377`: run `32306516241`, job `96240342784`, SUCCESS. PostgreSQL 16 upgrade/downgrade/upgrade and `0004_delivery_email` passed; commerce 313 PASS; n8n static 9 PASS; pinned n8n 2.33.4 delivery/retry/restart/duplicate/5xx/timeout/horizon integration markers all PASS.
 
-- PostgreSQL 16 migration upgrade -> downgrade base -> upgrade head PASS
-- `0004_delivery_email` head proof PASS
-- commerce suite: 313 PASS
-- n8n static suite: 9 PASS
-- n8n 2.33.4 import/publish/webhook/auth/orchestration PASS
-- delivery accepted -> fulfilled PASS
-- retry pacing and terminal delivery-failed stop PASS
-- duplicate/restart convergence PASS
-- commerce 5xx and uncertain-response timeout replay convergence PASS
-- finite advance poll horizon PASS
+Separate frozen regression at the same exact SHA: run `32306516300`, job `96240342892`, SUCCESS. Frozen scope and secret-boundary scans, private MinIO/S3, Redis/Celery, and all frozen package suites passed for frozen total 1504 PASS. Commerce + frozen pytest total is 1817 PASS, with n8n static 9 reported separately.
 
-The separate exact-head frozen regression at the same SHA completed successfully as run `32306516300`, job `96240342892`:
+After validation, only the two temporary validation workflow files were removed. Compare `2501d6af71b4c9057a8f5b3008d9c4db3ba15377` -> `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762` is exactly 2 commits ahead and contains only those two removals. No product code changed after validation.
 
-- frozen scope scan PASS
-- privileged-material/secret boundary scan PASS
-- private MinIO/S3 regression PASS
-- sitescore-report 24 PASS
-- sitescore-api 105 PASS
-- Redis/Celery transport PASS
-- sitescore-app 19 PASS
-- sitescore-pipeline 53 PASS
-- sitescore-benchmarks 191 PASS
-- sitescore-metrics 67 PASS
-- sitescore-spatial 180 PASS
-- sitescore-providers 418 PASS
-- sitescore-data 361 PASS
-- sitescore-core 86 PASS
-- frozen total 1504 PASS
-
-Validated commerce + frozen pytest total is 1817 PASS, with the 9 n8n static tests reported separately.
-
-After both exact-head validation workflows were successful, the two temporary validation workflow files were removed. GitHub compare from validated SHA `2501d6af71b4c9057a8f5b3008d9c4db3ba15377` to final review HEAD `11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762` is exactly two commits ahead and contains only removal of:
-
-1. `.github/workflows/faz6-6-4-validation.yml`
-2. `.github/workflows/faz6-6-4-frozen-validation.yml`
-
-There are no post-validation product-code changes. Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
+Fresh handoff state: PR #27 is OPEN, mergeable, non-draft and unmerged; live `main` remains exact expected base `7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba`.
 
 ## STOP condition
 
