@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.5
 CHECKPOINT_TITLE: Recovery + Reconciliation
 
-REVIEWER_STATE: IMPLEMENTATION_AUTHORIZED
-IMPLEMENTER_ACTION: IMPLEMENT
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,18 +21,32 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: bdf43a891ca14941ba2f2c4f115e4a15bec0015a
 LIVE_MAIN_SHA_AT_REVIEW: bdf43a891ca14941ba2f2c4f115e4a15bec0015a
 CODE_BRANCH: faz6/6-5-recovery-reconciliation
-PR: NOT_CREATED
-PR_STATE: NONE
+PR: #28
+PR_STATE: OPEN
 PR_DRAFT: FALSE
+PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
+REVIEWED_HEAD_SHA: 9a8cb1bccf36447f273dc52c16533f57f81dde22
 
-EXPECTED_COMMERCE_VERSION: 0.6.0
-EXPECTED_MIGRATION_HEAD: 0005_recovery_reconciliation
+VALIDATED_SHA: 2bd9fc99d752c65efe6093383ac044460b00ffc9
+COMMERCE_VALIDATION_RUN_ID: 32401479448
+COMMERCE_VALIDATION_JOB_ID: 96530437038
+FROZEN_VALIDATION_RUN_ID: 32401479454
+FROZEN_VALIDATION_JOB_ID: 96530437137
+VALIDATION_CONCLUSION: SUCCESS
+VALIDATED_TO_FINAL_COMMITS: 2
+VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY FAZ 6.5 VALIDATION WORKFLOW REMOVALS
+
+COMMERCE_VERSION: 0.6.0
+MIGRATION_HEAD: 0005_recovery_reconciliation
 N8N_RUNTIME_VERSION: 2.33.4
-N8N_IMAGE_DIGEST_BASELINE: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
 LOCKED_ORDER_WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+RECOVERY_SCHEDULE_WORKFLOW_SHA256: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 
-BLOCKERS: NONE
+REC65-H001: OPEN
+REC65-H002: OPEN
+BLOCKERS: REC65-H001, REC65-H002
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -46,583 +60,338 @@ FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
 FAZ_6_3_STATUS: LOCKED
 FAZ_6_4_STATUS: LOCKED
-FAZ_6_5_STATUS: IMPLEMENTATION_AUTHORIZED
-START_6_5: YES
+FAZ_6_5_STATUS: HARDENING_REQUIRED
 START_6_FINAL: NO
 ```
 
 ---
 
-# 1. POST-LOCK VERIFICATION — FAZ 6.4
+# 1. EXACT STATE REVIEWED
 
-Reviewer independently verified the user-authorized FAZ 6.4 merge before opening 6.5.
-
-```text
-PR #27: CLOSED / MERGED
-approved head: 1f22c4a09c08c2803c746b87a20209d7fdf6c574
-merge commit: bdf43a891ca14941ba2f2c4f115e4a15bec0015a
-live main: bdf43a891ca14941ba2f2c4f115e4a15bec0015a
-merge parent 1: 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
-merge parent 2: 1f22c4a09c08c2803c746b87a20209d7fdf6c574
-merge tree: 384d4d9a4384d9a9d6767f2a7c30520e05ef3d67
-approved-head tree: 384d4d9a4384d9a9d6767f2a7c30520e05ef3d67
-```
-
-Implementer handoff records literal user `LOCK`, exact reviewed head, exact merge parentage, and no 6.5 work before authorization.
-
-Therefore:
+Reviewer independently re-read the live coordination state and GitHub PR.
 
 ```text
-FAZ 6.4: LOCKED
-FAZ 6.5: OPEN FOR IMPLEMENTATION
+main:
+bdf43a891ca14941ba2f2c4f115e4a15bec0015a
+
+PR #28:
+OPEN
+DRAFT: FALSE
+MERGEABLE: TRUE
+MERGED: FALSE
+
+base:
+main@bdf43a891ca14941ba2f2c4f115e4a15bec0015a
+
+reviewed final head:
+9a8cb1bccf36447f273dc52c16533f57f81dde22
+
+validated SHA:
+2bd9fc99d752c65efe6093383ac044460b00ffc9
 ```
+
+Base -> reviewed head scope is confined to the Reviewer-authorized `sitescore-commerce` FAZ 6.5 recovery/reconciliation surface and the separate minimal n8n recovery schedule/tests. No frozen FAZ 3/4/5 source mutation was observed. The locked order-paid n8n workflow hash remains unchanged.
+
+Validated SHA -> final head is exactly two commits and only removes:
+
+```text
+.github/workflows/faz6-6-5-validation.yml
+.github/workflows/faz6-6-5-frozen-validation.yml
+```
+
+No product, test, migration, n8n workflow JSON or runtime code changed after validation.
 
 ---
 
-# 2. CHECKPOINT MISSION
+# 2. POSITIVE REVIEW RESULTS
 
-FAZ 6.5 closes the production recovery gap left intentionally open by 6.1–6.4.
-
-The system already has safe per-order primitives for:
+The exact reviewed implementation has substantial correct 6.5 structure:
 
 ```text
-Stripe webhook payment authority
-order.paid.v1 durable outbox
-n8n orchestration
-analysis/report reconciliation
-refund reconciliation
-Postmark delivery uncertainty/retry
-secure delivery capability
+sitescore-commerce == 0.6.0
+migration head == 0005_recovery_reconciliation
+bounded oldest-first recovery claims
+FOR UPDATE SKIP LOCKED candidate claiming
+durable lease token + expiry
+lease reclaim after crash
+post-I/O exact lease fencing in production LineageRecoveryService
+no DB transaction held across provider/n8n HTTP I/O
+real Stripe evidence uses the locked validate_binding contract
+server-poll payment transition uses a distinct immutable poll receipt
+server poll does not fabricate evt_* or fake Stripe inbox rows
+webhook and server-poll payment transitions share one internal locked transition core
+exactly-one order.paid.v1 creation remains uniqueness protected
+unpublished outbox sends the exact durable event identity
+published stale replay preserves the same outbox identity and historical published_at
+published replay is append-only audited
+n8n recovery endpoint is bodyless and count-only
+separate recovery Schedule Trigger contains no Code/Function business authority
+locked order workflow remains byte-identical by SHA-256
+n8n remains pinned to 2.33.4
+frozen FAZ 3/4/5 scope remains untouched
 ```
 
-But those primitives can still require a later invocation after process death, webhook loss, n8n horizon exhaustion, transport response loss, or an unpublished/stale outbox event.
-
-FAZ 6.5 must add a bounded, durable, repeatable recovery scanner that makes these states converge without creating a second business-authority path.
-
-Canonical recovery model:
-
-```text
-periodic scheduler
--> protected Commerce recovery run
--> Commerce selects bounded stale candidates
--> fresh provider/server evidence where required
--> reuse existing durable authority primitives
--> replay the existing order.paid.v1 identity when orchestration must restart
--> converge or defer
--> contradictory/invariant-breaking evidence fails closed
-```
-
-Recovery is not permission to invent payment, analysis, report, refund, delivery or fulfillment truth.
+These positive results do not close the two concrete recovery blockers below.
 
 ---
 
-# 3. FROZEN AUTHORITY BOUNDARIES
+# 3. REC65-H001 — OPEN
 
-The following remain frozen and must not be weakened.
+## Pre-0005 stale verified Stripe inbox events become unrecoverable after upgrade
 
-## 3.1 Payment
+FAZ 6.5 exists in part to recover a real Stripe event that was already signature-verified and durably stored as `processing_state='received'`, followed by a crash before payment reconciliation completed.
 
-Only verified Stripe evidence may change payment truth.
-
-For a server-poll recovery path, Commerce may retrieve the exact already-bound Checkout Session and line items using the same pinned Stripe API version and the same 6.1 `validate_binding` semantics.
-
-A recovery poll MUST NOT fabricate a Stripe Event ID, synthetic `evt_*`, webhook signature, or fake inbox row.
-
-## 3.2 Analysis/report
-
-Frozen SiteScore `/v1` API remains the only analysis/report authority.
-
-Recovery must not import frozen SiteScore packages directly, write SiteScore DB tables, derive scoring truth, or manufacture report readiness.
-
-## 3.3 Refund
-
-Existing 6.2 server-side Stripe PaymentIntent/refund history validation remains authoritative. Recovery must re-enter that existing logic; it must not add a looser refund path.
-
-## 3.4 Delivery
-
-Existing 6.4 validated Postmark acceptance evidence remains required for `fulfilled`.
-
-Recovery must never interpret email open/read, HTTP success alone, n8n success, or a grant existing as fulfillment proof.
-
-## 3.5 n8n
-
-n8n remains orchestration/scheduling only. It receives no Stripe secret, Postmark secret, SiteScore service key, database credential, raw delivery token, recipient, report bytes, refund authority, or business-state mutation authority.
-
----
-
-# 4. REQUIRED RECOVERY CLASSES
-
-The scanner must cover all of the following classes.
-
-## R65-A — Stale verified Stripe inbox event
-
-A Stripe event may have been signature-verified and durably recorded as `received`, then the process can die before fresh provider reconciliation or final state commit.
-
-Recovery must:
+The Reviewer contract for R65-A requires recovery to:
 
 ```text
-find stale stripe_event_inbox rows still in received
 use the original real stripe_event_id and stored event metadata
 correlate the stored Stripe object/session to the unique local checkout binding
 freshly retrieve the exact Checkout Session + line items
-apply the existing event-type/API-version/livemode/binding rules
 resume the original reconciliation using the original real event identity
 ```
 
-Do not reopen `processed`, `ignored`, or `attention_required` inbox rows automatically.
+Before migration `0005_recovery_reconciliation`, locked 6.1 inbox rows did not contain `candidate_order_id`.
 
-## R65-B — Missing webhook / direct Checkout Session poll
-
-A pending-payment order may have a durable Checkout Session binding but no usable webhook delivery.
-
-For a sufficiently stale `pending_payment / pending` order with an exact bound Stripe Checkout Session, recovery may fresh-poll that exact session.
-
-Allowed results:
+Migration 0005 currently only adds:
 
 ```text
-status=complete + payment_status=paid + PaymentIntent present + exact binding
--> atomic paid transition + checkout reconciliation + exactly one order.paid.v1 outbox
-
-status=expired + payment_status=unpaid + exact binding
--> atomic expired transition
-
-open/unpaid or otherwise nonterminal-but-valid
--> no business-state transition; defer
-
-binding mismatch / contradictory terminal truth / malformed provider evidence
--> fail closed; durable recovery finding; no fabricated transition
+candidate_order_id VARCHAR(64) NULL
 ```
 
-This direct poll path requires a durable server-reconciliation receipt and MUST NOT write a fake `last_reconciliation_event_id`.
+and performs no migration/backfill or legacy compatibility step for already-existing inbox rows.
 
-## R65-C — Unpublished paid outbox
-
-For an exact durable `order.paid.v1` event with `published_at IS NULL`, recovery may invoke the existing protected n8n ingress using the exact stored outbox identity and payload contract.
-
-Only a confirmed accepted 2xx may set `published_at`.
-
-Timeout/connection loss/5xx/429 must leave the event unpublished for later retry.
-
-## R65-D — Published outbox but stale nonterminal order
-
-A published event does not prove that the n8n execution eventually converged. The execution may have crashed or exhausted its finite horizon.
-
-For a stale paid nonterminal order whose exact `order.paid.v1` row is already published, recovery may replay the SAME durable event identity to the same protected n8n ingress.
-
-Rules:
+Production `LineageRecoveryService._resume_inbox()` then reads the new column and immediately requires:
 
 ```text
-same outbox_id
-the same event_type
-same order_id
-same original occurred_at
-no new order.paid.v1 row
-no new event identity
-published_at remains historical and is not cleared/re-written
-replay itself is durably audited
+stored candidate_order_id == recovery claim order_id
 ```
 
-A replay may create another n8n execution, but existing Commerce idempotency must guarantee no duplicate analysis, report, refund, or fulfilled business effect.
+A legacy pre-0005 row therefore has `candidate_order_id = NULL`, which becomes `None`, fails the equality check, and is durably moved to `attention_required / event_order_correlation_invalid` before fresh Stripe evidence is even fetched.
 
-## R65-E — Refund/delivery/analysis/report recovery after n8n loss
+That makes exactly the already-stranded work which 6.5 is intended to recover unrecoverable by the new recovery path.
 
-Recovery must not duplicate these provider/state machines inside the scanner.
+This is a migration/recovery correctness blocker, not merely an observability gap.
 
-It restarts orchestration by the exact durable outbox replay. n8n then follows authoritative Commerce `next_action`, which re-enters the already-locked 6.2/6.4 runtime services.
+Required hardening:
 
-This covers, among others:
+1. Preserve the strong non-NULL lineage check for rows where a durable signed-event candidate order is available. A non-NULL mismatching candidate must continue to fail closed before provider I/O.
+2. Add a safe legacy path for genuine rows carried forward from the pre-0005 schema. It must correlate the stored real Stripe object/session to exactly one durable local Checkout Session/order binding; it must not invent a Stripe Event identity or trust caller input.
+3. Fresh provider evidence must still pass the exact locked Stripe API-version/livemode/session/client-reference/metadata/Price/quantity/currency binding rules before a payment transition.
+4. Ambiguous, missing, or conflicting local session correlation must become a sanitized durable finding/attention with no payment transition.
+5. Do not fabricate `candidate_order_id` evidence if the implementation cannot prove it. A migration/backfill is acceptable only if the derivation is exact and auditable; a runtime legacy-correlation path is also acceptable.
+6. No fake webhook, fake inbox row, synthetic `evt_*`, or poll receipt may be used when resuming a real legacy inbox event. The original real event identity remains the authority record.
+
+Required real PostgreSQL migration/recovery proof:
 
 ```text
-analysis_pending / analysis_running
-report_pending
-not_score_ready / analysis_failed / analysis_timed_out / report_failed refund paths
-refund_pending / response-loss recovery
-delivery_pending
-provider_uncertain delivery retry
-known provider_accepted convergence
+A. migrate commerce to 0004_delivery_email
+B. insert a realistic pending order + exact bound Checkout Session
+C. insert a real-looking stale received Stripe inbox row using the 0004 schema
+   (there is therefore no candidate_order_id field/value)
+D. upgrade the same populated database to 0005_recovery_reconciliation
+E. run the production LineageRecoveryService
+F. prove original real event_id is resumed
+G. prove exact stored Stripe Session correlation + fresh provider binding validation
+H. prove paid case -> exactly one paid transition + exactly one order.paid.v1 + inbox processed
+I. prove expired case -> exactly one expired transition + inbox processed
+J. prove no payment_poll_receipt and no fake event/inbox identity is produced
+K. prove no-match / ambiguous / conflicting legacy session correlation fails closed with durable finding and zero business transition
 ```
 
-## R65-F — Invariant corruption / attention
-
-Recovery must NEVER silently repair invariant shapes that should be impossible after locked atomic transitions.
-
-Examples:
+A migration cycle on an empty database is not sufficient for this blocker; this must be a data-preserving 0004 -> 0005 upgrade test.
 
 ```text
-payment_state=paid with no order.paid.v1 outbox
-multiple order.paid.v1 rows or identity conflict
+REC65-H001: OPEN
+```
+
+---
+
+# 4. REC65-H002 — OPEN
+
+## Paid recovery replay does not verify contradictory durable Stripe binding before re-entering orchestration
+
+R65-F explicitly requires impossible/corrupt recovery shapes to fail closed, including:
+
+```text
 paid order with contradictory Stripe binding
-refunded/fulfilled/expired terminal order requiring a new business transition
-SiteScore/Stripe/Postmark identity mismatch
-reserved SiteScore refund metadata conflict
 ```
 
-These become durable sanitized recovery findings / operator attention. Do not synthesize missing authoritative evidence.
-
-Existing `attention_required` orders are not automatically reopened by FAZ 6.5.
-
----
-
-# 5. DURABLE RECOVERY PERSISTENCE
-
-Expected schema head:
+The current `RecoverySnapshot` carries only these payment-side fields:
 
 ```text
-0005_recovery_reconciliation
-```
-
-At minimum, implement durable equivalents of the following concepts.
-
-## 5.1 `recovery_state`
-
-One bounded scheduler/retry record per order.
-
-Required semantics:
-
-```text
-order_id PK/FK
-attempt_count >= 0
-consecutive_failures >= 0
-next_attempt_at
-last_checked_at nullable
-last_action nullable
-last_outcome nullable
-last_error_code nullable, sanitized and bounded
-lease_token UUID nullable
-lease_expires_at nullable
-created_at
-updated_at
-```
-
-Lease token is concurrency identity, not a secret.
-
-Lease fields must be pair-consistent. Expired leases are reclaimable. A crash after claiming work must not permanently strand the order.
-
-## 5.2 Poll-based payment reconciliation receipt
-
-When direct server polling — not a webhook event — actually causes a paid or expired transition, persist a durable immutable receipt in the same atomic transaction as the business-state transition.
-
-Required evidence includes at least:
-
-```text
-receipt_id
-order_id
-source = stripe_checkout_server_poll_v1
+order/payment/fulfillment state
+order updated_at
 stripe_checkout_session_id
-observed session status
-observed payment status
-observed PaymentIntent id if present
-observed livemode
-canonical evidence hash over the validated authority fields including line-item binding
-transition target = paid | expired
-observed_at
-created_at
+outbox identities/publication times
 ```
 
-There must be no raw Stripe response persistence and no fake webhook/Event identity.
-
-Exactly one authoritative local terminal payment transition may win. Concurrency with a real webhook must converge through row locks/uniqueness to the same final state and exactly one paid outbox event.
-
-## 5.3 Replay audit
-
-Published-outbox recovery replay must be durably observable without changing outbox historical publication truth.
-
-Persist or equivalently prove:
+It does not carry or validate the durable reconciliation evidence already stored on `checkout_sessions`, including at least:
 
 ```text
-order_id
-outbox_id
-replay attempt identity
-attempt time
-result = accepted | uncertain | retryable_rejected | attention
-sanitized failure/status code
+stripe_payment_intent_id
+stripe_session_status
+stripe_payment_status
+stripe_livemode
+reconciled_at / reconciliation lineage as applicable
 ```
 
-Do not store n8n secrets or provider response bodies.
+The paid/fulfillment-in-progress recovery branch currently verifies only that there is exactly one `order.paid.v1` outbox. If one exists, it can publish/replay that event to n8n without first proving that the durable local Stripe reconciliation binding is coherent with the paid state.
 
----
-
-# 6. CLAIMING, CONCURRENCY, AND TRANSACTIONS
-
-Recovery scanning is at-least-once and crash-safe.
-
-Required behavior:
-
-1. Select candidates in deterministic order, oldest eligible first.
-2. Claim only a bounded batch.
-3. Commit the claim/lease before any external HTTP.
-4. Never hold a DB transaction, row lock, or advisory transaction lock across Stripe, SiteScore, Postmark, or n8n HTTP.
-5. After I/O, reacquire the exact row and re-check current durable state before applying a result.
-6. A stale worker may not overwrite a newer worker's lease/result.
-7. Concurrent recovery runs may duplicate safe reads/replays but may not duplicate business authority.
-8. Backoff must be bounded and durable; a continuously failing provider must not cause a hot loop.
-9. Terminal states must age out of active recovery work cleanly.
-
-Recommended production defaults, unless an implementation-level constraint requires a documented Reviewer-visible adjustment:
+Therefore a corrupted shape such as:
 
 ```text
-recovery schedule: every 5 minutes
-batch size: 10
-stale verified inbox threshold: 120 seconds
-pending-payment poll threshold: 300 seconds
-published-orchestration replay threshold: 1200 seconds
-lease duration: 120 seconds
-maximum backoff: 3600 seconds
+order.payment_state = paid
+exactly one order.paid.v1 exists
+but checkout stripe_payment_status != paid
+or stripe_session_status != complete
+or PaymentIntent is missing
+or stored livemode contradicts the configured/provider authority
 ```
 
-All values must be server-owned configuration with bounded validation. Callers cannot override them per request.
+can be re-entered into downstream analysis/report/refund/delivery orchestration instead of becoming the durable R65-F finding required by the contract.
 
----
+This is a business-authority/invariant recovery blocker because 6.5 is specifically the component that decides whether a stale paid order may be replayed into orchestration.
 
-# 7. RECOVERY SCHEDULER BOUNDARY
+Required hardening:
 
-Production recovery must be autonomously invocable.
+1. Before any unpublished paid-outbox send or published paid-outbox replay, validate the durable Stripe paid reconciliation shape for the order.
+2. At minimum require the local durable evidence that locked payment transitions write for an authoritative paid state: exact bound Checkout Session, `complete`, `paid`, non-empty bound PaymentIntent, expected livemode, and coherent order/checkout identity. Preserve any stronger existing immutable catalog/product/Price/quantity/customer binding invariants.
+3. Contradiction/missing authority must create a sanitized durable recovery finding/attention and perform ZERO n8n I/O.
+4. Do not silently repair the corrupted paid binding and do not synthesize missing Stripe evidence.
+5. This guard must also protect a stale fulfillment-in-progress/refund-pending order that is still based on the same original paid authority before replaying `order.paid.v1`.
+6. Existing valid paid orders must continue to publish/replay the exact same outbox identity with no new payment transition.
 
-Preferred contract:
+Required real PostgreSQL tests must independently corrupt each meaningful paid reconciliation field and prove fail-closed behavior, including at least:
 
 ```text
-POST /v1/automation/recovery/run
-Authorization: existing COMMERCE_AUTOMATION_API_KEY
-request body: empty
+missing PaymentIntent
+stripe_session_status != complete
+stripe_payment_status != paid
+stripe_livemode mismatch/NULL where authoritative paid evidence is required
+Checkout Session identity/binding conflict
 ```
 
-The endpoint may run one bounded recovery batch only. It must not accept order IDs, target states, provider results, retry counts, timestamps, or business truth from n8n.
-
-Sanitized response may contain counts only, for example:
+For every corrupt case prove:
 
 ```text
-api_version
-run_id
-claimed
-reconciled
-published
-replayed
-deferred
-attention
+no n8n request
+no new outbox
+no payment mutation
+no analysis/report/refund/delivery mutation
+sanitized durable recovery finding exists
 ```
 
-No PII, Stripe IDs, PaymentIntent IDs, delivery tokens, recipient, report ID, provider body, or secret may be returned.
-
-Use a separate minimal n8n recovery schedule workflow if scheduling is implemented through n8n:
+Also retain a valid-control case proving a correctly reconciled paid binding still publishes/replays the exact original `order.paid.v1` identity.
 
 ```text
-Schedule Trigger
--> POST Commerce /v1/automation/recovery/run with empty body
--> stop
-```
-
-No Code/Function business logic. No direct Stripe/SiteScore/Postmark/DB calls. The existing locked order workflow should remain semantically unchanged; published-outbox recovery re-enters it through the same protected `order.paid.v1` webhook.
-
-n8n remains pinned to `2.33.4`. Do not silently upgrade during 6.5.
-
----
-
-# 8. TRANSPORT CLASSIFICATION
-
-Recovery must distinguish retryable transport failure from deterministic configuration/contract rejection.
-
-For n8n ingress replay/dispatch:
-
-```text
-2xx -> confirmed accepted
-connection/timeout -> uncertain; retry later
-429 -> retryable
-5xx -> retryable
-401/403 -> configuration/auth attention; do not hot-loop
-400/422 malformed-contract response -> attention; same invalid request must not be hammered
-other unexpected responses -> fail closed with documented classification
-```
-
-No transport outcome may alter payment/refund/report/delivery truth directly.
-
----
-
-# 9. PAYMENT POLL ATOMICITY
-
-The existing 6.1 webhook path currently couples `apply_reconciliation` to a real Stripe inbox event. FAZ 6.5 must not abuse that method by inventing an event.
-
-Refactor only as needed so webhook reconciliation and server-poll reconciliation share one internal atomic payment transition core while preserving distinct authority records:
-
-```text
-webhook source -> real stripe_event_inbox row + real event_id
-server poll source -> poll reconciliation receipt, no event_id fabrication
-```
-
-Both paths must enforce the same immutable Checkout binding and the same terminal-state contradiction rules.
-
-Paid transition still atomically creates at most one `order.paid.v1` outbox row.
-
----
-
-# 10. OBSERVABILITY AND SECURITY
-
-Required operational evidence:
-
-```text
-bounded counters for scan outcomes
-sanitized error/failure codes
-recovery run identity
-order/outbox internal UUIDs may be used in server logs where operationally necessary
-no customer_email
-no delivery raw token
-no Stripe/Postmark secret
-no SiteScore service key
-no private S3 URL/credential
-no raw provider response body
-```
-
-Recovery endpoint and scheduler must not expose an unauthenticated admin/control plane.
-
-Do not add a public "force paid", "force fulfilled", "force refund", "retry this order" or state override endpoint.
-
----
-
-# 11. FORBIDDEN SCOPE
-
-FAZ 6.5 must NOT:
-
-```text
-edit frozen FAZ 3/4/5 source
-change scoring/benchmark/financial/decision/confidence semantics
-add direct SiteScore DB access
-add direct n8n DB access
-create synthetic Stripe Event IDs
-relax Stripe Checkout/Price/quantity/USD/livemode/API-version binding
-relax refund metadata/history validation
-relax Postmark acceptance validation
-persist raw/reversible delivery capability tokens
-expose private S3/MinIO object URLs
-add customer account/auth redesign
-add manual state override APIs
-add Postmark webhooks unless separately Reviewer-authorized
-upgrade n8n from 2.33.4
-start FAZ 6-FINAL before 6.5 LOCK
-```
-
-No automatic FAZ 6.6 exists.
-
----
-
-# 12. REQUIRED ADVERSARIAL TESTS
-
-Use real PostgreSQL for all state-changing/concurrency proofs.
-
-At minimum prove:
-
-## Stripe / payment
-
-```text
-stale real received webhook resumes with the original real event_id
-missing webhook + fresh complete/paid exact session -> paid exactly once
-missing webhook + fresh expired/unpaid exact session -> expired exactly once
-open/unpaid session -> defer, no transition
-poll binding mismatch -> no paid/expired transition
-poll does not fabricate stripe_event_inbox row or evt_* identity
-poll transition persists immutable server-poll receipt
-webhook vs poll race -> one terminal truth + one paid outbox
-paid-after-expired contradiction -> fail closed
-expired-after-paid contradiction -> fail closed
-```
-
-## Outbox / n8n
-
-```text
-unpublished outbox + 2xx -> published
-unpublished outbox + response loss -> remains unpublished, same identity retries
-published stale order -> replay uses same outbox_id and occurred_at
-published replay never clears/changes published_at
-replay response loss -> later same-identity replay converges
-429/5xx retry with backoff
-401/403 and malformed-contract response -> attention classification, no hot-loop
-paid order missing required outbox -> no synthetic event; recovery finding
-```
-
-## End-to-end stuck states
-
-```text
-published event + analysis_pending after original n8n horizon -> recovery replay -> converge
-published event + report_pending -> recovery replay -> converge
-published event + refund_pending/response-loss -> recovery replay -> existing refund reconciliation converges
-published event + delivery provider_uncertain -> recovery replay -> existing delivery semantics converge or bounded attention
-fulfilled/refunded/expired -> no provider I/O
-attention_required -> no automatic reopen
-```
-
-## Concurrency/crash
-
-```text
-two recovery runners cannot create duplicate payment transition/outbox
-claim crash -> expired lease reclaim
-worker response after lease loss cannot overwrite newer result
-no DB transaction held over external HTTP
-bounded batch and durable next_attempt_at/backoff
-```
-
-## Scheduler / n8n runtime
-
-If n8n schedules recovery, exact pinned runtime `2.33.4` must prove:
-
-```text
-schedule workflow imports/publishes
-only Commerce recovery endpoint is called
-body is empty
-existing automation Bearer is used
-no Code/Function authority node
-no direct provider/DB/S3 call
-one schedule invocation produces one bounded Commerce scan
-order recovery replay re-enters existing protected order workflow and converges
+REC65-H002: OPEN
 ```
 
 ---
 
-# 13. VALIDATION GATE
+# 5. EXACT-HEAD VALIDATION REVIEWED
 
-Before `READY_FOR_REVIEW`, Implementer must provide a fresh exact-head validation SHA and run/job evidence.
+Current validation is useful positive evidence but must be rerun after hardening.
 
-Required gate:
+Commerce + n8n exact validated SHA:
 
 ```text
-Python 3.11
-PostgreSQL 16
-sitescore-commerce expected version 0.6.0
-migration head 0005_recovery_reconciliation
-migration upgrade -> downgrade -> re-upgrade PASS
-full commerce suite PASS
-all recovery PostgreSQL adversarial tests PASS
-n8n static PASS
-pinned n8n 2.33.4 runtime recovery proof PASS
-frozen FAZ 3/4/5 total 1504 PASS
-private S3 regression PASS
-Redis/Celery frozen transport PASS
-frozen-scope scan PASS
-secret-boundary scan PASS
+run: 32401479448
+job: 96530437038
+checkout SHA: 2bd9fc99d752c65efe6093383ac044460b00ffc9
+Python: 3.11.16
+PostgreSQL: 16.15
+commerce tests: 382 PASS
+n8n static: 12 PASS
+migration upgrade/downgrade/re-upgrade: PASS
+locked order workflow SHA: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+recovery schedule workflow SHA: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+n8n runtime: 2.33.4
 ```
 
-Any validation workflow added only for checkpoint proof may be removed after successful validation, but validated-SHA -> final-head delta must contain only independently reviewable non-semantic validation-workflow removal(s).
+Current runtime evidence includes the locked 6.3/6.4 workflow proofs plus recovery scheduler and stuck-state replay convergence for analysis/report/refund/delivery.
+
+Frozen exact validated SHA:
+
+```text
+run: 32401479454
+job: 96530437137
+checkout SHA: 2bd9fc99d752c65efe6093383ac044460b00ffc9
+frozen total: 1504 PASS
+sitescore-report: 24 PASS
+sitescore-api: 105 PASS
+private S3 regression: PASS
+Redis/Celery transport: PASS
+frozen-scope scan: PASS
+secret boundary scan: PASS
+```
+
+The 1504 frozen total is independently accounted as:
+
+```text
+24 + 105 + 19 + 53 + 191 + 67 + 180 + 418 + 361 + 86 = 1504
+```
+
+After REC65-H001/H002 hardening, fresh exact-head Commerce+n8n and frozen validation are required. Any validated-SHA -> final-head delta must again be independently reviewable and non-semantic.
 
 ---
 
-# 14. IMPLEMENTER EXECUTION PROTOCOL
+# 6. HARDENING SCOPE
 
-Implementer must:
+Implementer must harden the SAME PR #28 and remain within FAZ 6.5.
 
-1. Freshly read this `reviewer.md` and live `main`.
-2. Verify `main == bdf43a891ca14941ba2f2c4f115e4a15bec0015a` before branching.
-3. Create/use only `faz6/6-5-recovery-reconciliation` from that exact base.
-4. Implement only FAZ 6.5.
-5. Open one PR targeting `main`.
-6. Run fresh exact-head validation.
-7. Update `implementer.md` with exact base/head, PR, migration/version, changed scope, test counts, CI run/job IDs, recovery invariants and any unresolved concern.
-8. Set `IMPLEMENTER_STATE: READY_FOR_REVIEW` and STOP.
-
-Implementer must not merge and must not request/assume LOCK.
-
-Reviewer will independently inspect the exact final head and may return `HARDENING_REQUIRED` or `READY_TO_LOCK`.
+Expected narrow changes:
 
 ```text
-FAZ 6.5: IMPLEMENTATION_AUTHORIZED
-START_6_5: YES
+legacy pre-0005 Stripe inbox upgrade/recovery compatibility
+production LineageRecoveryService correlation hardening
+paid durable Stripe-binding guard before n8n publish/replay
+real PostgreSQL data-preserving migration tests
+real PostgreSQL paid-corruption adversarial tests
+necessary 6.5 docs/runbook updates
+fresh exact-head validation evidence
+```
+
+Do NOT:
+
+```text
+reopen FAZ 3/4/5 frozen code
+weaken Stripe validate_binding
+invent fake Stripe Event IDs/inbox rows
+use a poll receipt to impersonate a real inbox event
+weaken refund or Postmark authority
+create a second order.paid.v1 identity
+clear/rewrite historical published_at
+add direct SiteScore DB/package authority
+put provider secrets in n8n
+upgrade n8n beyond locked 2.33.4
+start FAZ 6-FINAL
+```
+
+---
+
+# 7. REVIEWER DECISION
+
+```text
+FAZ 6.5: HARDENING_REQUIRED
+PR: #28
+REVIEWED_HEAD_SHA: 9a8cb1bccf36447f273dc52c16533f57f81dde22
+VALIDATED_SHA: 2bd9fc99d752c65efe6093383ac044460b00ffc9
+
+REC65-H001: OPEN
+REC65-H002: OPEN
+BLOCKERS: REC65-H001, REC65-H002
+
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN
+USER_LOCK_AUTHORIZED: NO
 START_6_FINAL: NO
 ```
 
-Reviewer STOP.
+Implementer must harden PR #28, produce a new exact final head plus fresh exact-head CI evidence, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
+
+No LOCK is authorized. FAZ 6-FINAL remains closed. Reviewer STOP.
