@@ -1,0 +1,98 @@
+name: faz6-6-4-hardening-exact-head-validation
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sitescore
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sitescore" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
+      COMMERCE_ENV: test
+      STRIPE_SECRET_KEY: test-key-not-real
+      STRIPE_PRICE_LOCATION_REPORT_V1: price_1234567890
+      STRIPE_API_VERSION: 2026-07-29.dahlia
+      STRIPE_WEBHOOK_SECRET: test-signing-value-not-real
+      STRIPE_EXPECTED_LIVEMODE: "false"
+      COMMERCE_SUCCESS_URL_BASE: https://commerce.example.test/success
+      COMMERCE_CANCEL_URL_BASE: https://commerce.example.test/cancel
+      SITESCORE_API_BASE_URL: https://sitescore-api.example.test
+      SITESCORE_API_SERVICE_KEY: ssk1_ci-key-id.ci-service-value-not-real-0123456789
+      SITESCORE_API_TARGET_ID: ci-v1
+      SITESCORE_API_TIMEOUT_SECONDS: "10"
+      COMMERCE_AUTOMATION_API_KEY: automation-test-value-not-real-0123456789
+      POSTMARK_SERVER_TOKEN: postmark-test-value-not-real-0123456789
+      POSTMARK_FROM_EMAIL: reports@sitescore.example.test
+      POSTMARK_TEMPLATE_ALIAS: sitescore-report-v1
+      POSTMARK_TIMEOUT_SECONDS: "10"
+      COMMERCE_PUBLIC_BASE_URL: https://commerce.example.test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "${{ github.event.pull_request.head.sha }}"
+          fetch-depth: 0
+      - name: Verify exact head and base ancestry
+        run: |
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          git merge-base --is-ancestor 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba HEAD
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install frozen graph and commerce
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
+          python -m pip install -e "sitescore-commerce[test]"
+          python -m pip check
+          python -m compileall -q sitescore-commerce/src sitescore-commerce/tests automation/n8n/tests
+      - name: Verify package version
+        run: python -c "import importlib.metadata as m; assert m.version('sitescore-commerce')=='0.5.0'"
+      - name: Commerce migration cycle and full suite
+        id: commerce
+        working-directory: sitescore-commerce
+        shell: bash
+        run: |
+          set +e
+          alembic upgrade head > /tmp/commerce-hardening.log 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then alembic downgrade base >> /tmp/commerce-hardening.log 2>&1; status=$?; fi
+          if [ "$status" -eq 0 ]; then alembic upgrade head >> /tmp/commerce-hardening.log 2>&1; status=$?; fi
+          if [ "$status" -eq 0 ]; then python -m pytest -o addopts='' -q --tb=short >> /tmp/commerce-hardening.log 2>&1; status=$?; fi
+          cat /tmp/commerce-hardening.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload commerce diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: faz6-6-4-hardening-commerce-diagnostics
+          path: /tmp/commerce-hardening.log
+          retention-days: 1
+      - name: Enforce commerce result
+        run: test '${{ steps.commerce.outputs.status }}' = '0'
+      - name: Verify migration head
+        run: |
+          python - <<'PY'
+          import os, sqlalchemy as sa
+          e=sa.create_engine(os.environ['SITESCORE_COMMERCE_DATABASE_URL']); i=sa.inspect(e)
+          assert {'delivery_grants','delivery_attempts'} <= set(i.get_table_names(schema='commerce'))
+          with e.connect() as c: assert c.execute(sa.text('SELECT version_num FROM commerce.alembic_version')).scalar_one()=='0004_delivery_email'
+          print('DELIVERY_0004=PASS')
+          PY
+      - name: n8n static
+        run: python -m pytest -q automation/n8n/tests/test_workflow_static.py
+      - name: n8n pinned runtime hardening
+        run: |
+          bash automation/n8n/tests/runtime_smoke.sh | tee /tmp/n8n64-hardening.log
+          grep -q 'N8N_DELIVERY_WAIT_RESTART=PASS' /tmp/n8n64-hardening.log
+          grep -q 'N8N_DELIVERY_POLL_HORIZON=PASS' /tmp/n8n64-hardening.log
