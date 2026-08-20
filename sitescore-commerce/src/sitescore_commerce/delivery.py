@@ -188,14 +188,14 @@ def _safe_filename(value: object) -> str:
 
 def _parse_provider_timestamp(value: object) -> datetime:
     if not isinstance(value, str) or not value.strip():
-        raise PostmarkRejected("postmark_submitted_at_invalid", retryable=False)
+        raise PostmarkUncertain("postmark_submitted_at_invalid")
     text = value.strip().replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise PostmarkRejected("postmark_submitted_at_invalid", retryable=False) from exc
+        raise PostmarkUncertain("postmark_submitted_at_invalid") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise PostmarkRejected("postmark_submitted_at_invalid", retryable=False)
+        raise PostmarkUncertain("postmark_submitted_at_invalid")
     return parsed.astimezone(timezone.utc)
 
 
@@ -649,28 +649,31 @@ class PostmarkGateway:
         if response.status_code != 200:
             retryable = response.status_code == 429 or response.status_code >= 500
             raise PostmarkRejected(f"postmark_http_{response.status_code}", retryable=retryable)
+        # HTTP 200 is success-like transport evidence, not proof of acceptance by itself.
+        # If its body cannot prove the official ErrorCode=0 acceptance tuple, neither
+        # acceptance nor rejection is trustworthy; preserve durable uncertainty.
         try:
             data = response.json()
         except ValueError as exc:
-            raise PostmarkRejected("postmark_malformed_response", retryable=False) from exc
+            raise PostmarkUncertain("postmark_malformed_response") from exc
         if not isinstance(data, dict):
-            raise PostmarkRejected("postmark_malformed_response", retryable=False)
+            raise PostmarkUncertain("postmark_malformed_response")
         error_code = data.get("ErrorCode")
         if isinstance(error_code, bool) or not isinstance(error_code, int):
-            raise PostmarkRejected("postmark_error_code_invalid", retryable=False)
+            raise PostmarkUncertain("postmark_error_code_invalid")
         if error_code != 0:
             raise PostmarkRejected(f"postmark_error_{error_code}", retryable=False)
         message_id = data.get("MessageID")
         if not isinstance(message_id, str) or not message_id.strip():
-            raise PostmarkRejected("postmark_message_id_missing", retryable=False)
+            raise PostmarkUncertain("postmark_message_id_missing")
         message_id = message_id.strip()
         try:
             UUID(message_id)
         except ValueError as exc:
-            raise PostmarkRejected("postmark_message_id_invalid", retryable=False) from exc
+            raise PostmarkUncertain("postmark_message_id_invalid") from exc
         observed_recipient = data.get("To")
         if observed_recipient != recipient:
-            raise PostmarkRejected("postmark_recipient_mismatch", retryable=False)
+            raise PostmarkUncertain("postmark_recipient_mismatch")
         submitted_at = _parse_provider_timestamp(data.get("SubmittedAt"))
         return PostmarkAcceptance(message_id=message_id, submitted_at=submitted_at, recipient=recipient)
 
