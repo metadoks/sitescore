@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6-FINAL
 CHECKPOINT_TITLE: Integrated Commerce Audit + Freeze Candidate
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: REOPEN_REQUIRED
+IMPLEMENTER_ACTION: STOP
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -26,13 +26,13 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: b63b19db4b91125c790714a7fafe7abb31dcb93b
+REVIEWED_HEAD_SHA: 1adce96b9645dc572c6819e1f782fd30ae83da91
 
-VALIDATED_SHA: 51ddb4835b53fbb834e629edfee54e4c68900a2a
-COMMERCE_VALIDATION_RUN_ID: 32414876590
-COMMERCE_VALIDATION_JOB_ID: 96573628319
-FROZEN_VALIDATION_RUN_ID: 32414876425
-FROZEN_VALIDATION_JOB_ID: 96573627246
+VALIDATED_SHA: 74153171164a482a41e5884629dc57a278464061
+COMMERCE_VALIDATION_RUN_ID: 32417252471
+COMMERCE_VALIDATION_JOB_ID: 96581104480
+FROZEN_VALIDATION_RUN_ID: 32417252466
+FROZEN_VALIDATION_JOB_ID: 96581104539
 VALIDATION_CONCLUSION: SUCCESS
 VALIDATED_TO_FINAL_COMMITS: 2
 VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY FAZ 6-FINAL VALIDATION WORKFLOW REMOVALS
@@ -40,7 +40,7 @@ POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
 
 COMMERCE_VERSION: 0.6.0
 MIGRATION_HEAD: 0005_recovery_reconciliation
-COMMERCE_TESTS: 413 PASS
+COMMERCE_TESTS: 414 PASS
 N8N_STATIC_TESTS: 12 PASS
 FROZEN_TESTS: 1504 PASS
 N8N_RUNTIME_VERSION: 2.33.4
@@ -48,23 +48,25 @@ N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c839851319
 LOCKED_ORDER_WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
 RECOVERY_SCHEDULE_WORKFLOW_SHA256: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 
-FIN6-H001: OPEN
-BLOCKERS: FIN6-H001
+FIN6-H001: RESOLVED
+FIN6-H002: OPEN
+BLOCKERS: FIN6-H002
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 1
+AFFECTED_LOCKED_CHECKPOINT: 6.0 COMMERCE API/APPLICATION FOUNDATION (PERSISTS THROUGH 6.5)
 
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: IN_PROGRESS
-FAZ_6_0_STATUS: LOCKED
+FAZ_6_0_STATUS: REOPEN_REQUIRED
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
 FAZ_6_3_STATUS: LOCKED
 FAZ_6_4_STATUS: LOCKED
 FAZ_6_5_STATUS: LOCKED
-FAZ_6_FINAL_STATUS: HARDENING_REQUIRED
+FAZ_6_FINAL_STATUS: BLOCKED_BY_REOPEN
 START_POST_FAZ6: NO
 ```
 
@@ -72,146 +74,55 @@ START_POST_FAZ6: NO
 
 # 1. EXACT STATE REVIEWED
 
-Reviewer independently re-read the live coordination files, live `main`, PR #29, the two permanent 6-FINAL artifacts, exact-head validation runs/logs, and validated-to-final delta.
+Reviewer independently re-read live `reviewer.md`, live `implementer.md`, live `main`, PR #29, exact final head, permanent diff, production `api.py`, fresh exact-SHA validation runs/jobs, and validated-to-final cleanup delta.
 
 ```text
 main:
 287367ce8eb708efce0ebae0a2f9c90d681cce01
 
 PR #29:
-OPEN
-DRAFT: FALSE
-MERGEABLE: TRUE
-MERGED: FALSE
-
-base:
-main@287367ce8eb708efce0ebae0a2f9c90d681cce01
-
-reviewed final head:
-b63b19db4b91125c790714a7fafe7abb31dcb93b
+OPEN / non-draft / mergeable / unmerged
+base: 287367ce8eb708efce0ebae0a2f9c90d681cce01
+head: 1adce96b9645dc572c6819e1f782fd30ae83da91
 
 validated SHA:
-51ddb4835b53fbb834e629edfee54e4c68900a2a
+74153171164a482a41e5884629dc57a278464061
 ```
 
-PR scope is correctly audit-only. The permanent PR diff contains only:
+Permanent PR scope remains exactly:
 
 ```text
 sitescore-commerce/docs/FAZ6_FINAL_INTEGRATED_COMMERCE_AUDIT.md
 sitescore-commerce/tests/test_faz6_final_freeze_gate.py
 ```
 
-No production source, migration, dependency, frozen package source, or n8n workflow JSON is changed by 6-FINAL.
-
-Validated SHA -> final reviewed head is exactly two commits and removes only:
-
-```text
-.github/workflows/faz6-final-validation.yml
-.github/workflows/faz6-final-frozen-validation.yml
-```
-
-No permanent audit artifact or runtime/test semantics changed after validation.
+Validated SHA -> final head is exactly two commits removing only the two temporary final-validation workflow files. No permanent semantic delta exists after validation.
 
 ---
 
-# 2. POSITIVE FINAL-AUDIT RESULTS
+# 2. FIN6-H001 — RESOLVED
 
-The final audit artifact correctly records the integrated commerce authority model and the exact 6.0–6.5 provenance chain.
+The previous GET/POST-only regex freeze-gate defect is resolved.
 
-Positive findings include:
-
-```text
-6.0–6.5 merge-parent provenance recorded and executable
-FAZ 6 history confined to sitescore-commerce/ and automation/n8n/
-sitescore-commerce remains 0.6.0
-migration head remains 0005_recovery_reconciliation
-migration chain remains 0001 -> 0005
-n8n remains exact 2.33.4 pinned runtime
-locked order/recovery workflow SHA-256 values remain exact
-Commerce does not import frozen SiteScore package/private authority
-n8n remains orchestration-only
-Stripe webhook/server-poll authority separation is preserved
-exactly-one order.paid.v1 identity remains the commerce orchestration identity
-full-refund authority remains canonical-proof + Stripe-evidence bound
-delivery grant remains digest-only, 7-day and report/order bound
-Postmark accepted/uncertain/rejected semantics remain distinct
-recovery lease/fencing/same-outbox replay authority remains documented and tested
-security/secret boundary scans pass
-empirical-validation disclaimer is preserved
-```
-
-No integrated production defect requiring reopening 6.0–6.5 was found in this review.
-
-Therefore:
+The permanent test now uses structured AST inspection and explicitly accounts for direct:
 
 ```text
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
+GET POST PUT PATCH DELETE OPTIONS HEAD TRACE
 ```
 
-remain correct.
-
----
-
-# 3. FIN6-H001 — OPEN
-
-## Permanent "exact public HTTP surface" freeze gate is not actually method-complete
-
-The Reviewer contract requires the 6-FINAL permanent executable gate to freeze the exact Commerce public HTTP surface.
-
-The candidate test currently derives routes with:
-
-```python
-routes = set(re.findall(r'@app\.(get|post)\("([^"]+)"', text))
-```
-
-and compares that result to the seven approved GET/POST routes.
-
-This does prove the expected GET/POST registrations are present today, but it does **not** prove that they are the exact complete HTTP surface.
-
-For example, a future drift such as:
-
-```python
-@app.put("/v1/orders/{order_id}")
-@app.patch("/v1/orders/{order_id}")
-@app.delete("/v1/orders/{order_id}")
-```
-
-would be invisible to the current regex and the purported exact-surface freeze test could still pass.
-
-Likewise, an `app.api_route(..., methods=[...])` registration or an included router could introduce additional public methods/routes without being represented in the current set.
-
-This is not a current production endpoint defect. It is a **freeze-enforcement defect in the 6-FINAL permanent gate**. Because 6-FINAL is specifically the checkpoint that makes the public surface a frozen invariant, a gate which cannot detect other HTTP methods is insufficient for READY_TO_LOCK.
+plus literal `app.api_route(..., methods=[...])`, and fails closed for the tested router/alternate registration forms and dynamic literal uncertainty. The adversarial helper proof is executable and the fresh Commerce suite passes at 414 tests.
 
 ```text
-FIN6-H001: OPEN
+FIN6-H001: RESOLVED
 ```
 
 ---
 
-# 4. REQUIRED HARDENING FOR FIN6-H001
+# 3. FIN6-H002 — OPEN
 
-Harden only the 6-FINAL test/audit surface. Do not change production API behavior.
+## The claimed exact seven-route public HTTP surface is false at runtime because FastAPI adds implicit documentation/OpenAPI routes
 
-Required behavior:
-
-1. Replace the method-incomplete GET/POST-only extraction with a structured/fail-closed route-surface inspection.
-2. The permanent gate must account for all standard FastAPI registration methods that could expand the public surface, including at minimum:
-
-```text
-get
-post
-put
-patch
-delete
-options
-head
-trace
-api_route
-```
-
-3. The exact allowed surface must remain exactly:
+The 6-FINAL contract freezes the exact allowed Commerce public HTTP surface as only:
 
 ```text
 POST /v1/orders
@@ -223,97 +134,111 @@ POST /v1/automation/recovery/run
 GET  /d/{opaque_token}
 ```
 
-4. `api_route` must be normalized to its declared method set and compared to the same exact `(method, path)` authority set. A dynamically unknowable path/method registration must fail closed rather than be silently ignored.
-5. `include_router(...)` or another route-registration mechanism must not be silently ignored. Since current frozen `api.py` has no router inclusion, the simplest acceptable lock is to fail if an unexpected router-registration mechanism appears unless the freeze gate is explicitly extended to enumerate its resolved routes.
-6. Prefer AST/structured source inspection over another broader-but-still-brittle regex.
-7. Add an adversarial self-proof for the gate/helper, or equivalent executable evidence, showing an injected PUT/PATCH/DELETE or other unsupported method would be detected rather than leaving the expected set unchanged.
-8. Keep the production API source byte-for-byte unchanged in this 6-FINAL hardening.
-9. Update the final audit artifact only if necessary to accurately describe the hardened permanent gate.
-10. Rerun fresh exact-SHA Commerce+n8n and frozen validation after the hardening. Any validated-SHA -> final-head cleanup delta must again be non-semantic and independently reviewable.
+However production `sitescore-commerce/src/sitescore_commerce/api.py` currently constructs the application as:
 
-Expected narrow hardening files:
-
-```text
-sitescore-commerce/tests/test_faz6_final_freeze_gate.py
-(optional wording-only update) sitescore-commerce/docs/FAZ6_FINAL_INTEGRATED_COMMERCE_AUDIT.md
+```python
+app = FastAPI(title="SiteScore Commerce API", version="0.6.0")
 ```
 
-No production source, migration, dependency, workflow JSON, or locked checkpoint reopen is authorized.
+with no explicit disabling of FastAPI's default OpenAPI/documentation routes.
+
+FastAPI's documented defaults expose at least:
+
+```text
+/openapi.json
+/docs
+/redoc
+```
+
+(and the Swagger OAuth2 redirect helper has its own default URL).
+
+These routes are registered internally by FastAPI during application setup, not through `@app.get`/`@app.post` decorators in `api.py`. Therefore the new AST extractor does not see them and can report the seven explicit business routes as "exact" while the real runtime application exposes additional HTTP paths.
+
+This is a current runtime/public-surface mismatch, not merely a future static-analysis edge case.
+
+Consequences:
+
+1. The 6-FINAL exact-surface claim is not true for the current production app.
+2. The permanent freeze gate does not inspect the actual resolved runtime route table, so it cannot prove the intended invariant.
+3. Fixing the runtime to the already-authorized seven-route contract requires a production `api.py` change such as explicitly disabling the default OpenAPI/docs surfaces, and then proving the resolved runtime route table.
+4. Production source changes are forbidden inside the current audit-only 6-FINAL candidate.
+5. Therefore an already locked Commerce API/application foundation must be narrowly reopened before 6-FINAL can become READY_TO_LOCK.
+
+```text
+FIN6-H002: OPEN
+ADDITIONAL_REOPEN_REQUIRED: 1
+```
 
 ---
 
-# 5. FRESH VALIDATION EVIDENCE REVIEWED
+# 4. REQUIRED CORRECTIVE REOPEN SCOPE
 
-The current candidate's validation is strong positive evidence and must be repeated after FIN6-H001 hardening.
+Do not modify PR #29 production behavior while it remains the audit-only 6-FINAL candidate.
 
-Commerce + n8n validation:
+Required next authority step is a narrow corrective reopen of the Commerce API/application foundation established in 6.0 and carried forward through 6.5.
+
+The corrective implementation must be limited to this invariant:
 
 ```text
-run: 32414876590
-job: 96573628319
-checkout SHA: 51ddb4835b53fbb834e629edfee54e4c68900a2a
-conclusion: SUCCESS
-Python: 3.11.16
-PostgreSQL: 16.15
-Commerce: 413 PASS
+resolved runtime public HTTP route set == exact authorized seven-route Commerce surface
+```
+
+Expected correction direction:
+
+- disable unintended FastAPI OpenAPI/Swagger/ReDoc default public routes at application construction;
+- preserve all seven authorized Commerce routes and their current semantics exactly;
+- do not add new endpoint, state, payment/refund/delivery/recovery authority, migration, dependency, version bump, or n8n semantic change;
+- add a runtime-resolved route-table regression that proves the real FastAPI application has exactly the authorized surface rather than only parsing explicit decorators;
+- re-run the full affected Commerce suite, frozen 1504 baseline, migration cycle, and n8n regressions;
+- after the corrective reopen is separately reviewed and user-LOCKed, rebase/recreate the 6-FINAL audit candidate from the new locked main and re-run fresh exact-head final validation.
+
+If the intended product decision is instead to keep public OpenAPI/docs routes, that would change the already-authorized exact seven-route freeze contract and requires `CONTRACT_CHANGE_REQUIRED: 1`; no such contract change is authorized by this review.
+
+---
+
+# 5. VALIDATION EVIDENCE REMAINS POSITIVE BUT CANNOT OVERRIDE THE RUNTIME-SURFACE MISMATCH
+
+Fresh exact-SHA validation at `74153171164a482a41e5884629dc57a278464061` is valid positive evidence:
+
+```text
+Commerce: 414 PASS
 n8n static: 12 PASS
 migration 0001 -> 0005 / downgrade base / re-upgrade: PASS
-n8n runtime: 2.33.4 exact pinned image
-locked workflow hashes: PASS
-recovery/delivery/advance restart+horizon/replay smoke: PASS
+n8n runtime: exact 2.33.4 pinned image
+recovery scheduler/replay: PASS
+frozen FAZ3-5 total: 1504 PASS
+private S3: PASS
+Redis/Celery: PASS
+frozen scope: PASS
+secret boundary: PASS
+Python: 3.11.16
+PostgreSQL: 16.15
 ```
 
-Frozen validation:
-
-```text
-run: 32414876425
-job: 96573627246
-checkout SHA: 51ddb4835b53fbb834e629edfee54e4c68900a2a
-conclusion: SUCCESS
-sitescore-report: 24 PASS
-sitescore-api: 105 PASS
-sitescore-app: 19 PASS
-sitescore-pipeline: 53 PASS
-sitescore-benchmarks: 191 PASS
-sitescore-metrics: 67 PASS
-sitescore-spatial: 180 PASS
-sitescore-providers: 418 PASS
-sitescore-data: 361 PASS
-sitescore-core: 86 PASS
-frozen total: 1504 PASS
-private S3 regression: PASS
-Redis/Celery transport: PASS
-frozen scope scan: PASS
-secret boundary scan: PASS
-```
-
-These successful runs do not close FIN6-H001 because the defect is in what the permanent freeze gate is capable of detecting.
+The issue is that the permanent exact-surface assertion is based on source registration extraction and therefore does not test framework-injected runtime routes.
 
 ---
 
 # 6. REVIEWER DECISION
 
 ```text
-FAZ 6-FINAL: HARDENING_REQUIRED
+FAZ 6-FINAL: BLOCKED_BY_REOPEN
 PR: #29
-REVIEWED_HEAD_SHA: b63b19db4b91125c790714a7fafe7abb31dcb93b
-VALIDATED_SHA: 51ddb4835b53fbb834e629edfee54e4c68900a2a
+REVIEWED_HEAD_SHA: 1adce96b9645dc572c6819e1f782fd30ae83da91
+VALIDATED_SHA: 74153171164a482a41e5884629dc57a278464061
 
-FIN6-H001: OPEN
-BLOCKERS: FIN6-H001
+FIN6-H001: RESOLVED
+FIN6-H002: OPEN
+BLOCKERS: FIN6-H002
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 1
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: REOPEN_REQUIRED
+IMPLEMENTER_ACTION: STOP
 USER_LOCK_AUTHORIZED: NO
 START_POST_FAZ6: NO
 ```
 
-Implementer must harden the SAME PR #29, produce a new exact final head plus fresh exact-head validation evidence, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
-
-No LOCK is authorized. FAZ 6 remains IN_PROGRESS and is not frozen until the final candidate is independently re-reviewed and user-authorized LOCK is completed.
-
-Reviewer STOP.
+No LOCK is authorized. Reviewer STOP pending the narrow corrective-reopen authority step.
