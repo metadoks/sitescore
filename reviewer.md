@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 6
 CURRENT_CHECKPOINT: 6.4
 CHECKPOINT_TITLE: Delivery Grant + Transactional Email
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -26,16 +26,16 @@ PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE: TRUE
 PR_MERGED: FALSE
-REVIEWED_HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
+REVIEWED_HEAD_SHA: 1f22c4a09c08c2803c746b87a20209d7fdf6c574
 
-VALIDATED_SHA: 2501d6af71b4c9057a8f5b3008d9c4db3ba15377
-COMMERCE_VALIDATION_RUN_ID: 32306516241
-COMMERCE_VALIDATION_JOB_ID: 96240342784
-FROZEN_VALIDATION_RUN_ID: 32306516300
-FROZEN_VALIDATION_JOB_ID: 96240342892
+VALIDATED_SHA: 447f2af3bcb6d8c3ef6295b1ec99ff1ec61bf578
+COMMERCE_VALIDATION_RUN_ID: 32340614141
+COMMERCE_VALIDATION_JOB_ID: 96338798529
+FROZEN_VALIDATION_RUN_ID: 32340614142
+FROZEN_VALIDATION_JOB_ID: 96338799244
 VALIDATION_CONCLUSION: SUCCESS
 VALIDATED_TO_FINAL_COMMITS: 2
-VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY 6.4 VALIDATION WORKFLOW REMOVALS
+VALIDATED_TO_FINAL_DELTA: ONLY TEMPORARY 6.4 HARDENING VALIDATION WORKFLOW REMOVALS
 
 COMMERCE_VERSION: 0.5.0
 MIGRATION_HEAD: 0004_delivery_email
@@ -43,9 +43,9 @@ N8N_RUNTIME_VERSION: 2.33.4
 N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
 WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
 
-DEL64-H001: OPEN
-DEL64-H002: OPEN
-BLOCKERS: DEL64-H001, DEL64-H002
+DEL64-H001: RESOLVED
+DEL64-H002: RESOLVED
+BLOCKERS: NONE
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
@@ -58,7 +58,7 @@ FAZ_6_0_STATUS: LOCKED
 FAZ_6_1_STATUS: LOCKED
 FAZ_6_2_STATUS: LOCKED
 FAZ_6_3_STATUS: LOCKED
-FAZ_6_4_STATUS: HARDENING_REQUIRED
+FAZ_6_4_STATUS: READY_TO_LOCK
 START_6_5: NO
 ```
 
@@ -66,7 +66,7 @@ START_6_5: NO
 
 # 1. EXACT STATE REVIEWED
 
-Reviewer independently re-read live GitHub and reviewed the exact final PR head.
+Reviewer independently re-read live GitHub and reviewed the exact hardening result.
 
 ```text
 main:
@@ -81,307 +81,165 @@ MERGED: FALSE
 base:
 main@7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba
 
-reviewed final head:
+previous blocked head:
 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
 
+reviewed final head:
+1f22c4a09c08c2803c746b87a20209d7fdf6c574
+
 validated SHA:
-2501d6af71b4c9057a8f5b3008d9c4db3ba15377
+447f2af3bcb6d8c3ef6295b1ec99ff1ec61bf578
 ```
 
-Validated SHA -> final HEAD is exactly two commits and only removes the two temporary FAZ 6.4 validation workflows. No product/test/runtime content changed after validation.
-
-Base -> reviewed head scope is confined to `sitescore-commerce` 6.4 delivery/email work and the minimum reserved `automation/n8n` delivery branch extension. No frozen FAZ 3/4/5 source mutation and no FAZ 6.5 broad recovery scanner were observed.
+Hardening remained inside FAZ 6.4. No frozen FAZ 3/4/5 source mutation, no payment/refund authority change, no analysis/report authority change, no Postmark webhook and no FAZ 6.5 broad recovery scanner were observed.
 
 ---
 
-# 2. POSITIVE REVIEW RESULTS
+# 2. DEL64-H001 — RESOLVED
 
-Reviewer confirmed the following on the exact reviewed head:
+Postmark server semantics now fail closed without fabricating either success or rejection.
+
+For HTTP 200, malformed/non-object response, missing/invalid ErrorCode, and ErrorCode=0 with invalid/missing MessageID, recipient mismatch or invalid SubmittedAt now become `provider_uncertain` rather than definitive `provider_rejected` or fabricated `provider_accepted`.
+
+Explicit integer `ErrorCode != 0` remains affirmative provider rejection evidence.
+
+Real PostgreSQL hardening coverage proves:
 
 ```text
-sitescore-commerce == 0.5.0
-migration head == 0004_delivery_email
-256-bit random URL-safe delivery token
-digest-only SHA-256 token persistence
-no plaintext/encrypted/reversible raw-token column
-exact 7-day grant lifetime
-revocable and reusable grants
-exact order/report grant binding
-public /d/{opaque_token} capability proxy
-fresh frozen SiteScore report re-verification before download
-fresh frozen /content retrieval
-PDF MIME / length / Content-SHA256 / local SHA-256 verification
-private no-store + no-referrer + nosniff download headers
-server-owned COMMERCE_PUBLIC_BASE_URL
-Postmark token/from/template/recipient remain server-owned
-Postmark call occurs outside DB transaction/row lock
-provider MessageID is durable and unique when accepted
-provider_accepted + valid bound grant/report transitions atomically to fulfilled/paid/completed
-known provider_accepted replay short-circuits duplicate send
-uncertain retry can create a fresh grant while prior possible emailed grant remains valid
-bounded delivery attempts
-email failure does not create refund/payment/analysis/report failure authority
-n8n /deliver request body is empty
-n8n receives no raw token, recipient, Postmark token, SiteScore key or report bytes
-n8n delivery continuation goes through existing finite horizon + Wait path
-zero Code/Function business-authority nodes
+truncated success-like HTTP 200 -> provider_uncertain
+order remains paid + delivery_pending
+provider_message_id remains unbound
+first possible emailed grant remains valid/unrevoked
+automation remains next_action=delivery
+retry creates fresh attempt + fresh grant
+later complete provider acceptance -> fulfilled/paid/completed
+both grants remain same-order/same-report bound
+both valid raw-token links resolve the identical exact PDF
+explicit nonzero ErrorCode remains provider_rejected
 ```
 
-Migration upgrade/downgrade/re-upgrade, PostgreSQL state tests, secret scans and frozen boundary are also otherwise acceptable.
-
-These positive results do not close the two blockers below.
-
----
-
-# 3. DEL64-H001 — OPEN
-
-## Ambiguous Postmark HTTP-200 acceptance evidence is persisted as definitive non-retryable rejection
-
-The 6.4 contract requires precise provider states and explicitly says uncertain provider outcome caused by timeout, connection loss or response loss must become `provider_uncertain`, never fabricated acceptance or definitive rejection.
-
-The official Postmark single template-send success contract uses:
+The raw-token/digest-only recovery contract remains intact.
 
 ```text
-HTTP 200
-ErrorCode = 0
-MessageID
-To
-SubmittedAt
-```
-
-The implementation correctly refuses to call HTTP 200 alone accepted. However, after receiving HTTP 200 it currently maps malformed/incomplete success evidence to `PostmarkRejected(... retryable=False)`.
-
-Current examples include:
-
-```text
-HTTP 200 + malformed/non-JSON body
-HTTP 200 + non-object body
-HTTP 200 + invalid/missing ErrorCode
-HTTP 200 + ErrorCode=0 + missing MessageID
-HTTP 200 + ErrorCode=0 + invalid MessageID
-HTTP 200 + ErrorCode=0 + recipient mismatch
-HTTP 200 + ErrorCode=0 + invalid SubmittedAt
-```
-
-`DeliveryService` catches those as `PostmarkRejected` and calls `record_rejected()`.
-
-For any non-retryable rejection, the durable store immediately transitions:
-
-```text
-order_state = attention_required
-payment_state = paid
-fulfillment_state = delivery_failed
-```
-
-This is unsafe for a success-like HTTP 200 whose response body/evidence was corrupted, truncated, incomplete, or otherwise not trustworthy. Postmark may already have accepted the email while commerce has merely lost enough acceptance evidence to bind a MessageID. The customer may therefore receive a valid link while commerce durably records a definitive provider rejection and stops normal delivery recovery.
-
-That is a concrete provider-state/recovery correctness defect.
-
-Required semantics:
-
-```text
-explicit, trustworthy provider rejection
--> provider_rejected
-
-ambiguous outcome where acceptance cannot be proven and rejection also cannot be proven
--> provider_uncertain
-```
-
-At minimum, after HTTP 200 these cases must NOT become definitive non-retryable `provider_rejected` merely because acceptance evidence cannot be validated:
-
-```text
-malformed/truncated/non-JSON response
-non-object response
-missing/invalid ErrorCode
-ErrorCode == 0 but required acceptance evidence is missing/invalid/mismatched
-```
-
-They must fail closed as NOT accepted while preserving the uncertainty/retry model. `ErrorCode != 0` remains affirmative provider rejection evidence and may remain `provider_rejected`. Clear non-2xx provider errors may retain the existing rejected/retryable policy as appropriate.
-
-Do not weaken acceptance validation: no case above may be marked `provider_accepted` without all required evidence.
-
-Required tests:
-
-```text
-1. HTTP 200 with malformed/truncated JSON -> provider_uncertain, not fulfilled
-2. HTTP 200 with invalid/missing ErrorCode -> provider_uncertain, not fulfilled
-3. HTTP 200 + ErrorCode=0 but missing/invalid MessageID -> provider_uncertain, not fulfilled
-4. HTTP 200 + ErrorCode=0 but To/SubmittedAt cannot be safely bound -> provider_uncertain, not fulfilled
-5. uncertain attempt leaves payment paid and retry guidance available while below attempt limit
-6. replay creates fresh attempt/grant; prior grant is not blindly revoked
-7. later fully validated acceptance -> one durable fulfilled/paid/completed terminal state
-8. explicit nonzero ErrorCode remains provider_rejected
-```
-
-Use real PostgreSQL for the durable state assertions and isolated fake Postmark HTTP responses, including a raw malformed/truncated 200 body rather than only JSON-shaped fixtures.
-
-```text
-DEL64-H001: OPEN
+DEL64-H001: RESOLVED
 ```
 
 ---
 
-# 4. DEL64-H002 — OPEN
+# 3. DEL64-H002 — RESOLVED
 
-## Required n8n restart-during-delivery-wait recovery proof is missing
+Pinned n8n `2.33.4` runtime now contains delivery-specific restart and horizon proof.
 
-The Reviewer 6.4 validation gate explicitly requires pinned n8n 2.33.4 runtime proof for:
+The runtime test performs a bodyless `/deliver`, observes `paid/delivery_pending/next_action=delivery`, proves no fabricated fulfillment and no `/advance`, enters the delivery retry/Wait path, stops n8n, restarts with the same durable n8n volume/state, then resumes/converges through the next bodyless `/deliver` to terminal `fulfilled/completed/paid`.
 
-```text
-restart during delivery wait converges
-provider uncertainty does not fabricate fulfilled
-```
-
-The current runtime suite proves:
-
-```text
-N8N_DELIVERY_ACCEPTED_TO_FULFILLED=PASS
-N8N_DELIVERY_RETRY_PACING=PASS
-N8N_DELIVERY_FAILED_STOP=PASS
-```
-
-and retains the older 6.3 restart proof:
-
-```text
-N8N_REAL_ADVANCE_WAIT_RESTART=PASS
-```
-
-But it does not separately stop/restart n8n while a 6.4 delivery execution is in its Wait/retry cycle and prove that the delivery branch resumes/converges from durable commerce truth. A restart proof for the analysis `/advance` branch is not a substitute for the newly introduced `/deliver` branch.
-
-The graph design appears to reuse the same finite Wait path, which is positive, but the checkpoint explicitly requires runtime evidence for the new delivery branch because delivery has distinct at-least-once provider side effects and grant/email retry semantics.
-
-Required runtime proof on exact n8n 2.33.4:
-
-```text
-1. trigger an order whose first /deliver remains retryable/provider-uncertain guidance
-2. confirm execution enters Wait after bodyless /deliver
-3. stop n8n while that delivery execution is waiting
-4. restart with the same durable n8n volume/state
-5. prove the execution resumes, or a safe duplicate trigger converges from commerce durable state
-6. prove no fabricated fulfilled state occurs before commerce reports accepted evidence
-7. prove bounded delivery retry/poll horizon is still enforced
-8. prove no new analysis/report/payment identity is created
-```
-
-Add an explicit runtime evidence label such as:
+Exact evidence:
 
 ```text
 N8N_DELIVERY_WAIT_RESTART=PASS
+N8N_DELIVERY_POLL_HORIZON=PASS
 ```
 
-If the test models provider uncertainty, also prove that n8n treats it only through commerce `next_action` guidance and never authors provider truth itself.
+The original locked 6.3 pacing/restart/HTTP-5xx/timeout/duplicate proofs also remain green.
 
 ```text
-DEL64-H002: OPEN
+DEL64-H002: RESOLVED
 ```
 
 ---
 
-# 5. EXACT-HEAD VALIDATION REVIEWED
+# 4. EXACT-HEAD VALIDATION
 
-The existing validation remains useful positive evidence but must be rerun after hardening.
-
-Current exact validated SHA:
+Fresh commerce+n8n validation:
 
 ```text
-2501d6af71b4c9057a8f5b3008d9c4db3ba15377
-```
-
-Commerce/n8n run:
-
-```text
-run: 32306516241
-job: 96240342784
-conclusion: SUCCESS
+run: 32340614141
+job: 96338798529
+checkout SHA: 447f2af3bcb6d8c3ef6295b1ec99ff1ec61bf578
+Python: 3.11.16
 PostgreSQL: 16.15
-sitescore-commerce: 313 PASS
+sitescore-commerce: 0.5.0
+commerce tests: 319 PASS
 n8n static: 9 PASS
-n8n runtime: 2.33.4
+migration 0004 upgrade/downgrade/re-upgrade: PASS
+DELIVERY_0004: PASS
 ```
 
-Frozen run:
+Pinned runtime evidence includes:
 
 ```text
-run: 32306516300
-job: 96240342892
-conclusion: SUCCESS
-checkout: exact validated SHA
+N8N_RUNTIME_VERSION=2.33.4
+N8N_VALIDATED_IMAGE_DIGEST=n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+WORKFLOW_SHA256=02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+N8N_DELIVERY_ACCEPTED_TO_FULFILLED=PASS
+N8N_DELIVERY_RETRY_PACING=PASS
+N8N_DELIVERY_WAIT_RESTART=PASS
+N8N_DELIVERY_POLL_HORIZON=PASS
+N8N_DELIVERY_FAILED_STOP=PASS
+N8N_REAL_ANALYSIS_PENDING_PACING=PASS
+N8N_REAL_ANALYSIS_RUNNING_REPORT_PACING=PASS
+N8N_DUPLICATE_REPLAY_CONVERGENCE=PASS
+N8N_REAL_ADVANCE_WAIT_RESTART=PASS
+N8N_COMMERCE_5XX_RECOVERY=PASS
+N8N_COMMERCE_TIMEOUT_REPLAY_CONVERGENCE=PASS
+N8N_REAL_ADVANCE_POLL_HORIZON=PASS
+N8N_WORKFLOW_IMPORT=PASS
+N8N_PUBLISH_STATE_PROOF=PASS
+N8N_WEBHOOK_AUTH=PASS
+N8N_ORCHESTRATION_INTEGRATION=PASS
+N8N_WAIT_RESTART=PASS
+```
+
+Fresh frozen validation:
+
+```text
+run: 32340614142
+job: 96338799244
+checkout SHA: 447f2af3bcb6d8c3ef6295b1ec99ff1ec61bf578
 frozen FAZ 3/4/5: 1504 PASS
-sitescore-report: 24 PASS
-sitescore-api: 105 PASS
 private S3 regression: PASS
 Redis/Celery transport: PASS
 frozen-scope scan: PASS
 secret boundary scan: PASS
 ```
 
-Existing n8n image digest:
+Validated SHA -> final head is exactly two commits and only removes:
 
 ```text
-n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+.github/workflows/faz6-6-4-hardening-validation.yml
+.github/workflows/faz6-6-4-hardening-frozen-validation.yml
 ```
 
-Existing workflow SHA-256:
-
-```text
-02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-```
-
-A fresh exact-head commerce+n8n validation and frozen validation are required after DEL64-H001/H002 hardening. Any validated-SHA -> final-head delta must again be independently reviewable and non-semantic.
+No product, test, runtime, migration or workflow JSON changed after validation.
 
 ---
 
-# 6. HARDENING SCOPE
-
-Implementer must harden only PR #27 / FAZ 6.4.
-
-Do NOT:
+# 5. REVIEWER DECISION
 
 ```text
-reopen frozen FAZ 3/4/5
-change payment/refund authority
-change analysis/report truth
-add Postmark webhooks
-add broad FAZ 6.5 recovery scanner
-persist raw/encrypted delivery tokens
-move Postmark secrets into n8n
-bypass the server-owned /deliver operation
-change n8n runtime away from 2.33.4
-```
+FAZ 6.4: READY_TO_LOCK
 
-Expected hardening surface is narrowly:
-
-```text
-Postmark outcome classification + tests
-PostgreSQL durable uncertainty/replay tests
-n8n delivery-wait restart runtime proof
-necessary 6.4 docs/static-test updates
-fresh exact-head validation workflows/evidence
-```
-
----
-
-# 7. REVIEWER DECISION
-
-```text
-FAZ 6.4: HARDENING_REQUIRED
 PR: #27
-REVIEWED_HEAD_SHA: 11d8ad7c9b9067b0b21eaf733fbfa0ddfb0bc762
+REVIEWED_HEAD_SHA: 1f22c4a09c08c2803c746b87a20209d7fdf6c574
+VALIDATED_SHA: 447f2af3bcb6d8c3ef6295b1ec99ff1ec61bf578
 
-DEL64-H001: OPEN
-DEL64-H002: OPEN
-BLOCKERS: DEL64-H001, DEL64-H002
+DEL64-H001: RESOLVED
+DEL64-H002: RESOLVED
+BLOCKERS: NONE
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 
-REVIEWER_STATE: HARDENING_REQUIRED
-IMPLEMENTER_ACTION: HARDEN
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: LOCK_IF_USER_AUTHORIZED
 USER_LOCK_AUTHORIZED: NO
 START_6_5: NO
 ```
 
-Implementer must harden the same PR, produce a new exact final head plus fresh exact-head CI evidence, update `implementer.md` to `READY_FOR_REVIEW`, and STOP.
+Reviewer does not merge.
 
-No LOCK is authorized. FAZ 6.5 remains closed. Reviewer STOP.
+Only the user may authorize the lock by sending the literal command `LOCK` to the Implementer chat.
+
+After merge, Reviewer must independently verify exact merge parentage and exact approved head before FAZ 6.5 can open.
+
+Reviewer STOP.
