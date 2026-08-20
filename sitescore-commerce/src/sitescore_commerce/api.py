@@ -21,6 +21,7 @@ from .fulfillment import (
     SiteScoreProviderUnavailable,
 )
 from .fulfillment_runtime import build_runtime_fulfillment_service
+from .recovery import RecoveryRunResponse, RecoveryService, build_recovery_service
 from .service import InvalidIdempotencyKey, OrderService
 from .settings import ConfigurationError, Settings
 from .webhook import (
@@ -67,14 +68,15 @@ def create_app(
     webhook_service: PaymentWebhookService | None = None,
     fulfillment_service: FulfillmentService | None = None,
     delivery_service: DeliveryService | None = None,
+    recovery_service: RecoveryService | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="SiteScore Commerce API", version="0.5.0")
+    app = FastAPI(title="SiteScore Commerce API", version="0.6.0")
 
     settings: Settings | None = None
     store: CommerceStore | None = None
     # Preserve dependency-injected unit tests: only load environment when an unprovided
     # pre-6.4 production service actually needs construction. A separately injected
-    # delivery service never forces environment loading into legacy unit tests.
+    # delivery/recovery service never forces environment loading into legacy unit tests.
     if service is None or webhook_service is None or fulfillment_service is None:
         try:
             settings = Settings.from_env()
@@ -92,6 +94,8 @@ def create_app(
             fulfillment_service = build_runtime_fulfillment_service(settings, store)
         if delivery_service is None:
             delivery_service = build_runtime_delivery_service(settings, store)
+        if recovery_service is None:
+            recovery_service = build_recovery_service(settings, store)
 
     @app.exception_handler(InvalidIdempotencyKey)
     async def invalid_idempotency(_: Request, exc: InvalidIdempotencyKey) -> JSONResponse:
@@ -212,6 +216,15 @@ def create_app(
         fulfillment_service.authorize_automation(authorization)
         result = await run_in_threadpool(fulfillment_service.status, order_id)
         return _automation_response(result)
+
+    @app.post("/v1/automation/recovery/run", response_model=RecoveryRunResponse)
+    async def run_recovery(request: Request, authorization: str | None = Header(default=None, alias="Authorization")) -> RecoveryRunResponse:
+        if fulfillment_service is None or recovery_service is None:
+            raise ConfigurationError("recovery service is unavailable")
+        fulfillment_service.authorize_automation(authorization)
+        if await request.body():
+            return _error(400, "request_validation_failed", "automation recovery request body must be empty")
+        return await run_in_threadpool(recovery_service.run_once)
 
     @app.get("/d/{opaque_token}")
     async def download_report(opaque_token: str) -> Response:
