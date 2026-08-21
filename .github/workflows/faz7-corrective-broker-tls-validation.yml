@@ -7,6 +7,10 @@ on:
     paths:
       - .github/workflows/faz7-corrective-broker-tls-validation.yml
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   commerce-current-head-applicable:
     runs-on: ubuntu-24.04
@@ -38,14 +42,42 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "sitescore-commerce[test]"
           python -m pip check
-      - name: Commerce migrations and all current-head-applicable tests
+      - name: Run current-head applicable Commerce regression
+        id: current
+        continue-on-error: true
         working-directory: sitescore-commerce
         run: |
+          set -o pipefail
           alembic upgrade head
           alembic downgrade base
           alembic upgrade head
           python -m pytest -o addopts='' -q --tb=short \
-            -k 'not test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only'
+            -k 'not test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only' | tee /tmp/current-commerce.log
+      - name: Publish current-head Commerce evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_OUTCOME: ${{ steps.current.outcome }}
+        run: |
+          summary=$(grep -E '[0-9]+ passed' /tmp/current-commerce.log | tail -n 1 || true)
+          state=failure
+          description="current-head Commerce applicable regression FAILED"
+          if [ "$TEST_OUTCOME" = success ] && echo "$summary" | grep -q '416 passed'; then
+            state=success
+            description="416 current-head Commerce tests PASS; legacy FAZ6 diff gate excluded"
+          fi
+          python - "$state" "$description" <<'PY' >/tmp/status.json
+          import json, os, sys
+          print(json.dumps({
+              "state": sys.argv[1],
+              "context": "faz7/commerce-current-applicable",
+              "description": sys.argv[2],
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl -fsS -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" --data-binary @/tmp/status.json >/dev/null
+          test "$state" = success
 
   commerce-frozen-base-full:
     runs-on: ubuntu-24.04
@@ -76,10 +108,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "sitescore-commerce[test]"
           python -m pip check
-      - name: Frozen Commerce migrations and complete 417-test baseline
+      - name: Run frozen Commerce 417-test baseline
+        id: frozen
+        continue-on-error: true
         working-directory: sitescore-commerce
         run: |
+          set -o pipefail
           alembic upgrade head
           alembic downgrade base
           alembic upgrade head
-          python -m pytest -o addopts='' -q --tb=short
+          python -m pytest -o addopts='' -q --tb=short | tee /tmp/frozen-commerce.log
+      - name: Publish frozen Commerce replay evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_OUTCOME: ${{ steps.frozen.outcome }}
+        run: |
+          summary=$(grep -E '[0-9]+ passed' /tmp/frozen-commerce.log | tail -n 1 || true)
+          state=failure
+          description="frozen-base Commerce replay FAILED"
+          if [ "$TEST_OUTCOME" = success ] && echo "$summary" | grep -q '417 passed'; then
+            state=success
+            description="417/417 frozen Commerce baseline PASS at exact base ee45e4f"
+          fi
+          python - "$state" "$description" <<'PY' >/tmp/status.json
+          import json, os, sys
+          print(json.dumps({
+              "state": sys.argv[1],
+              "context": "faz7/commerce-frozen-base",
+              "description": sys.argv[2],
+              "target_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl -fsS -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" --data-binary @/tmp/status.json >/dev/null
+          test "$state" = success
