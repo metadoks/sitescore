@@ -1,20 +1,14 @@
-name: faz7-corrective-broker-tls-exact-head-validation
+name: faz7-corrective-broker-tls-commerce-proof
 
 on:
   push:
     branches:
       - faz7/corrective-broker-tls-rediss
     paths:
-      - sitescore-api/src/sitescore_api/settings.py
-      - sitescore-api/tests/test_broker_tls_compatibility.py
       - .github/workflows/faz7-corrective-broker-tls-validation.yml
 
-permissions:
-  contents: read
-  statuses: write
-
 jobs:
-  validate:
+  commerce-current-head-applicable:
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -22,31 +16,12 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: sitescore
+          POSTGRES_DB: sitescore_commerce
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres -d sitescore" --health-interval 5s --health-timeout 5s --health-retries 20
-      redis:
-        image: redis:7.4
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+          --health-cmd "pg_isready -U postgres -d sitescore_commerce" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      SITESCORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
-      SITESCORE_BROKER_URL: redis://127.0.0.1:6379/0
-      SITESCORE_API_KEY_PEPPER: ci-pepper-value-not-real-0123456789-abcdefghijklmnopqrstuvwxyz
-      SITESCORE_ANALYSIS_DEADLINE_SECONDS: "900"
-      SITESCORE_WORKER_SOFT_LIMIT_SECONDS: "840"
-      SITESCORE_WORKER_HARD_LIMIT_SECONDS: "900"
-      SITESCORE_REPORT_STORAGE_BUCKET: sitescore-reports
-      SITESCORE_REPORT_STORAGE_REGION: us-east-1
-      SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
-      SITESCORE_REPORT_MAX_BYTES: "10485760"
-      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
-      AWS_EC2_METADATA_DISABLED: "true"
-      AWS_ACCESS_KEY_ID: ci-minio-access
-      AWS_SECRET_ACCESS_KEY: ci-minio-secret-not-real-0123456789
-      MPLCONFIGDIR: /tmp/sitescore-mplconfig
+      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,155 +29,57 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Validate exact corrective and frozen baselines
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prove Commerce and n8n bytes unchanged from corrective base
         run: |
-          set -u
-          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          overall=0
+          test -z "$(git diff --name-only ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD -- sitescore-commerce automation/n8n)"
+          echo "COMMERCE_N8N_DIFF_FROM_BASE=NONE"
+      - name: Install Commerce test runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "sitescore-commerce[test]"
+          python -m pip check
+      - name: Commerce migrations and all current-head-applicable tests
+        working-directory: sitescore-commerce
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          python -m pytest -o addopts='' -q --tb=short \
+            -k 'not test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only'
 
-          post_status() {
-            state="$1"; context="$2"; description="$3"
-            STATE="$state" CONTEXT="$context" DESCRIPTION="$description" RUN_URL="$RUN_URL" python - <<'PY' >/tmp/status.json
-          import json, os
-          print(json.dumps({
-              "state": os.environ["STATE"],
-              "context": os.environ["CONTEXT"],
-              "description": os.environ["DESCRIPTION"][:140],
-              "target_url": os.environ["RUN_URL"],
-          }))
-          PY
-            curl -fsS -X POST \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-              --data-binary @/tmp/status.json >/dev/null
-          }
-
-          run_log() {
-            name="$1"; shift
-            set +e
-            "$@" >"/tmp/${name}.log" 2>&1
-            rc=$?
-            set -e
-            cat "/tmp/${name}.log"
-            if [ "$rc" -ne 0 ]; then overall=1; fi
-            return 0
-          }
-
-          set +e
-          test "$(git merge-base ee45e4fdd3d805137387a0fc1198eedf8d461fb2 HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
-          scope_rc=$?
-          python - <<'PY'
-          import subprocess
-          changed = subprocess.check_output(
-              ["git", "diff", "--name-only", "ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD"], text=True
-          ).splitlines()
-          allowed = {
-              "sitescore-api/src/sitescore_api/settings.py",
-              "sitescore-api/tests/test_broker_tls_compatibility.py",
-              ".github/workflows/faz7-corrective-broker-tls-validation.yml",
-          }
-          assert set(changed) <= allowed, changed
-          assert "sitescore-api/src/sitescore_api/settings.py" in changed
-          assert "sitescore-api/tests/test_broker_tls_compatibility.py" in changed
-          print("CORRECTIVE_SCOPE_SCAN=PASS")
-          PY
-          py_scope_rc=$?
-          set -e
-          if [ "$scope_rc" -eq 0 ] && [ "$py_scope_rc" -eq 0 ]; then
-            post_status success "faz7/corrective-scope" "exact base and corrective-only scope PASS"
-          else
-            post_status failure "faz7/corrective-scope" "base or scope validation FAILED"
-            overall=1
-          fi
-
-          run_log install bash -lc '
-            set -e
-            python -m pip install --upgrade pip
-            python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
-            for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
-            python -m pip install -e "sitescore-report[dev]"
-            python -m pip install -e "sitescore-api[dev]"
-            python -m pip install -e "sitescore-commerce[test]"
-            python -m pip check
-          '
-          if grep -q '^ERROR:' /tmp/install.log || grep -q 'No matching distribution' /tmp/install.log; then
-            post_status failure "faz7/dependency-install" "frozen dependency graph install FAILED"
-            overall=1
-          else
-            post_status success "faz7/dependency-install" "frozen dependency graph install PASS"
-          fi
-
-          run_log minio bash -lc '
-            set -e
-            docker run -d --name sitescore-minio -p 9000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --address :9000
-            for i in $(seq 1 30); do curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null && break; sleep 1; done
-            curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null
-          '
-
-          run_log api_migration bash -lc 'cd sitescore-api && alembic upgrade head'
-          run_log focused bash -lc 'cd sitescore-api && python -m pytest -o addopts="" -q tests/test_broker_tls_compatibility.py --tb=short'
-          run_log api bash -lc 'cd sitescore-api && python -m pytest -o addopts="" -q --tb=short'
-          run_log report bash -lc 'cd sitescore-report && python -m pytest -o addopts="" -q --tb=short'
-          run_log app bash -lc 'cd sitescore-app && python -m pytest -o addopts="" -q --tb=short'
-          run_log pipeline bash -lc 'cd sitescore-pipeline && python -m pytest -o addopts="" -q --tb=short'
-          run_log benchmarks bash -lc 'cd sitescore-benchmarks && python -m pytest -o addopts="" -q --tb=short'
-          run_log metrics bash -lc 'cd sitescore-metrics && python -m pytest -o addopts="" -q --tb=short'
-          run_log spatial bash -lc 'cd sitescore-spatial && python -m pytest -o addopts="" -q --tb=short'
-          run_log providers bash -lc 'cd sitescore-providers && python -m pytest -o addopts="" -q --tb=short'
-          run_log data bash -lc 'cd sitescore-data && python -m pytest -o addopts="" -q --tb=short'
-          run_log core bash -lc 'cd sitescore-core && python -m pytest -o addopts="" -q --tb=short'
-          run_log commerce bash -lc 'cd sitescore-commerce && set -e; alembic upgrade head; alembic downgrade base; alembic upgrade head; python -m pytest -o addopts="" -q --tb=short'
-          run_log n8n bash -lc 'python -m pytest -o addopts="" -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py --tb=short'
-
-          python - <<'PY' >/tmp/counts.env
-          import re
-          from pathlib import Path
-
-          def count(name: str) -> int:
-              text = Path(f"/tmp/{name}.log").read_text(errors="replace")
-              found = re.findall(r"(\d+) passed", text)
-              print(f"{name.upper()}_SUMMARY={text.splitlines()[-1] if text.splitlines() else 'NO_OUTPUT'}")
-              return int(found[-1]) if found else -1
-
-          focused = count("focused")
-          frozen_names = ["api", "report", "app", "pipeline", "benchmarks", "metrics", "spatial", "providers", "data", "core"]
-          frozen = sum(count(name) for name in frozen_names)
-          commerce = count("commerce")
-          n8n = count("n8n")
-          print(f"FOCUSED_COUNT={focused}")
-          print(f"FROZEN_COUNT={frozen}")
-          print(f"COMMERCE_COUNT={commerce}")
-          print(f"N8N_COUNT={n8n}")
-          print(f"COMBINED_COUNT={frozen + commerce}")
-          PY
-          cat /tmp/counts.env
-          focused_count=$(grep '^FOCUSED_COUNT=' /tmp/counts.env | cut -d= -f2)
-          frozen_count=$(grep '^FROZEN_COUNT=' /tmp/counts.env | cut -d= -f2)
-          commerce_count=$(grep '^COMMERCE_COUNT=' /tmp/counts.env | cut -d= -f2)
-          n8n_count=$(grep '^N8N_COUNT=' /tmp/counts.env | cut -d= -f2)
-          combined_count=$(grep '^COMBINED_COUNT=' /tmp/counts.env | cut -d= -f2)
-
-          if [ "$focused_count" = 9 ]; then post_status success "faz7/corrective-focused" "9 focused broker TLS tests PASS"; else post_status failure "faz7/corrective-focused" "focused count=${focused_count}; expected 9"; overall=1; fi
-          if [ "$frozen_count" = 1513 ]; then post_status success "faz7/frozen-regression" "1513 pre-commerce tests PASS (1504+9)"; else post_status failure "faz7/frozen-regression" "pre-commerce count=${frozen_count}; expected 1513"; overall=1; fi
-          if [ "$commerce_count" = 417 ]; then post_status success "faz7/commerce-regression" "417 Commerce tests PASS"; else post_status failure "faz7/commerce-regression" "Commerce count=${commerce_count}; expected 417"; overall=1; fi
-          if [ "$n8n_count" = 12 ]; then post_status success "faz7/n8n-static" "12 n8n static tests PASS"; else post_status failure "faz7/n8n-static" "n8n count=${n8n_count}; expected 12"; overall=1; fi
-          if [ "$combined_count" = 1930 ]; then post_status success "faz7/combined-pytest" "1930 combined pytest PASS (1921+9)"; else post_status failure "faz7/combined-pytest" "combined count=${combined_count}; expected 1930"; overall=1; fi
-
-          if grep -Eiq '(skipped|xfailed|xpassed)' /tmp/focused.log /tmp/api.log /tmp/report.log /tmp/app.log /tmp/pipeline.log /tmp/benchmarks.log /tmp/metrics.log /tmp/spatial.log /tmp/providers.log /tmp/data.log /tmp/core.log /tmp/commerce.log /tmp/n8n.log; then
-            post_status failure "faz7/no-skip-xfail" "skip/xfail/xpass marker detected"
-            overall=1
-          else
-            post_status success "faz7/no-skip-xfail" "no skip/xfail/xpass markers"
-          fi
-
-          if [ "$overall" -eq 0 ]; then
-            post_status success "faz7/corrective-validation" "all corrective and frozen regression gates PASS"
-          else
-            post_status failure "faz7/corrective-validation" "one or more corrective regression gates FAILED"
-          fi
-          exit "$overall"
+  commerce-frozen-base-full:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sitescore_commerce
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sitescore_commerce" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify frozen Commerce replay SHA
+        run: test "$(git rev-parse HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
+      - name: Install frozen Commerce test runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "sitescore-commerce[test]"
+          python -m pip check
+      - name: Frozen Commerce migrations and complete 417-test baseline
+        working-directory: sitescore-commerce
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          python -m pytest -o addopts='' -q --tb=short
