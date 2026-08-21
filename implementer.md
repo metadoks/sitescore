@@ -207,6 +207,4 @@ Frozen product claim remains:
 
 `COMB-005` remains `NOT_APPROVED`, approved registry/weights remain empty and production may legitimately return `not_score_ready`.
 
-PR BODY SYNC: pending metadata update only; no code/document byte change is needed.
-
 IMPLEMENTER STOP. Reviewer must independently review PR #33 at exact final head `106e392b4143818298fd9ea9dcbb06def5ad3de8`. No FAZ 7.1 work is authorized unless Reviewer explicitly issues the next contract after the current checkpoint is locked/closed according to governance.
