@@ -129,16 +129,23 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: sitescore-api/pyproject.toml
+          cache-dependency-path: |
+            sitescore-api/pyproject.toml
+            sitescore-report/pyproject.toml
 
       - name: Install focused broker test dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install 'pytest==8.4.2' 'celery==5.6.3'
+          python -m pip install 'shapely==2.1.2' 'pyproj==3.7.2'
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do
+            python -m pip install -e "$pkg" --no-deps
+          done
+          python -m pip install -e 'sitescore-report[dev]'
+          python -m pip install -e 'sitescore-api[dev]'
+          python -m pip check
 
       - name: Actual focused broker TLS pytest
-        env:
-          PYTHONPATH: sitescore-api/src
         run: |
           set -euo pipefail
           python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py -q | tee /tmp/broker.log
