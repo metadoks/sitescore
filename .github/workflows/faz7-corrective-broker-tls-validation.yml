@@ -1,0 +1,153 @@
+name: faz7-corrective-broker-tls-exact-head-validation
+
+on:
+  push:
+    branches:
+      - faz7/corrective-broker-tls-rediss
+
+jobs:
+  corrective-and-frozen:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sitescore
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sitescore" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SITESCORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
+      SITESCORE_BROKER_URL: redis://127.0.0.1:6379/0
+      SITESCORE_API_KEY_PEPPER: ci-pepper-value-not-real-0123456789-abcdefghijklmnopqrstuvwxyz
+      SITESCORE_ANALYSIS_DEADLINE_SECONDS: "900"
+      SITESCORE_WORKER_SOFT_LIMIT_SECONDS: "840"
+      SITESCORE_WORKER_HARD_LIMIT_SECONDS: "900"
+      SITESCORE_REPORT_STORAGE_BUCKET: sitescore-reports
+      SITESCORE_REPORT_STORAGE_REGION: us-east-1
+      SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
+      SITESCORE_REPORT_MAX_BYTES: "10485760"
+      AWS_EC2_METADATA_DISABLED: "true"
+      MPLCONFIGDIR: /tmp/sitescore-mplconfig
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact corrective scope
+        run: |
+          test "$(git merge-base ee45e4fdd3d805137387a0fc1198eedf8d461fb2 HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
+          python - <<'PY'
+          import subprocess
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", "ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD"],
+              text=True,
+          ).splitlines()
+          allowed = {
+              "sitescore-api/src/sitescore_api/settings.py",
+              "sitescore-api/tests/test_broker_tls_compatibility.py",
+              ".github/workflows/faz7-corrective-broker-tls-validation.yml",
+          }
+          assert set(changed) <= allowed, changed
+          assert "sitescore-api/src/sitescore_api/settings.py" in changed, changed
+          assert "sitescore-api/tests/test_broker_tls_compatibility.py" in changed, changed
+          print("CORRECTIVE_SCOPE_SCAN=PASS")
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install frozen graph and API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
+          python -m pip check
+      - name: Focused broker TLS compatibility
+        working-directory: sitescore-api
+        run: python -m pytest -o addopts='' -q tests/test_broker_tls_compatibility.py --tb=short
+      - name: API full regression
+        working-directory: sitescore-api
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen report regression
+        working-directory: sitescore-report
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen app regression
+        working-directory: sitescore-app
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen pipeline regression
+        working-directory: sitescore-pipeline
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen benchmarks regression
+        working-directory: sitescore-benchmarks
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen metrics regression
+        working-directory: sitescore-metrics
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen spatial regression
+        working-directory: sitescore-spatial
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen providers regression
+        working-directory: sitescore-providers
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen data regression
+        working-directory: sitescore-data
+        run: python -m pytest -o addopts='' -q --tb=short
+      - name: Frozen core regression
+        working-directory: sitescore-core
+        run: python -m pytest -o addopts='' -q --tb=short
+
+  commerce:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sitescore
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sitescore" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install frozen graph and commerce
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
+          python -m pip install -e "sitescore-commerce[test]"
+          python -m pip check
+      - name: Commerce migration cycle and full regression
+        working-directory: sitescore-commerce
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          python -m pytest -o addopts='' -q --tb=short
+
+  n8n-static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pytest
+        run: python -m pip install "pytest==8.4.2"
+      - name: n8n static baseline
+        run: python -m pytest -o addopts='' -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py --tb=short
