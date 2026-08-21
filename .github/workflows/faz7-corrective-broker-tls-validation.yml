@@ -26,6 +26,19 @@ jobs:
           --health-cmd "pg_isready -U postgres -d sitescore_commerce" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
+      SITESCORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
+      SITESCORE_BROKER_URL: redis://127.0.0.1:6379/0
+      SITESCORE_API_KEY_PEPPER: ci-pepper-value-not-real-0123456789-abcdefghijklmnopqrstuvwxyz
+      SITESCORE_ANALYSIS_DEADLINE_SECONDS: 900
+      SITESCORE_WORKER_SOFT_LIMIT_SECONDS: 840
+      SITESCORE_WORKER_HARD_LIMIT_SECONDS: 900
+      SITESCORE_REPORT_STORAGE_BUCKET: sitescore-reports
+      SITESCORE_REPORT_STORAGE_REGION: us-east-1
+      SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
+      SITESCORE_REPORT_MAX_BYTES: 10485760
+      AWS_EC2_METADATA_DISABLED: true
+      AWS_ACCESS_KEY_ID: ci-minio-access
+      AWS_SECRET_ACCESS_KEY: ci-minio-secret-not-real-0123456789
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,9 +50,15 @@ jobs:
         run: |
           test -z "$(git diff --name-only ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD -- sitescore-commerce automation/n8n)"
           echo "COMMERCE_N8N_DIFF_FROM_BASE=NONE"
-      - name: Install Commerce test runtime
+      - name: Install frozen dependency graph and Commerce test runtime
         run: |
           python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do
+            python -m pip install -e "$pkg" --no-deps
+          done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
           python -m pip install -e "sitescore-commerce[test]"
           python -m pip check
       - name: Run current-head applicable Commerce regression
@@ -93,6 +112,19 @@ jobs:
           --health-cmd "pg_isready -U postgres -d sitescore_commerce" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
+      SITESCORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore_commerce
+      SITESCORE_BROKER_URL: redis://127.0.0.1:6379/0
+      SITESCORE_API_KEY_PEPPER: ci-pepper-value-not-real-0123456789-abcdefghijklmnopqrstuvwxyz
+      SITESCORE_ANALYSIS_DEADLINE_SECONDS: 900
+      SITESCORE_WORKER_SOFT_LIMIT_SECONDS: 840
+      SITESCORE_WORKER_HARD_LIMIT_SECONDS: 900
+      SITESCORE_REPORT_STORAGE_BUCKET: sitescore-reports
+      SITESCORE_REPORT_STORAGE_REGION: us-east-1
+      SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
+      SITESCORE_REPORT_MAX_BYTES: 10485760
+      AWS_EC2_METADATA_DISABLED: true
+      AWS_ACCESS_KEY_ID: ci-minio-access
+      AWS_SECRET_ACCESS_KEY: ci-minio-secret-not-real-0123456789
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,9 +135,15 @@ jobs:
           python-version: "3.11"
       - name: Verify frozen Commerce replay SHA
         run: test "$(git rev-parse HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
-      - name: Install frozen Commerce test runtime
+      - name: Install frozen dependency graph and Commerce test runtime
         run: |
           python -m pip install --upgrade pip
+          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do
+            python -m pip install -e "$pkg" --no-deps
+          done
+          python -m pip install -e "sitescore-report[dev]"
+          python -m pip install -e "sitescore-api[dev]"
           python -m pip install -e "sitescore-commerce[test]"
           python -m pip check
       - name: Run frozen Commerce 417-test baseline
