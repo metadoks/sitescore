@@ -6,126 +6,288 @@ AUTHORITATIVE_REPO: metadoks/sitescore
 COORDINATION_BRANCH: ops/reviewer-implementer-handoff
 FILE_OWNER: IMPLEMENTER CHAT
 
-CURRENT_PHASE: FAZ 6
-CURRENT_CHECKPOINT: 6-FINAL
-CHECKPOINT_TITLE: Integrated Commerce Audit + Final Freeze Candidate
-IMPLEMENTER_STATE: LOCKED
+CURRENT_PHASE: FAZ 7
+CURRENT_CHECKPOINT: 7.0 ENTRY CORRECTIVE
+CHECKPOINT_TITLE: Managed Valkey TLS / rediss:// Transport Compatibility Corrective
+IMPLEMENTER_STATE: BLOCKED_ON_REVIEWER_GATE_CONFLICT
 IMPLEMENTER_ACTION: STOP
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: YES
+USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: df4e3181712e7f426f8f1752628952a620c98f05
-PRE_LOCK_MAIN_SHA: df4e3181712e7f426f8f1752628952a620c98f05
-CODE_BRANCH: faz6/6-final-integrated-commerce-audit-freeze-r2
-PR: #31
-PR_STATE: CLOSED
+EXPECTED_BASE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+CODE_BRANCH: faz7/corrective-broker-tls-rediss
+PR: #32
+PR_STATE: OPEN
 PR_DRAFT: FALSE
-PR_MERGEABLE: FALSE
-PR_MERGED: TRUE
-REVIEWED_HEAD_SHA: 9856619a98fca93f14027347e26f04a13e18163c
-MERGE_COMMIT_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-LIVE_MAIN_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-MERGE_PARENT_1: df4e3181712e7f426f8f1752628952a620c98f05
-MERGE_PARENT_2: 9856619a98fca93f14027347e26f04a13e18163c
-MERGE_PARENTAGE_VERIFIED: YES
+PR_MERGEABLE: TRUE
+PR_MERGED: FALSE
+FINAL_CORRECTIVE_HEAD_SHA: d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+VALIDATED_PRODUCT_HEAD_SHA: 135800461ef5d4d9446f23a3213671678e6bc231
+FULL_REGRESSION_VALIDATED_SHA: f4bbba98bb0905f60529f1bd2ee0964dd1d6b0ad
+VALIDATED_TO_FINAL_PRODUCT_DIFF: NONE
+VALIDATED_TO_FINAL_ONLY_CHANGE: TEMPORARY_VALIDATION_WORKFLOW_REMOVED
 
-PREVIOUS_FINAL_PR: #29
-PREVIOUS_FINAL_STATE: CLOSED_UNMERGED_SUPERSEDED
-CORRECTIVE_PR: #30
-CORRECTIVE_MERGE_COMMIT: df4e3181712e7f426f8f1752628952a620c98f05
-CORRECTIVE_LOCK_STATE: LOCKED
-
-VALIDATED_SHA: febd1695fe890d7c9b193f4d2c5d4874cd5f96ed
-VALIDATED_TO_FINAL_COMMITS: 2
-VALIDATED_TO_FINAL_DIFF: ONLY TEMPORARY FINAL R2 VALIDATION WORKFLOWS REMOVED
-POST_VALIDATION_PRODUCT_CODE_CHANGES: NONE
-POST_VALIDATION_RUNTIME_SEMANTIC_CHANGES: NONE
-POST_VALIDATION_AUDIT_SEMANTIC_CHANGES: NONE
-POST_VALIDATION_PERMANENT_TEST_CHANGES: NONE
-
-EXPECTED_COMMERCE_VERSION: 0.6.0
-EXPECTED_MIGRATION_HEAD: 0005_recovery_reconciliation
-PYTHON_VERSION: 3.11.16
-POSTGRESQL_VERSION: 16.15
-STRIPE_SDK_VERSION: 15.4.0
-STRIPE_API_VERSION: 2026-07-29.dahlia
-N8N_RUNTIME_VERSION: 2.33.4
-N8N_VALIDATED_IMAGE_DIGEST: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-LOCKED_ORDER_WORKFLOW_SHA256: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-RECOVERY_SCHEDULE_WORKFLOW_SHA256: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
-
-COMMERCE_CI_RUN_ID: 32423546489
-COMMERCE_CI_JOB_ID: 96600558052
-COMMERCE_CI_CONCLUSION: SUCCESS
-FROZEN_CI_RUN_ID: 32423546500
-FROZEN_CI_JOB_ID: 96600557260
-FROZEN_CI_CONCLUSION: SUCCESS
-COMMERCE_TESTS: 417 PASS
-RUNTIME_HTTP_SURFACE_FOCUSED_TESTS: 4 PASS
-RUNTIME_HTTP_SURFACE: EXACT_7_ROUTES_PASS
-N8N_STATIC_TESTS: 12 PASS
-FROZEN_TOTAL_TESTS: 1504 PASS
-COMBINED_COMMERCE_FROZEN_PYTEST: 1921 PASS
-PRIVATE_S3_REGRESSION: PASS
-REDIS_CELERY_TRANSPORT: PASS
-FROZEN_SCOPE_SCAN: PASS
-SECRET_BOUNDARY_SCAN: PASS
-
-FIN6-H001: RESOLVED
-FIN6-H002: RESOLVED
-BLOCKERS: NONE
-CONTRACT_CHANGE_REQUIRED: 0
+CORRECTIVE_SCOPE: BROKER_TLS_REDISS_ONLY
+BLOCKER_TARGET: OPS70-H001
+CONTRACT_CHANGE_REQUIRED: 1
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
-
-FAZ_3_STATUS: FROZEN
-FAZ_4_STATUS: FROZEN
-FAZ_5_STATUS: FROZEN
-FAZ_6_0_STATUS: LOCKED_WITH_CORRECTIVE
-FAZ_6_1_STATUS: LOCKED
-FAZ_6_2_STATUS: LOCKED
-FAZ_6_3_STATUS: LOCKED
-FAZ_6_4_STATUS: LOCKED
-FAZ_6_5_STATUS: LOCKED
-FAZ_6_FINAL_STATUS: LOCKED
-FAZ_6_STATUS: FROZEN
-START_POST_FAZ6: NO
-NO_6_6: YES
+ADDITIONAL_REOPEN_REQUIRED: REVIEWER_DECISION_REQUIRED_FOR_LEGACY_FA6_GATE
+NORMAL_7_0_RESUMED: NO
+START_FAZ8: NO
 ```
 
-User sent literal `LOCK`. Implementer freshly re-read Reviewer state, Implementer handoff, PR #31, and live `main` before merge.
+## 1. Implementation completed within the authorized narrow scope
 
-Pre-lock gates were exact and clean:
+Permanent PR diff against exact base `ee45e4fdd3d805137387a0fc1198eedf8d461fb2` is exactly:
 
 ```text
-Reviewer state = READY_TO_LOCK
-Implementer action = LOCK_IF_USER_AUTHORIZED
-reviewed head = 9856619a98fca93f14027347e26f04a13e18163c
-PR #31 = OPEN / MERGEABLE / NON-DRAFT / UNMERGED
-live main = df4e3181712e7f426f8f1752628952a620c98f05
-expected base = df4e3181712e7f426f8f1752628952a620c98f05
-BLOCKERS = NONE
-CONTRACT_CHANGE_REQUIRED = 0
-DESIGN_DECISION_REVIEW_REQUIRED = 0
-ADDITIONAL_REOPEN_REQUIRED = 0
+sitescore-api/src/sitescore_api/settings.py
+sitescore-api/tests/test_broker_tls_compatibility.py
 ```
 
-PR #31 was merged with merge-commit semantics and exact `expected_head_sha=9856619a98fca93f14027347e26f04a13e18163c`.
-
-GitHub returned merge commit:
+GitHub compare result at final head `d5207d6d5a7483d7150ae0c68034428a5d70d6e2`:
 
 ```text
-ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+status = ahead
+ahead_by = 10
+behind_by = 0
+changed files = 2
+additions = 83
+deletions = 1
 ```
 
-Fresh post-merge verification proves:
+Per-file permanent diff:
 
 ```text
-PR #31 = CLOSED / MERGED
-live main = ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-merge parent 1 = df4e3181712e7f426f8f1752628952a620c98f05
-merge parent 2 = 9856619a98fca93f14027347e26f04a13e18163c
+sitescore-api/src/sitescore_api/settings.py
+  modified: +1 / -1
+
+sitescore-api/tests/test_broker_tls_compatibility.py
+  added: +82 / -0
 ```
 
-Therefore FAZ 6-FINAL is LOCKED and the integrated FAZ 6 commerce/automation architecture is frozen at this merge. No post-FAZ6 checkpoint, feature, or FAZ 6.6 was started. Implementer STOP.
+No permanent Commerce, n8n, dependency, package-version, migration, route, Docker, IaC, cloud, GitHub-governance, scoring, financial-model, report-authority, or business-authority change exists.
+
+## 2. Corrective source semantics
+
+The only production validation change is:
+
+```python
+if not self.broker_url.startswith(("redis://", "rediss://")):
+    raise ValueError("broker_url must use Redis")
+```
+
+Therefore:
+
+```text
+redis://  -> accepted
+rediss:// -> accepted
+other schemes -> rejected
+```
+
+The configured `rediss://` URL is not rewritten to `redis://`.
+No TLS verification bypass, insecure transport flag, provider-specific hostname special case, secondary fallback broker, or dependency-based URL parser was added.
+
+All existing Settings validation surrounding PostgreSQL, API key pepper, required values, report storage, positive integer limits, soft/hard worker limits, and durable analysis deadline remains unchanged.
+
+## 3. Focused corrective tests
+
+New deterministic focused file:
+
+```text
+sitescore-api/tests/test_broker_tls_compatibility.py
+```
+
+Coverage includes:
+
+```text
+TEST-TLS-001 redis:// accepted
+TEST-TLS-002 rediss:// accepted
+TEST-TLS-003 Settings.from_env preserves rediss://
+TEST-TLS-004 unsupported schemes rejected
+TEST-TLS-005 build_celery preserves rediss:// without rewrite
++ frozen Celery task / worker / beat semantics
+```
+
+Authoritative GitHub Actions evidence from run `32477727322`:
+
+```text
+focused broker TLS tests = 9 PASS
+complete sitescore-api = 114 PASS
+n8n static = 12 PASS
+no skip/xfail/xpass marker = PASS
+```
+
+The same run recorded the complete pre-Commerce package regression as:
+
+```text
+API        114 PASS
+REPORT      24 PASS
+APP         19 PASS
+PIPELINE    53 PASS
+BENCHMARKS 191 PASS
+METRICS     67 PASS
+SPATIAL    180 PASS
+PROVIDERS  418 PASS
+DATA       361 PASS
+CORE        86 PASS
+--------------------
+TOTAL     1513 PASS
+```
+
+This equals the previous frozen `1504 PASS` baseline plus the 9 new corrective tests.
+
+## 4. Commerce regression investigation and final evidence
+
+The first combined validator produced three Commerce failures, but investigation proved they were validator-environment / phase-provenance artifacts rather than Commerce product regressions:
+
+1. Two PostgreSQL failures were caused by running SiteScore API and Commerce migrations in the same database. The API-owned public `alembic_version` table contaminated the Commerce expectation.
+2. One failure came from the frozen FAZ6 final provenance test:
+
+```text
+test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only
+```
+
+That test asserts that every permanent diff after FAZ6 locked main is limited to the FAZ6 final audit document and its freeze-gate test. Consequently it necessarily fails for the first legitimate FAZ7 permanent source change, including this Reviewer-authorized `settings.py` corrective.
+
+No Commerce or n8n bytes were changed to suppress these failures.
+
+A second isolated Commerce proof workflow was run with:
+
+```text
+- clean dedicated Commerce PostgreSQL database
+- complete frozen dependency graph installed
+- exact frozen base replay at ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+- current corrective head replay separately
+```
+
+Authoritative run:
+
+```text
+GitHub Actions run = 32482930204
+validated corrective head = 135800461ef5d4d9446f23a3213671678e6bc231
+```
+
+Results:
+
+```text
+Commerce + n8n diff from corrective base = NONE
+exact frozen base Commerce replay = 417 / 417 PASS
+current corrective head applicable Commerce regression = 416 / 416 PASS
+```
+
+The one current-head test intentionally not executed is only the FAZ6 phase-local provenance assertion named above. It is not a behavioral Commerce test and cannot be true simultaneously with any permanent FAZ7 source change.
+
+## 5. Why Implementer is NOT claiming READY_FOR_REVIEW
+
+Reviewer contract Section 8 currently requires, before `READY_FOR_REVIEW`:
+
+```text
+D. sitescore-commerce suite (pre-corrective baseline: 417 PASS)
+F. all prior 1921 Commerce + frozen tests remain passing plus new corrective tests
+```
+
+It also explicitly forbids any Commerce change in this corrective.
+
+Those requirements conflict with the frozen FAZ6 provenance test because that test is intentionally written to reject every permanent change after the FAZ6 locked main except the two FAZ6 final audit files.
+
+Therefore Implementer will not:
+
+```text
+- modify frozen Commerce without Reviewer authorization
+- skip/xfail the test and hide the conflict
+- falsely report 417/417 on the FAZ7 current head
+- falsely report READY_FOR_REVIEW while the literal Reviewer gate is unmet
+```
+
+Reviewer must decide one of the following:
+
+```text
+A. classify the FAZ6 provenance test as phase-local/non-applicable after FAZ6 and accept:
+   exact frozen base = 417/417 PASS
+   current FAZ7 applicable Commerce = 416/416 PASS
+   Commerce/n8n byte diff = NONE
+
+or
+
+B. explicitly reopen/authorize a minimal future-phase-aware correction to the legacy Commerce provenance gate.
+```
+
+Implementer recommends A because the current corrective contract explicitly forbids Commerce changes and the frozen test is provenance-only, not a runtime/business behavior assertion. This is only a recommendation; Reviewer owns the decision.
+
+## 6. Validation-to-final-head proof
+
+The final validation workflow commit was temporary only.
+
+Validated product head:
+
+```text
+135800461ef5d4d9446f23a3213671678e6bc231
+```
+
+Final corrective head after removing validation infrastructure:
+
+```text
+d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+```
+
+GitHub compare `1358004...d5207d6` shows exactly one changed file:
+
+```text
+.github/workflows/faz7-corrective-broker-tls-validation.yml
+status = removed
+```
+
+No product source, permanent test, Commerce, n8n, dependency, or runtime semantic change occurred after validation.
+
+The earlier full-regression validated head `f4bbba98bb0905f60529f1bd2ee0964dd1d6b0ad` compared to final head also differs only by removal of that same temporary validation workflow. Therefore the validated product bytes are identical to the final PR product bytes.
+
+## 7. Final PR state
+
+```text
+PR #32 = OPEN
+base = main
+base SHA = ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+head branch = faz7/corrective-broker-tls-rediss
+head SHA = d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+mergeable = TRUE
+merged = FALSE
+changed files = 2
+```
+
+PR body now contains the validation evidence and explicitly records the FAZ6 provenance-gate conflict.
+
+## 8. Security / authority statement
+
+```text
+rediss:// support implemented = YES
+redis:// backward compatibility preserved = YES
+unsupported broker schemes still rejected = YES
+rediss:// rewrite/downgrade = NONE
+TLS verification disable behavior = NONE
+provider-specific broker hostname logic = NONE
+real secret committed = NONE KNOWN / fake CI values only
+Commerce byte changes = NONE
+n8n byte changes = NONE
+frozen analytical/business authority changes = NONE
+normal FAZ7.0 implementation started = NO
+merge performed = NO
+user LOCK received = NO
+```
+
+## 9. Required Reviewer next action
+
+Reviewer should independently inspect exact PR head `d5207d6d5a7483d7150ae0c68034428a5d70d6e2`, then explicitly resolve the FAZ6 provenance-gate applicability conflict before issuing `READY_TO_LOCK` or further implementation authority.
+
+Until Reviewer resolves that gate:
+
+```text
+IMPLEMENTER_STATE: BLOCKED_ON_REVIEWER_GATE_CONFLICT
+IMPLEMENTER_ACTION: STOP
+READY_FOR_REVIEW: NO
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: NO
+MERGE: NOT_PERFORMED
+NORMAL_7_0: BLOCKED
+```
