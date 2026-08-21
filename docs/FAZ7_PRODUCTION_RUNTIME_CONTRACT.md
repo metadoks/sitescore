@@ -1,8 +1,8 @@
 # SiteScore AI — FAZ 7 Production Runtime Contract
 
-**Checkpoint:** FAZ 7.0 — Production Baseline + Operational Contract + Compatibility Audit  
-**Authoritative base:** `main@3762ec643426e310ff82bdb00b20f58fb4ae9e09`  
-**Selected platform:** DigitalOcean App Platform + Managed PostgreSQL + Managed Valkey + Spaces + VPC, GHCR, GitHub Actions, OpenTofu, Cloudflare, Better Stack, k6.  
+**Checkpoint:** FAZ 7.0 — Production Baseline + Operational Contract + Compatibility Audit
+**Authoritative base:** `main@3762ec643426e310ff82bdb00b20f58fb4ae9e09`
+**Selected platform:** DigitalOcean App Platform + Managed PostgreSQL + Managed Valkey + Spaces + VPC, GHCR, GitHub Actions, OpenTofu, Cloudflare, Better Stack, k6.
 **Status of this file:** normative deployment design authority for later FAZ 7 checkpoints; **no infrastructure is created by this document**.
 
 > **Mathematically validated scoring engine; empirical validation pending.**
