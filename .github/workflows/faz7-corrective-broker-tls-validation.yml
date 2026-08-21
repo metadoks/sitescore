@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - faz7/corrective-broker-tls-rediss
-  pull_request:
-    branches:
-      - main
+    paths:
+      - sitescore-api/src/sitescore_api/settings.py
+      - sitescore-api/tests/test_broker_tls_compatibility.py
+      - .github/workflows/faz7-corrective-broker-tls-validation.yml
+
+permissions:
+  contents: write
 
 jobs:
-  corrective-and-frozen:
+  validate:
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -37,120 +41,231 @@ jobs:
       SITESCORE_REPORT_STORAGE_REGION: us-east-1
       SITESCORE_REPORT_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
       SITESCORE_REPORT_MAX_BYTES: "10485760"
+      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
       AWS_EC2_METADATA_DISABLED: "true"
+      AWS_ACCESS_KEY_ID: ci-minio-access
+      AWS_SECRET_ACCESS_KEY: ci-minio-secret-not-real-0123456789
       MPLCONFIGDIR: /tmp/sitescore-mplconfig
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Verify exact corrective scope
+        id: scope
+        continue-on-error: true
         run: |
-          test "$(git merge-base ee45e4fdd3d805137387a0fc1198eedf8d461fb2 HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
-          python - <<'PY'
+          set -o pipefail
+          {
+            test "$(git merge-base ee45e4fdd3d805137387a0fc1198eedf8d461fb2 HEAD)" = "ee45e4fdd3d805137387a0fc1198eedf8d461fb2"
+            python - <<'PY'
           import subprocess
           changed = subprocess.check_output(
-              ["git", "diff", "--name-only", "ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD"],
-              text=True,
+              ["git", "diff", "--name-only", "ee45e4fdd3d805137387a0fc1198eedf8d461fb2...HEAD"], text=True
           ).splitlines()
           allowed = {
               "sitescore-api/src/sitescore_api/settings.py",
               "sitescore-api/tests/test_broker_tls_compatibility.py",
               ".github/workflows/faz7-corrective-broker-tls-validation.yml",
+              ".faz7-corrective-validation-result.txt",
           }
           assert set(changed) <= allowed, changed
-          assert "sitescore-api/src/sitescore_api/settings.py" in changed, changed
-          assert "sitescore-api/tests/test_broker_tls_compatibility.py" in changed, changed
+          assert "sitescore-api/src/sitescore_api/settings.py" in changed
+          assert "sitescore-api/tests/test_broker_tls_compatibility.py" in changed
           print("CORRECTIVE_SCOPE_SCAN=PASS")
           PY
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install frozen graph and API
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
-          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
-          python -m pip install -e "sitescore-report[dev]"
-          python -m pip install -e "sitescore-api[dev]"
-          python -m pip check
-      - name: Focused broker TLS compatibility
-        working-directory: sitescore-api
-        run: python -m pytest -o addopts='' -q tests/test_broker_tls_compatibility.py --tb=short
-      - name: API full regression
-        working-directory: sitescore-api
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen report regression
-        working-directory: sitescore-report
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen app regression
-        working-directory: sitescore-app
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen pipeline regression
-        working-directory: sitescore-pipeline
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen benchmarks regression
-        working-directory: sitescore-benchmarks
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen metrics regression
-        working-directory: sitescore-metrics
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen spatial regression
-        working-directory: sitescore-spatial
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen providers regression
-        working-directory: sitescore-providers
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen data regression
-        working-directory: sitescore-data
-        run: python -m pytest -o addopts='' -q --tb=short
-      - name: Frozen core regression
-        working-directory: sitescore-core
-        run: python -m pytest -o addopts='' -q --tb=short
+          } 2>&1 | tee /tmp/scope.log
 
-  commerce:
-    runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: sitescore
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d sitescore" --health-interval 5s --health-timeout 5s --health-retries 20
-    env:
-      SITESCORE_COMMERCE_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sitescore
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install frozen graph and commerce
+
+      - name: Install frozen graph, API, and Commerce
+        id: install
+        continue-on-error: true
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
-          for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
-          python -m pip install -e "sitescore-report[dev]"
-          python -m pip install -e "sitescore-api[dev]"
-          python -m pip install -e "sitescore-commerce[test]"
-          python -m pip check
+          set -o pipefail
+          {
+            python -m pip install --upgrade pip
+            python -m pip install "shapely==2.1.2" "pyproj==3.7.2"
+            for pkg in sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app; do python -m pip install -e "$pkg" --no-deps; done
+            python -m pip install -e "sitescore-report[dev]"
+            python -m pip install -e "sitescore-api[dev]"
+            python -m pip install -e "sitescore-commerce[test]"
+            python -m pip check
+          } 2>&1 | tee /tmp/install.log
+
+      - name: Start private MinIO
+        id: minio
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            docker run -d --name sitescore-minio -p 9000:9000 \
+              -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" \
+              -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
+              minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --address :9000
+            for i in $(seq 1 30); do curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null && break; sleep 1; done
+            curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null
+          } 2>&1 | tee /tmp/minio.log
+
+      - name: API migration head
+        id: api_migration
+        continue-on-error: true
+        working-directory: sitescore-api
+        run: set -o pipefail; alembic upgrade head 2>&1 | tee /tmp/api_migration.log
+
+      - name: Focused broker TLS compatibility
+        id: focused
+        continue-on-error: true
+        working-directory: sitescore-api
+        run: set -o pipefail; python -m pytest -o addopts='' -q tests/test_broker_tls_compatibility.py --tb=short 2>&1 | tee /tmp/focused.log
+
+      - name: API full regression
+        id: api
+        continue-on-error: true
+        working-directory: sitescore-api
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/api.log
+
+      - name: Frozen report regression
+        id: report
+        continue-on-error: true
+        working-directory: sitescore-report
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/report.log
+
+      - name: Frozen app regression
+        id: app
+        continue-on-error: true
+        working-directory: sitescore-app
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/app.log
+
+      - name: Frozen pipeline regression
+        id: pipeline
+        continue-on-error: true
+        working-directory: sitescore-pipeline
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/pipeline.log
+
+      - name: Frozen benchmarks regression
+        id: benchmarks
+        continue-on-error: true
+        working-directory: sitescore-benchmarks
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/benchmarks.log
+
+      - name: Frozen metrics regression
+        id: metrics
+        continue-on-error: true
+        working-directory: sitescore-metrics
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/metrics.log
+
+      - name: Frozen spatial regression
+        id: spatial
+        continue-on-error: true
+        working-directory: sitescore-spatial
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/spatial.log
+
+      - name: Frozen providers regression
+        id: providers
+        continue-on-error: true
+        working-directory: sitescore-providers
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/providers.log
+
+      - name: Frozen data regression
+        id: data
+        continue-on-error: true
+        working-directory: sitescore-data
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/data.log
+
+      - name: Frozen core regression
+        id: core
+        continue-on-error: true
+        working-directory: sitescore-core
+        run: set -o pipefail; python -m pytest -o addopts='' -q --tb=short 2>&1 | tee /tmp/core.log
+
       - name: Commerce migration cycle and full regression
+        id: commerce
+        continue-on-error: true
         working-directory: sitescore-commerce
         run: |
-          alembic upgrade head
-          alembic downgrade base
-          alembic upgrade head
-          python -m pytest -o addopts='' -q --tb=short
+          set -o pipefail
+          {
+            alembic upgrade head
+            alembic downgrade base
+            alembic upgrade head
+            python -m pytest -o addopts='' -q --tb=short
+          } 2>&1 | tee /tmp/commerce.log
 
-  n8n-static:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install pytest
-        run: python -m pip install "pytest==8.4.2"
       - name: n8n static baseline
-        run: python -m pytest -o addopts='' -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py --tb=short
+        id: n8n
+        continue-on-error: true
+        run: set -o pipefail; python -m pytest -o addopts='' -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py --tb=short 2>&1 | tee /tmp/n8n.log
+
+      - name: Commit temporary validation evidence
+        if: always()
+        env:
+          SCOPE_OUTCOME: ${{ steps.scope.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          MINIO_OUTCOME: ${{ steps.minio.outcome }}
+          API_MIGRATION_OUTCOME: ${{ steps.api_migration.outcome }}
+          FOCUSED_OUTCOME: ${{ steps.focused.outcome }}
+          API_OUTCOME: ${{ steps.api.outcome }}
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+          APP_OUTCOME: ${{ steps.app.outcome }}
+          PIPELINE_OUTCOME: ${{ steps.pipeline.outcome }}
+          BENCHMARKS_OUTCOME: ${{ steps.benchmarks.outcome }}
+          METRICS_OUTCOME: ${{ steps.metrics.outcome }}
+          SPATIAL_OUTCOME: ${{ steps.spatial.outcome }}
+          PROVIDERS_OUTCOME: ${{ steps.providers.outcome }}
+          DATA_OUTCOME: ${{ steps.data.outcome }}
+          CORE_OUTCOME: ${{ steps.core.outcome }}
+          COMMERCE_OUTCOME: ${{ steps.commerce.outcome }}
+          N8N_OUTCOME: ${{ steps.n8n.outcome }}
+        run: |
+          RESULT=.faz7-corrective-validation-result.txt
+          {
+            echo "FAZ7_CORRECTIVE_VALIDATION"
+            echo "VALIDATED_SHA=$GITHUB_SHA"
+            echo "RUN_ID=$GITHUB_RUN_ID"
+            echo "RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT"
+            echo "PYTHON=$(python --version 2>&1 || true)"
+            for name in SCOPE INSTALL MINIO API_MIGRATION FOCUSED API REPORT APP PIPELINE BENCHMARKS METRICS SPATIAL PROVIDERS DATA CORE COMMERCE N8N; do
+              eval "value=\${${name}_OUTCOME}"
+              echo "${name}_OUTCOME=${value}"
+            done
+            echo
+            for name in scope install minio api_migration focused api report app pipeline benchmarks metrics spatial providers data core commerce n8n; do
+              echo "===== ${name} tail ====="
+              test -f "/tmp/${name}.log" && tail -n 12 "/tmp/${name}.log" || echo "NO_LOG"
+            done
+          } > "$RESULT"
+          cat "$RESULT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$RESULT"
+          git commit -m "TEMP: record FAZ 7 corrective validation evidence"
+          git push
+
+      - name: Enforce validation result
+        if: always()
+        env:
+          SCOPE_OUTCOME: ${{ steps.scope.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          MINIO_OUTCOME: ${{ steps.minio.outcome }}
+          API_MIGRATION_OUTCOME: ${{ steps.api_migration.outcome }}
+          FOCUSED_OUTCOME: ${{ steps.focused.outcome }}
+          API_OUTCOME: ${{ steps.api.outcome }}
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+          APP_OUTCOME: ${{ steps.app.outcome }}
+          PIPELINE_OUTCOME: ${{ steps.pipeline.outcome }}
+          BENCHMARKS_OUTCOME: ${{ steps.benchmarks.outcome }}
+          METRICS_OUTCOME: ${{ steps.metrics.outcome }}
+          SPATIAL_OUTCOME: ${{ steps.spatial.outcome }}
+          PROVIDERS_OUTCOME: ${{ steps.providers.outcome }}
+          DATA_OUTCOME: ${{ steps.data.outcome }}
+          CORE_OUTCOME: ${{ steps.core.outcome }}
+          COMMERCE_OUTCOME: ${{ steps.commerce.outcome }}
+          N8N_OUTCOME: ${{ steps.n8n.outcome }}
+        run: |
+          for name in SCOPE INSTALL MINIO API_MIGRATION FOCUSED API REPORT APP PIPELINE BENCHMARKS METRICS SPATIAL PROVIDERS DATA CORE COMMERCE N8N; do
+            eval "value=\${${name}_OUTCOME}"
+            test "$value" = success || { echo "$name=$value"; exit 1; }
+          done
