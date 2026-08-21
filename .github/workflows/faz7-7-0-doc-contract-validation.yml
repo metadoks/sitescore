@@ -1,0 +1,126 @@
+name: faz7-7-0-doc-contract-validation
+
+on:
+  push:
+    branches:
+      - faz7/7-0-production-operational-baseline
+    paths:
+      - docs/PRODUCTION_OPERATIONS_HANDOFF.md
+      - docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
+      - .github/workflows/faz7-7-0-doc-contract-validation.yml
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Exact base and scope
+        run: |
+          set -euo pipefail
+          BASE=3762ec643426e310ff82bdb00b20f58fb4ae9e09
+          git merge-base --is-ancestor "$BASE" HEAD
+          test "$(git merge-base "$BASE" HEAD)" = "$BASE"
+          git diff --check "$BASE"...HEAD
+          mapfile -t permanent < <(git diff --name-only "$BASE"...HEAD | grep -v '^\.github/workflows/faz7-7-0-doc-contract-validation.yml$' | sort)
+          printf '%s\n' "${permanent[@]}"
+          test "${#permanent[@]}" -eq 2
+          test "${permanent[0]}" = 'docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md'
+          test "${permanent[1]}" = 'docs/PRODUCTION_OPERATIONS_HANDOFF.md'
+          git diff --quiet "$BASE"...HEAD -- sitescore-api sitescore-commerce sitescore-core sitescore-data sitescore-providers sitescore-spatial sitescore-metrics sitescore-benchmarks sitescore-pipeline sitescore-app sitescore-report automation/n8n
+
+      - name: Package inventory proof
+        run: |
+          python - <<'PY'
+          import pathlib, tomllib
+          expected = {
+              'sitescore-core': '0.1.0',
+              'sitescore-data': '0.1.0',
+              'sitescore-providers': '0.1.0',
+              'sitescore-spatial': '0.1.0',
+              'sitescore-metrics': '0.1.0',
+              'sitescore-benchmarks': '0.1.0',
+              'sitescore-pipeline': '0.1.0',
+              'sitescore-app': '0.1.0',
+              'sitescore-report': '0.3.0',
+              'sitescore-api': '0.3.0',
+              'sitescore-commerce': '0.6.0',
+          }
+          for package, version in expected.items():
+              data = tomllib.loads(pathlib.Path(package, 'pyproject.toml').read_text())
+              actual = data['project']['version']
+              assert actual == version, (package, actual, version)
+              print(f'{package}={actual}')
+          PY
+
+      - name: Broker TLS and Celery source proof
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          settings = Path('sitescore-api/src/sitescore_api/settings.py').read_text()
+          celery = Path('sitescore-api/src/sitescore_api/celery_app.py').read_text()
+          tests = Path('sitescore-api/tests/test_broker_tls_compatibility.py').read_text()
+          assert '("redis://", "rediss://")' in settings
+          assert 'Celery("sitescore_api", broker=settings.broker_url, backend=None)' in celery
+          for token in ('task_ignore_result = True', 'task_acks_late = True', 'task_reject_on_worker_lost = True', 'worker_prefetch_multiplier = 1', 'schedule": 10.0', 'schedule": 15.0'):
+              assert token in celery, token
+          assert 'rediss://' in tests
+          print('BROKER_TLS_SOURCE_PROOF=PASS')
+          PY
+
+      - name: n8n frozen identity proof
+        run: |
+          set -euo pipefail
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
+          grep -Fq 'n8nio/n8n:2.33.4' automation/n8n/runtime/docker-compose.yml
+          grep -Fq '"path":"sitescore-order-paid-v1"' automation/n8n/workflows/sitescore-order-paid-v1.json
+          echo N8N_FROZEN_IDENTITY_PROOF=PASS
+
+      - name: Dispatcher one-shot proof
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          tree = ast.parse(Path('sitescore-commerce/src/sitescore_commerce/dispatcher.py').read_text())
+          main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+          calls = [n for n in ast.walk(main) if isinstance(n, ast.Call)]
+          dispatch_calls = [n for n in calls if isinstance(n.func, ast.Attribute) and n.func.attr == 'dispatch_once']
+          assert len(dispatch_calls) == 1, len(dispatch_calls)
+          print('DISPATCHER_MAIN_DISPATCH_ONCE_CALLS=1')
+          PY
+
+      - name: Publish validation status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='FAZ 7.0 doc contract validation failed'
+          if [ "$JOB_STATUS" = success ]; then
+            state=success
+            description='FAZ 7.0 scope/whitespace/runtime inventory proof PASS'
+          fi
+          python - "$state" "$description" <<'PY' >/tmp/status.json
+          import json, os, sys
+          print(json.dumps({
+              'state': sys.argv[1],
+              'context': 'faz7/7.0-doc-contract',
+              'description': sys.argv[2],
+              'target_url': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+          }))
+          PY
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary @/tmp/status.json >/dev/null
+          test "$state" = success
