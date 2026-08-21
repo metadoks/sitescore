@@ -68,7 +68,16 @@ jobs:
           tests = Path('sitescore-api/tests/test_broker_tls_compatibility.py').read_text()
           assert '("redis://", "rediss://")' in settings
           assert 'Celery("sitescore_api", broker=settings.broker_url, backend=None)' in celery
-          for token in ('task_ignore_result = True', 'task_acks_late = True', 'task_reject_on_worker_lost = True', 'worker_prefetch_multiplier = 1', 'schedule": 10.0', 'schedule": 15.0'):
+          for token in (
+              'task_ignore_result=True',
+              'task_store_errors_even_if_ignored=False',
+              'task_acks_late=True',
+              'task_acks_on_failure_or_timeout=True',
+              'task_reject_on_worker_lost=True',
+              'worker_prefetch_multiplier=1',
+              '"schedule": 10.0',
+              '"schedule": 15.0',
+          ):
               assert token in celery, token
           assert 'rediss://' in tests
           print('BROKER_TLS_SOURCE_PROOF=PASS')
