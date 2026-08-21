@@ -281,109 +281,106 @@ Valkey is not durable business truth
 
 ## 5. Environment-variable inventory
 
+Every row below is row-local and explicitly carries consumer and source authority. Where a value is supplied by an SDK credential-provider chain rather than direct SiteScore `os.getenv`, that distinction is stated instead of inventing a SiteScore-bound environment name.
+
 ### 5.1 SiteScore API web / worker / beat
 
-Direct source: `sitescore-api/src/sitescore_api/settings.py`, `runtime.py`.
+| Variable | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| `SITESCORE_DATABASE_URL` | API web, worker, task runtime | `sitescore-api/src/sitescore_api/settings.py` | required | **yes** | **NO** | restart/redeploy; DB sessions reconnect; coordinate credential rollover | PostgreSQL URL only; environment-specific DB/user |
+| `SITESCORE_BROKER_URL` | API runtime, Celery worker, beat | `sitescore-api/src/sitescore_api/settings.py`; `celery_app.py` | required | **yes** | **NO** | worker/beat restart; in-flight execution transport may retry | production target `rediss://...`; `redis://` local/test compatibility only |
+| `SITESCORE_API_KEY_PEPPER` | API authentication | `sitescore-api/src/sitescore_api/settings.py` | required | **yes** | **NO** | affects stored service-key hash verification; requires deliberate rollover | minimum 32 UTF-8 bytes |
+| `SITESCORE_ANALYSIS_DEADLINE_SECONDS` | API lifecycle, worker contract | `sitescore-api/src/sitescore_api/settings.py` | default `900` | no | may share same value | redeploy changes durable timeout window | positive integer; hard worker limit must not exceed deadline |
+| `SITESCORE_POLL_RETRY_AFTER_SECONDS` | API web responses | `sitescore-api/src/sitescore_api/settings.py` | default `3` | no | may share same value | redeploy changes client polling hint only | positive integer |
+| `SITESCORE_WORKER_SOFT_LIMIT_SECONDS` | Celery worker | `sitescore-api/src/sitescore_api/settings.py`; `celery_app.py` | default `840` | no | may share same value | worker restart; changes soft termination timing | positive; less than hard limit |
+| `SITESCORE_WORKER_HARD_LIMIT_SECONDS` | Celery worker | `sitescore-api/src/sitescore_api/settings.py`; `celery_app.py` | default `900` | no | may share same value | worker restart; changes hard termination timing | positive; greater than soft; <= analysis deadline |
+| `SITESCORE_REPORT_STORAGE_BUCKET` | API report storage/generator | `sitescore-api/src/sitescore_api/settings.py`; `report_artifacts.py` | default `sitescore-reports` in source | no; resource identity | **NO** in production contract | changing bucket changes artifact location; requires migration/retention planning | separate staging/prod buckets required |
+| `SITESCORE_REPORT_STORAGE_REGION` | API report storage | `sitescore-api/src/sitescore_api/settings.py`; `report_artifacts.py` | default `us-east-1` | no | may share only if both resources intentionally use same region | storage client restart/redeploy | non-empty; later Spaces config must bind intended region explicitly |
+| `SITESCORE_REPORT_STORAGE_ENDPOINT_URL` | API report storage | `sitescore-api/src/sitescore_api/settings.py`; `report_artifacts.py` | optional | no | may share service endpoint only, never bucket/credential | storage client restart/redeploy | if present must be HTTP/HTTPS; production target is explicit Spaces HTTPS endpoint |
+| `SITESCORE_REPORT_MAX_BYTES` | report generation/read | `sitescore-api/src/sitescore_api/settings.py`; `report_artifacts.py` | default `10485760` | no | may share same value | changes accepted artifact bound | positive integer |
+| `SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY` | API worker/runtime acquisition | `sitescore-api/src/sitescore_api/runtime.py` | optional; absent => `MissingExecutionEvidenceSource` | no | may differ | worker restart; changes real acquisition deployment binding | `module:callable`; exact return type must be `CanonicalAcquisitionDeployment` |
 
-| Variable | Consumer | Required/default | Secret | Staging/prod shared? | Rotation/operational impact | Constraints / notes |
-|---|---|---|---|---|---|---|
-| `SITESCORE_DATABASE_URL` | API web/worker/tasks | required | **yes** | **NO** | restart/redeploy; DB sessions reconnect | PostgreSQL URL only; includes credentials in normal deployment |
-| `SITESCORE_BROKER_URL` | worker/beat/API runtime | required | **yes** | **NO** | worker/beat restart; in-flight execution transport affected | production target `rediss://...`; `redis://` local/test only |
-| `SITESCORE_API_KEY_PEPPER` | API authentication | required | **yes** | **NO** | API key verification compatibility; rotate only with deliberate key migration/rollover plan | minimum 32 UTF-8 bytes |
-| `SITESCORE_ANALYSIS_DEADLINE_SECONDS` | API lifecycle | default `900` | no | may be same | changes durable timeout behavior; redeploy | positive integer; hard worker limit must not exceed it |
-| `SITESCORE_POLL_RETRY_AFTER_SECONDS` | API HTTP responses | default `3` | no | may be same | client polling hint only | positive integer |
-| `SITESCORE_WORKER_SOFT_LIMIT_SECONDS` | Celery | default `840` | no | may be same | worker restart; execution termination behavior | positive; less than hard limit |
-| `SITESCORE_WORKER_HARD_LIMIT_SECONDS` | Celery | default `900` | no | may be same | worker restart; execution termination behavior | positive; greater than soft; <= analysis deadline |
-| `SITESCORE_REPORT_STORAGE_BUCKET` | report storage | default `sitescore-reports` in source | no, but environment-specific resource identity | **NO in production contract** | changes artifact location; deploy only with migration/retention plan | FAZ 7 requires separate staging/prod buckets |
-| `SITESCORE_REPORT_STORAGE_REGION` | report storage | default `us-east-1` | no | may be same | storage client restart | non-empty |
-| `SITESCORE_REPORT_STORAGE_ENDPOINT_URL` | report storage | optional | no | may be same only if same service endpoint, not same credentials/bucket | storage client restart | if present must be http/https; production target is Spaces HTTPS endpoint |
-| `SITESCORE_REPORT_MAX_BYTES` | report generation/read | default `10485760` | no | may be same | changes artifact bound | positive integer |
-| `SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY` | API worker/runtime | optional; absent => `MissingExecutionEvidenceSource` | no | may differ | worker restart; determines real acquisition wiring | `module:callable`, exact return type `CanonicalAcquisitionDeployment` |
+### 5.2 Object-storage SDK credential surface
 
-### 5.2 Object storage SDK-level credentials
-
-`S3CompatibleObjectStorage` constructs `boto3.client("s3", ...)` without explicit credential arguments. Therefore credentials come from the boto3/AWS credential provider chain rather than direct SiteScore `os.getenv` calls.
-
-Production must supply environment-specific Spaces-compatible credentials using the selected boto3-supported credential mechanism. Common environment keys are `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (and a session token only if the chosen credential type uses one). They are **secrets and MUST NOT be shared between staging and production**. The exact secret injection mechanism is a 7.2 IaC/secrets obligation.
+| Variable / credential surface | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| boto3 credential provider chain, commonly `AWS_ACCESS_KEY_ID` | API S3/Spaces client | `sitescore-api/src/sitescore_api/report_artifacts.py` constructs `boto3.client(...)`; credential resolution is **SDK-level, not direct SiteScore `os.getenv`** | required when selected credential mechanism needs explicit access key | **yes** | **NO** | storage client/process restart or provider-supported rollover | do not infer that SiteScore source binds this exact env name; selected boto3-supported mechanism is 7.2 authority |
+| boto3 credential provider chain, commonly `AWS_SECRET_ACCESS_KEY` | API S3/Spaces client | same SDK-level credential provider chain | required with access-key credential mode | **yes** | **NO** | coordinated storage credential rollover | least privilege to environment bucket only |
+| boto3 session token when selected credential type uses one | API S3/Spaces client | boto3 SDK credential provider chain | optional / credential-mode dependent | **yes** | **NO** | token refresh/rotation per selected credential mode | do not commit or persist in report metadata |
 
 ### 5.3 Narrative provider
 
-Direct SiteScore source variable:
-
-| Variable | Consumer | Required/default | Secret | Shared? | Notes |
-|---|---|---|---|---|---|
-| `SITESCORE_NARRATIVE_MODEL_ID` | report narrative | optional; unset => provider unconfigured/fallback behavior | no | may be same | read by `NarrativeProviderConfig.from_environment()` |
-
-When the OpenAI provider is used, `OpenAI()` is instantiated with SDK defaults. The SiteScore source does **not** directly read an OpenAI credential variable. A provider credential (commonly the OpenAI SDK's `OPENAI_API_KEY`) is therefore an **SDK-level secret requirement**, must be isolated by environment, and must be budgeted/rotated independently. Do not record a credential value in repository or this document.
+| Variable / credential surface | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| `SITESCORE_NARRATIVE_MODEL_ID` | report narrative provider selection | `sitescore-report/src/sitescore_report/narrative.py::NarrativeProviderConfig.from_environment` | optional; unset => provider unconfigured/fallback behavior | no | may share model ID | report process restart/redeploy changes selected model | model selection never changes canonical analytical authority |
+| OpenAI SDK credential provider, commonly `OPENAI_API_KEY` | `OpenAI()` SDK client used by report narrative provider | `sitescore-report/src/sitescore_report/narrative.py`; **SDK-level, not direct SiteScore `os.getenv`** | required only when provider is actually configured and SDK needs credential | **yes** | **NO** | rotate provider credential/project; redeploy if platform injection requires | SiteScore does not canonically bind the exact credential env name; do not invent additional provider env names |
 
 ### 5.4 Commerce web
 
-Direct source: `sitescore-commerce/src/sitescore_commerce/settings.py`.
-
-| Variable | Required/default | Secret | Staging/prod shared? | Rotation impact / constraints |
-|---|---|---|---|---|
-| `COMMERCE_ENV` | default `production`; allowed production/development/test | no | may differ | staging must not masquerade as production; production URL validators require HTTPS |
-| `SITESCORE_COMMERCE_DATABASE_URL` | required | **yes** | **NO** | Commerce DB reconnect/redeploy; dedicated env DB/user |
-| `STRIPE_SECRET_KEY` | required | **yes** | **NO** | payment provider calls; staged key rollover required |
-| `STRIPE_PRICE_LOCATION_REPORT_V1` | required | environment-specific provider resource ID | **NO where environment-specific** | must begin valid `price_`; staging uses test-mode price |
-| `COMMERCE_SUCCESS_URL_BASE` | required | no | normally separate host | production HTTPS |
-| `COMMERCE_CANCEL_URL_BASE` | required | no | normally separate host | production HTTPS |
-| `STRIPE_WEBHOOK_SECRET` | required | **yes** | **NO** | dual-secret/endpoint rollover coordination needed |
-| `STRIPE_EXPECTED_LIVEMODE` | required bool | no | **NO** | staging = false/test mode; production must match intended live mode |
-| `STRIPE_API_VERSION` | optional but pinned | no | may be same | must equal `2026-07-29.dahlia` |
-| `SITESCORE_API_BASE_URL` | required | no | **NO by environment endpoint** | production HTTPS; no path component |
-| `SITESCORE_API_SERVICE_KEY` | required | **yes** | **NO** | rotate with API consumer credential provisioning; `ssk1_` frozen format, secret body >=24 bytes |
-| `SITESCORE_API_TARGET_ID` | required | no | normally environment-specific | <=128 UTF-8 bytes; identifies bound SiteScore target |
-| `SITESCORE_API_TIMEOUT_SECONDS` | default `10` | no | may be same | >0 and <=60 seconds |
-| `COMMERCE_AUTOMATION_API_KEY` | required | **yes** | **NO** | rotate coordinated with n8n; >=24 bytes |
-| `POSTMARK_SERVER_TOKEN` | required | **yes** | **NO** | rotate coordinated with email transport; >=16 bytes |
-| `POSTMARK_FROM_EMAIL` | required | no | may differ | validated email shape |
-| `POSTMARK_TEMPLATE_ALIAS` | required | no | may be same if deployment intentionally uses same non-secret alias | `[A-Za-z0-9._-]{1,100}` |
-| `POSTMARK_TIMEOUT_SECONDS` | default `10` | no | may be same | >0 and <=60 seconds |
-| `COMMERCE_PUBLIC_BASE_URL` | required | no | **NO by environment hostname** | production HTTPS; source of delivery capability URL, never caller Host authority |
+| Variable | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| `COMMERCE_ENV` | Commerce web/settings | `sitescore-commerce/src/sitescore_commerce/settings.py` | default `production`; allowed production/development/test | no | may differ | redeploy changes production validation mode | staging must not masquerade as production; production URL validators require HTTPS |
+| `SITESCORE_COMMERCE_DATABASE_URL` | Commerce web/store | `sitescore-commerce/src/sitescore_commerce/settings.py` | required | **yes** | **NO** | DB reconnect/redeploy; coordinate credential rotation | dedicated environment Commerce DB/user |
+| `STRIPE_SECRET_KEY` | Checkout/payment/refund gateways | `sitescore-commerce/src/sitescore_commerce/settings.py`; Stripe gateway sources | required | **yes** | **NO** | staged provider key rollover; money-provider calls affected | key mode must align with environment |
+| `STRIPE_PRICE_LOCATION_REPORT_V1` | Commerce catalog/Checkout | `sitescore-commerce/src/sitescore_commerce/settings.py`; `checkout.py` | required | no; provider resource ID | **NO** where environment-specific | catalog deployment change; no secret rotation | must satisfy valid `price_` shape; staging uses test-mode Price |
+| `COMMERCE_SUCCESS_URL_BASE` | Checkout redirect construction | `sitescore-commerce/src/sitescore_commerce/settings.py`; `checkout.py` | required | no | normally **NO** by hostname | redeploy changes customer redirect target | production HTTPS |
+| `COMMERCE_CANCEL_URL_BASE` | Checkout redirect construction | `sitescore-commerce/src/sitescore_commerce/settings.py`; `checkout.py` | required | no | normally **NO** by hostname | redeploy changes customer redirect target | production HTTPS |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook verification | `sitescore-commerce/src/sitescore_commerce/settings.py`; webhook source | required | **yes** | **NO** | endpoint/secret rollover must be coordinated to avoid rejecting valid events | signed external processor ingress authority |
+| `STRIPE_EXPECTED_LIVEMODE` | payment evidence validation | `sitescore-commerce/src/sitescore_commerce/settings.py` | required bool | no | **NO** | redeploy changes expected mode and can reject evidence | staging=false/test; production must match intended live mode |
+| `STRIPE_API_VERSION` | Stripe SDK requests | `sitescore-commerce/src/sitescore_commerce/settings.py`; gateway sources | optional but pinned | no | may share | API-version change is contract-sensitive; not casual rotation | must equal `2026-07-29.dahlia` |
+| `SITESCORE_API_BASE_URL` | Commerce fulfillment/delivery SiteScore client | `sitescore-commerce/src/sitescore_commerce/settings.py`; fulfillment/delivery sources | required | no | **NO** by environment endpoint | redeploy reroutes internal dependency | production HTTPS; no path component |
+| `SITESCORE_API_SERVICE_KEY` | Commerce -> SiteScore authentication | `sitescore-commerce/src/sitescore_commerce/settings.py`; SiteScore gateway sources | required | **yes** | **NO** | rotate with API consumer credential provisioning; coordinate overlap | `ssk1_` frozen format; secret body >=24 bytes |
+| `SITESCORE_API_TARGET_ID` | durable SiteScore target binding | `sitescore-commerce/src/sitescore_commerce/settings.py` | required | no | normally **NO** | target identity change requires deliberate deployment reconciliation | <=128 UTF-8 bytes |
+| `SITESCORE_API_TIMEOUT_SECONDS` | Commerce SiteScore HTTP calls | `sitescore-commerce/src/sitescore_commerce/settings.py`; delivery/fulfillment gateways | default `10` | no | may share same value | redeploy changes timeout/failure classification timing | >0 and <=60 seconds |
+| `COMMERCE_AUTOMATION_API_KEY` | internal Commerce automation auth; n8n caller credential validation | `sitescore-commerce/src/sitescore_commerce/settings.py`; automation route auth | required | **yes** | **NO** | rotate coordinated with n8n; temporary dual-key support would require explicit source authority | >=24 bytes; distinct from n8n ingress secret |
+| `POSTMARK_SERVER_TOKEN` | Postmark delivery gateway | `sitescore-commerce/src/sitescore_commerce/settings.py`; `delivery.py` | required | **yes** | **NO** | rotate coordinated with email provider | >=16 bytes |
+| `POSTMARK_FROM_EMAIL` | Postmark delivery | `sitescore-commerce/src/sitescore_commerce/settings.py`; `delivery.py` | required | no | may differ | sender change may affect deliverability/provider verification | validated email shape |
+| `POSTMARK_TEMPLATE_ALIAS` | Postmark template send | `sitescore-commerce/src/sitescore_commerce/settings.py`; `delivery.py` | required | no | may share if intentionally same alias exists | template deployment/alias change affects rendered email | `[A-Za-z0-9._-]{1,100}` |
+| `POSTMARK_TIMEOUT_SECONDS` | Postmark HTTP transport | `sitescore-commerce/src/sitescore_commerce/settings.py`; `delivery.py` | default `10` | no | may share same value | redeploy changes uncertain/retry timing | >0 and <=60 seconds |
+| `COMMERCE_PUBLIC_BASE_URL` | delivery capability URL creation | `sitescore-commerce/src/sitescore_commerce/settings.py`; `delivery.py` | required | no | **NO** by environment hostname | redeploy changes generated delivery URLs | production HTTPS; server-owned, never caller Host authority |
 
 ### 5.5 Commerce dispatcher
 
-Direct source: `sitescore-commerce/src/sitescore_commerce/dispatcher.py`.
+| Variable | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| `COMMERCE_ENV` | dispatcher settings | `sitescore-commerce/src/sitescore_commerce/dispatcher.py` / Commerce settings construction | default production | no | may differ | redeploy affects HTTPS validation mode | production dispatcher requires HTTPS webhook |
+| `SITESCORE_COMMERCE_DATABASE_URL` | dispatcher durable outbox access | `sitescore-commerce/src/sitescore_commerce/dispatcher.py`; Commerce settings/store | required | **yes** | **NO** | DB reconnect/redeploy | must point to same environment's Commerce truth |
+| `COMMERCE_N8N_ORDER_PAID_WEBHOOK_URL` | dispatcher outbound transport | `sitescore-commerce/src/sitescore_commerce/dispatcher.py` | required | no | **NO** by environment endpoint | redeploy reroutes transport target | production must be HTTPS; exact locked webhook ingress only |
+| `COMMERCE_N8N_INGRESS_SECRET` | dispatcher -> n8n Bearer auth | `sitescore-commerce/src/sitescore_commerce/dispatcher.py` | required | **yes** | **NO** | rotate coordinated with n8n ingress; failed coordination leaves events unpublished/retryable | >=24 bytes; must be distinct from automation key when both present |
+| `COMMERCE_AUTOMATION_API_KEY` | dispatcher distinct-secret validation; broader Commerce/n8n automation auth | `sitescore-commerce/src/sitescore_commerce/dispatcher.py`; Commerce settings | optional in dispatcher-only context, required elsewhere | **yes** | **NO** | coordinated n8n/Commerce rotation | must not equal ingress secret |
+| `COMMERCE_N8N_TIMEOUT_SECONDS` | dispatcher HTTP transport | `sitescore-commerce/src/sitescore_commerce/dispatcher.py` | default `10` | no | may share same value | redeploy changes timeout/uncertain transport behavior | >0 and <=30 seconds |
 
-| Variable | Required/default | Secret | Staging/prod shared? | Constraints |
-|---|---|---|---|---|
-| `COMMERCE_ENV` | default production | no | may differ | controls production HTTPS validation |
-| `SITESCORE_COMMERCE_DATABASE_URL` | required | **yes** | **NO** | same environment's Commerce durable truth |
-| `COMMERCE_N8N_ORDER_PAID_WEBHOOK_URL` | required | no | **NO by environment endpoint** | production must be HTTPS |
-| `COMMERCE_N8N_INGRESS_SECRET` | required | **yes** | **NO** | >=24 bytes; must be distinct from automation key when both present |
-| `COMMERCE_AUTOMATION_API_KEY` | optional in dispatcher only for distinct-secret validation; required elsewhere | **yes** | **NO** | must not equal ingress secret |
-| `COMMERCE_N8N_TIMEOUT_SECONDS` | default `10` | no | may be same | >0 and <=30 seconds |
+### 5.6 n8n runtime/workflows
 
-### 5.6 n8n
+| Variable | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| `N8N_ENCRYPTION_KEY` | n8n runtime credential encryption | `automation/n8n/runtime/docker-compose.yml` | required | **yes** | **NO** | requires deliberate n8n-aware credential migration/rotation; blind replacement can make stored credentials unreadable | never log/export value |
+| `N8N_HOST` | n8n runtime listener config | `automation/n8n/runtime/docker-compose.yml` | default `0.0.0.0` | no | may differ | restart/redeploy networking impact | deployment networking value |
+| `N8N_PORT` | n8n runtime | `automation/n8n/runtime/docker-compose.yml` | fixed `5678` in current compose | no | may share | restart/redeploy if changed later | internal listener |
+| `N8N_PROTOCOL` | n8n URL/webhook context | `automation/n8n/runtime/docker-compose.yml` | default `https` | no | may share | restart/redeploy | production ingress must remain HTTPS |
+| `N8N_WEBHOOK_URL` | n8n webhook URL generation | `automation/n8n/runtime/docker-compose.yml` | required | no | **NO** by environment hostname | restart/redeploy changes externally generated webhook base | only exact locked order-paid path may be public |
+| `N8N_USE_WORKFLOW_PUBLICATION_SERVICE` | n8n activation compatibility | `automation/n8n/runtime/docker-compose.yml` | fixed `false` | no | may share | runtime compatibility setting; change requires revalidation | frozen 2.33.4 activation mode |
+| `N8N_DIAGNOSTICS_ENABLED` | n8n runtime | `automation/n8n/runtime/docker-compose.yml` | `false` | no | may share | restart/redeploy | telemetry disabled in current runtime evidence |
+| `N8N_VERSION_NOTIFICATIONS_ENABLED` | n8n runtime | `automation/n8n/runtime/docker-compose.yml` | `false` | no | may share | restart/redeploy | current runtime evidence |
+| `N8N_PERSONALIZATION_ENABLED` | n8n runtime | `automation/n8n/runtime/docker-compose.yml` | `false` | no | may share | restart/redeploy | current runtime evidence |
+| `N8N_BLOCK_ENV_ACCESS_IN_NODE` | workflow env access | `automation/n8n/runtime/docker-compose.yml`; workflow JSON uses `$env` | `false` | no | may share | changing to true breaks current workflow env references | remains frozen until workflows/config are jointly reviewed |
+| `EXECUTIONS_DATA_SAVE_ON_ERROR` | n8n execution persistence | `automation/n8n/runtime/docker-compose.yml` | `none` | no | may share | restart/redeploy | minimizes stored execution data |
+| `EXECUTIONS_DATA_SAVE_ON_SUCCESS` | n8n execution persistence | `automation/n8n/runtime/docker-compose.yml` | `none` | no | may share | restart/redeploy | minimizes stored execution data |
+| `COMMERCE_N8N_INGRESS_SECRET` | order-paid workflow ingress authentication | `automation/n8n/workflows/sitescore-order-paid-v1.json` | required | **yes** | **NO** | coordinate with dispatcher; bad rotation rejects ingress while Commerce outbox stays durable | Bearer comparison only; no business authority |
+| `COMMERCE_AUTOMATION_API_KEY` | n8n -> Commerce internal calls | order/recovery workflow JSON | required | **yes** | **NO** | coordinate with Commerce automation auth | distinct from ingress secret |
+| `SITESCORE_COMMERCE_AUTOMATION_BASE_URL` | n8n HTTP nodes | order/recovery workflow JSON | required | no | **NO** by environment endpoint | reroutes internal Commerce dependency | internal/private Commerce base only |
+| `SITESCORE_N8N_POLL_SECONDS` | order workflow paced polling | `automation/n8n/workflows/sitescore-order-paid-v1.json` | default `15` | no | may share | changes orchestration pacing/cost; redeploy/workflow runtime config | finite paced polling only |
+| `SITESCORE_N8N_MAX_POLLS` | order workflow poll horizon | `automation/n8n/workflows/sitescore-order-paid-v1.json` | default `60` | no | may share | changes execution horizon, not Commerce terminal truth | exhaustion must not synthesize business state |
 
-Source: `automation/n8n/runtime/docker-compose.yml` and workflow JSON.
+Production PostgreSQL variables required by n8n are not canonicalized in the current local compose. FAZ 7.2 must configure the **n8n-supported PostgreSQL environment surface** against a dedicated n8n database/user; FAZ 7.0 deliberately does not invent exact variable names/values that are not present in current repository authority.
 
-| Variable | Required/default | Secret | Staging/prod shared? | Notes |
-|---|---|---|---|---|
-| `N8N_ENCRYPTION_KEY` | required | **yes** | **NO** | credential encryption; rotation requires deliberate n8n migration procedure |
-| `N8N_HOST` | default `0.0.0.0` | no | may differ | deployment networking value |
-| `N8N_PORT` | fixed `5678` in current compose | no | may be same | internal listener |
-| `N8N_PROTOCOL` | default `https` | no | may be same | external webhook generation context |
-| `N8N_WEBHOOK_URL` | required | no | **NO by env hostname** | exact environment public webhook base |
-| `N8N_USE_WORKFLOW_PUBLICATION_SERVICE` | fixed `false` | no | same | frozen 2.33.4 activation compatibility |
-| `N8N_DIAGNOSTICS_ENABLED` | `false` | no | same | telemetry disabled in current runtime evidence |
-| `N8N_VERSION_NOTIFICATIONS_ENABLED` | `false` | no | same | current runtime evidence |
-| `N8N_PERSONALIZATION_ENABLED` | `false` | no | same | current runtime evidence |
-| `N8N_BLOCK_ENV_ACCESS_IN_NODE` | `false` | no | same while workflows require `$env` | workflows consume environment references |
-| `EXECUTIONS_DATA_SAVE_ON_ERROR` | `none` | no | same | minimizes stored execution data |
-| `EXECUTIONS_DATA_SAVE_ON_SUCCESS` | `none` | no | same | minimizes stored execution data |
-| `COMMERCE_N8N_INGRESS_SECRET` | required | **yes** | **NO** | verifies dispatcher Bearer token |
-| `COMMERCE_AUTOMATION_API_KEY` | required | **yes** | **NO** | n8n -> internal Commerce automation routes |
-| `SITESCORE_COMMERCE_AUTOMATION_BASE_URL` | required | no | **NO by env endpoint** | internal/private Commerce base |
-| `SITESCORE_N8N_POLL_SECONDS` | default `15` | no | may be same | paced workflow polling |
-| `SITESCORE_N8N_MAX_POLLS` | default `60` | no | may be same | finite workflow horizon |
+### 5.7 Provider credential surfaces
 
-Production PostgreSQL variables required by n8n are not canonicalized in the current local compose. FAZ 7.2 must configure the n8n-supported PostgreSQL environment surface against a dedicated n8n database/user; 7.0 deliberately does not invent exact variable values or deploy them.
-
-### 5.7 Provider credentials
-
-The canonical API runtime accepts `SITESCORE_ACQUISITION_DEPLOYMENT_FACTORY`; the deployment object contains concrete provider transports/configuration.
+| Variable / credential surface | Consumer | Source | Required / default | Secret? | Staging/prod sharing | Rotation / operational impact | Constraints / notes |
+|---|---|---|---|---|---|---|---|
+| deployment-factory ACS API credential (**no canonical env name in current source**) | `ACSClient` inside canonical acquisition deployment | `sitescore-providers/src/sitescore_providers/acs/client.py`; `sitescore-api/src/sitescore_api/acquisition.py` | required when ACS acquisition is configured | **yes** | **NO** | provider credential rotation through deployment factory/config injection | credential is executor state only; must not enter fingerprints/artifact metadata |
+| deployment-factory Valhalla endpoint/binding configuration | pedestrian provider deployment | `sitescore-api/src/sitescore_api/acquisition.py`; pedestrian provider package | required for configured pedestrian deployment | endpoint no; any auth header/credential **yes** | **NO** for credentials; endpoint may differ | deployment restart/rebind; compatibility evidence must remain exact | no invented env name; use reviewed deployment factory binding |
+| Overture/GTFS artifact-loader access configuration | deployment artifact loader | `sitescore-api/src/sitescore_api/acquisition.py` protocol boundary | deployment-specific | credential if required by selected storage/source | **NO** for credentials | rotate selected storage/source credential | source does not canonically define env names here |
 
 Current live acquisition source directly wires these provider/data families:
 
@@ -394,8 +391,6 @@ Overture Places artifacts
 Valhalla pedestrian/routing
 GTFS transit artifacts
 ```
-
-`ACSClient` requires an API key constructor argument, but the provider package does not define a direct environment variable name. Therefore the eventual deployment factory owns secure injection of the ACS credential. Provider API credentials are secrets, must be environment-separated, budgeted, rotated independently, and must not be embedded in artifacts/fingerprints.
 
 **Not observed as active canonical runtime wiring at this base:** direct Google Places, OSM/Nominatim, or Mapbox client wiring in `sitescore-api/src/sitescore_api/acquisition.py`. They must not be represented as deployed dependencies merely because they existed in earlier planning. A later authorized deployment factory may only add provider wiring consistent with frozen provider contracts and Reviewer authority.
 
