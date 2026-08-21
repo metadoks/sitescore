@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - faz7/corrective-broker-tls-rediss
+  pull_request:
+    branches:
+      - main
 
 jobs:
   corrective-and-frozen:
