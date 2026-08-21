@@ -26,9 +26,9 @@ FINAL_HEAD_SHA: 106e392b4143818298fd9ea9dcbb06def5ad3de8
 VALIDATED_HEAD_SHA: 08acb7f8d2203fa535cc0d0e325e3fa1820aecf2
 VALIDATED_TO_FINAL_DIFF: ONLY_TEMP_HARDENING_VALIDATION_WORKFLOW_REMOVAL
 
-REVIEWER_H002_RUNTIME_MATRIX_PG_SPACES: RESOLVED_AT_FINAL_HEAD
-REVIEWER_H003_ENV_ROW_TRACEABILITY: RESOLVED_AT_FINAL_HEAD
-REVIEWER_H004_EXECUTABLE_BROKER_TESTS: RESOLVED_9_PASS
+OPS70-H002: RESOLVED_AT_FINAL_HEAD
+OPS70-H003: RESOLVED_AT_FINAL_HEAD
+OPS70-H004: RESOLVED_9_PASS
 BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
 
 HARDENING_VALIDATION_RUN: 32492552144
@@ -64,7 +64,7 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 
 Reviewer reopened FAZ 7.0 for three documentation/validation blockers. The corrective remained strictly inside the existing two-document permanent scope.
 
-### H002 — runtime separation matrix / Managed PostgreSQL / Spaces completeness
+### OPS70-H002 — runtime separation matrix / Managed PostgreSQL / Spaces completeness
 
 `docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md` now contains an explicit staging/production separation matrix with these columns:
 
@@ -105,7 +105,7 @@ least-privilege credentials
 
 Resource creation remains correctly deferred to FAZ 7.2; restore/DR proof remains FAZ 7.6.
 
-### H003 — environment inventory row-level traceability
+### OPS70-H003 — environment inventory row-level traceability
 
 `docs/PRODUCTION_OPERATIONS_HANDOFF.md` was normalized so environment/config rows carry row-local:
 
@@ -122,7 +122,7 @@ constraints/notes
 
 API, object-storage SDK credentials, narrative/OpenAI, Commerce web, dispatcher, n8n and provider credential surfaces are covered. SDK-level credential-provider behavior is explicitly distinguished from direct SiteScore `os.getenv` binding. Provider variable names not canonically defined by source are not invented.
 
-### H004 — executable focused broker-TLS tests
+### OPS70-H004 — executable focused broker-TLS tests
 
 Exact validator command executed the real test file:
 
@@ -164,9 +164,9 @@ exact base/main lineage = PASS
 git diff --check = PASS
 permanent scope = exactly two authorized docs
 package inventory/version proof = PASS
-H002 runtime-contract schema = PASS
-H003 environment row-local schema = PASS
-actual focused broker pytest = 9 PASS
+OPS70-H002 runtime-contract schema = PASS
+OPS70-H003 environment row-local schema = PASS
+OPS70-H004 actual focused broker pytest = 9 PASS
 Celery static broker binding/frozen config = PASS
 n8n frozen workflow hashes/runtime identity = PASS
 commerce dispatcher main has exactly one dispatch_once() = PASS
