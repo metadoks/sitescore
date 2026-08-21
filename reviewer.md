@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.0
 CHECKPOINT_TITLE: Production Baseline + Operational Contract + Compatibility Audit
-REVIEWER_STATE: CONTRACT_ISSUED
-IMPLEMENTER_ACTION: IMPLEMENT_CHECKPOINT
+REVIEWER_STATE: HARDENING_REQUIRED
+IMPLEMENTER_ACTION: HARDEN_SAME_PR
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -20,27 +20,16 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 3762ec643426e310ff82bdb00b20f58fb4ae9e09
 EXPECTED_BASE_TREE_SHA: 3cc9fe7c0f8da20a4c2763661a4df304c96c94ce
 CODE_BRANCH: faz7/7-0-production-operational-baseline
-PR: TBD
-REVIEWED_HEAD_SHA: NONE
+PR: #33
+REVIEWED_HEAD_SHA: 0a86c97142a5bf85c2196d7038b611e7fcef107c
 
-FAZ_3_STATUS: FROZEN
-FAZ_4_STATUS: FROZEN
-FAZ_5_STATUS: FROZEN
-FAZ_6_STATUS: FROZEN
-FAZ_6_FINAL_MERGE_COMMIT: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-
-ENTRY_CORRECTIVE_PR: #32
-ENTRY_CORRECTIVE_REVIEWED_HEAD: d5207d6d5a7483d7150ae0c68034428a5d70d6e2
-ENTRY_CORRECTIVE_MERGE_COMMIT: 3762ec643426e310ff82bdb00b20f58fb4ae9e09
-ENTRY_CORRECTIVE_STATUS: LOCKED_VERIFIED
-OPS70-H001: RESOLVED_CLOSED
-BROKER_TLS_GATE: PASS_ON_MAIN
-PRODUCTION_BROKER_TARGET: rediss://
-
-MAIN_BRANCH_PROTECTED: FALSE
-CANONICAL_DOCKER_ASSETS_OBSERVED: NONE
-CANONICAL_OPENTOFU_IAC_OBSERVED: NONE
-PRODUCTION_DEPLOYMENT_OBSERVED: NONE
+PR_STATE: OPEN
+PR_DRAFT: FALSE
+PR_MERGEABLE_AT_REVIEW: TRUE
+LIVE_MAIN_SHA: 3762ec643426e310ff82bdb00b20f58fb4ae9e09
+LIVE_MAIN_UNCHANGED_FROM_BASE: YES
+PERMANENT_CHANGED_FILES: 2
+SOURCE_PACKAGE_TREE_DIFF: NONE
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -48,765 +37,103 @@ ADDITIONAL_REOPEN_REQUIRED: 0
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
+
+BLOCKERS:
+  OPS70-H002: OPEN
+  OPS70-H003: OPEN
+  OPS70-H004: OPEN
 ```
 
 ---
 
-# 1. POST-LOCK ENTRY CORRECTIVE VERIFICATION
+# 1. REVIEW SCOPE / EXACT STATE
 
-Reviewer independently verified the locked broker-TLS corrective before reopening normal FAZ 7.0.
-
-Live GitHub state:
+Reviewer independently audited PR #33 against the FAZ 7.0 contract at exact head:
 
 ```text
-PR #32: CLOSED / MERGED
-reviewed corrective head:
-  d5207d6d5a7483d7150ae0c68034428a5d70d6e2
-merge commit / live main:
-  3762ec643426e310ff82bdb00b20f58fb4ae9e09
-merge tree:
-  3cc9fe7c0f8da20a4c2763661a4df304c96c94ce
-parent 1:
-  ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-parent 2:
-  d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+0a86c97142a5bf85c2196d7038b611e7fcef107c
 ```
 
-The merge commit records user-authorized LOCK and exact reviewed-head merge semantics.
-
-Live `main` now validates broker URLs as:
-
-```python
-if not self.broker_url.startswith(("redis://", "rediss://")):
-    raise ValueError("broker_url must use Redis")
-```
-
-Therefore:
+Live GitHub state at review:
 
 ```text
-redis://  -> retained for local/test compatibility
-rediss:// -> representable for encrypted production Valkey transport
-unsupported schemes -> rejected
+base branch = main
+base SHA = 3762ec643426e310ff82bdb00b20f58fb4ae9e09
+head branch = faz7/7-0-production-operational-baseline
+head SHA = 0a86c97142a5bf85c2196d7038b611e7fcef107c
+PR #33 = OPEN / NON-DRAFT / MERGEABLE / UNMERGED
+live main = 3762ec643426e310ff82bdb00b20f58fb4ae9e09
 ```
 
-No TLS downgrade, rewrite, dependency change, Commerce change, n8n change, schema change, scoring change, or business-authority change was merged by the corrective.
-
-Disposition:
+Base-to-head compare is clean and contains exactly:
 
 ```text
-OPS70-H001: CLOSED
-NORMAL FAZ 7.0: AUTHORIZED TO IMPLEMENT
+docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md   +722
+docs/PRODUCTION_OPERATIONS_HANDOFF.md      +633
 ```
+
+No SiteScore source package, Commerce source, n8n workflow/runtime, dependency, migration, Docker, OpenTofu, cloud resource, scoring, financial, report, payment, or orchestration semantic file is changed.
+
+The scope boundary is therefore PASS.
 
 ---
 
-# 2. CHECKPOINT PURPOSE
+# 2. ACCEPTED PARTS OF THE IMPLEMENTATION
 
-FAZ 7.0 establishes the **authoritative production runtime baseline and operational contract** before containerization, IaC, staging deployment, observability, traffic controls, resilience, backups, load testing, or production-readiness proof.
-
-This checkpoint is deliberately documentation/inventory-first.
-
-It must answer, from live source rather than assumptions:
+The current documents correctly preserve or record all of the following and these areas do not need redesign:
 
 ```text
-What runtime processes exist?
-How is each process started?
-Which package/version owns it?
-Which environment variables does it consume?
-Which values are secrets?
-Which routes/ports may ever be public?
-Which components must remain internal?
-Which durable stores exist and who owns them?
-Which external providers are called?
-How do staging and production differ and remain isolated?
-What migration authority exists?
-What scheduler/worker singleton or concurrency constraints exist?
-What health model will later be deployed?
-Which production gaps remain for FAZ 7.1+?
+selected FAZ 7 platform remains unchanged
+Mathematically validated scoring engine; empirical validation pending
+COMB-005 remains NOT_APPROVED / unresolved
+Stripe / Commerce PG / SiteScore API / Valkey-Celery / n8n / Postmark / Spaces authority split
+commerce-dispatcher remains one-shot
+future dispatcher loop is deployment-owned and business-authority-free
+Celery broker is rediss:// in production
+Celery result backend remains none
+worker ack/prefetch/time-limit semantics are preserved
+api-worker staging initial concurrency = 1
+api-beat exactly one intended scheduler instance
+n8n 2.33.4 frozen lineage/digest/workflow hashes are retained
+n8n PostgreSQL persistence is correctly identified as a later 7.2 target, not current deployed fact
+api-web is internal-only
+Commerce public candidates are only orders / Stripe webhook / opaque download
+Commerce automation routes are internal-only
+n8n editor/admin/general REST remain non-public
+current repository has no canonical production Docker/OpenTofu/App Platform deployment proof
+main protection remains false and is deferred to 7.1
+no cloud deployment/resource mutation is claimed
 ```
 
-FAZ 7.0 must **not** make deployment architecture implicit. Later checkpoints must be able to consume these documents as executable design authority.
+The validation run `32485920900` at validated head
+`1cdc2463292265b87bceb09add7c27095a7c175f` is real and completed SUCCESS. Reviewer also verified that validated-head -> final-head changes only remove the temporary validation workflow, so permanent document bytes at that validation point and final reviewed head are identical.
+
+However, the current validation workflow did not satisfy every acceptance item in the Reviewer contract, and the documents omit several mandatory contract fields. These are hardening blockers, not redesign blockers.
 
 ---
 
-# 3. SELECTED PRODUCTION PLATFORM — FROZEN FOR FAZ 7
-
-Do not silently replace this stack:
+# 3. OPS70-H002 — RUNTIME CONTRACT REQUIRED FIELDS INCOMPLETE
 
 ```text
-Application platform: DigitalOcean App Platform
-Relational database: DigitalOcean Managed PostgreSQL
-Broker: DigitalOcean Managed Valkey
-Object storage: DigitalOcean Spaces
-Private networking: DigitalOcean VPC / App Platform internal networking
-Container registry: GHCR
-CI/CD: GitHub Actions
-Infrastructure as Code: OpenTofu
-Public production ingress / edge controls: Cloudflare
-Central logs: Better Stack
-Load testing: k6
+OPS70-H002: OPEN
+SEVERITY: LOCK BLOCKER
+FILE: docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
 ```
 
-If live technical evidence proves a selected component cannot satisfy a mandatory contract, stop and report:
+## 3.1 Staging / production separation matrix schema is incomplete
+
+The issued Reviewer contract required the runtime separation matrix to contain columns equivalent to:
 
 ```text
-DESIGN_DECISION_REVIEW_REQUIRED: 1
-```
-
-Do not substitute a different vendor or weaken a security requirement without Reviewer contract change and user authority.
-
-Current DigitalOcean contract recheck on 2026-08-21 confirms:
-
-```text
-Managed Valkey requires SSL/TLS client connections.
-App Platform supports internal services with no public internet endpoint.
-App Platform supports VPC connectivity to VPC-enabled resources.
-App Platform services must bind their exposed application port on 0.0.0.0.
-```
-
-The broker compatibility corrective now makes the required `rediss://` transport representable by the frozen API.
-
----
-
-# 4. CURRENT LIVE GAPS — RECORD, DO NOT FIX IN 7.0
-
-Reviewer reverified these as current production gaps:
-
-```text
-main branch protected = false
-no canonical production Dockerfile set observed
-no canonical OpenTofu production stack observed
-no App Platform staging/production deployment spec observed
-no production/staging cloud deployment proven
-no production ingress proof
-no Better Stack production log pipeline proof
-no Cloudflare production WAF/rate-limit proof
-no backup/restore drill proof
-no DR proof
-no k6 production-readiness load evidence
-```
-
-These are expected future-checkpoint gaps, not reasons to modify runtime code in 7.0.
-
-Checkpoint ownership:
-
-```text
-7.1 -> containers / supply chain / GitHub governance
-7.2 -> IaC / staging deployment / networking / secrets
-7.3 -> observability / SLO / alerts
-7.4 -> traffic safety / abuse / provider-cost controls
-7.5 -> resilience / backpressure / capacity / release safety
-7.6 -> backups / restore / data protection / DR
-7.7 -> staging E2E / load / failure drills / readiness evidence
-```
-
-Do not pull work from those checkpoints into 7.0 unless Reviewer explicitly reopens scope.
-
----
-
-# 5. REQUIRED PERMANENT DELIVERABLES
-
-Create exactly these production baseline documents:
-
-```text
-docs/PRODUCTION_OPERATIONS_HANDOFF.md
-docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
-```
-
-No production source-code change is expected or authorized in normal 7.0.
-
-No migration is authorized.
-No package version bump is authorized.
-No dependency change is authorized.
-No Dockerfile is authorized yet.
-No OpenTofu file is authorized yet.
-No GitHub branch/ruleset mutation is authorized yet.
-No cloud resource creation is authorized.
-No staging or production deploy is authorized.
-
-If a source defect is discovered that makes the selected runtime contract impossible, stop instead of fixing it opportunistically:
-
-```text
-CONTRACT_CHANGE_REQUIRED: 1
-```
-
----
-
-# 6. `docs/PRODUCTION_OPERATIONS_HANDOFF.md` — REQUIRED CONTENT
-
-This document must be a source-grounded operational inventory, not a high-level architecture essay.
-
-At minimum include all sections below.
-
-## 6.1 Exact frozen/active package inventory
-
-Record package name and exact current version for every production-relevant package, including at least:
-
-```text
-sitescore-core
-sitescore-data
-sitescore-providers
-sitescore-spatial
-sitescore-metrics
-sitescore-benchmarks
-sitescore-pipeline
-sitescore-app
-sitescore-report
-sitescore-api
-sitescore-commerce
-n8n
-```
-
-Record exact source file from which each version is derived.
-
-Known entry facts to independently reverify:
-
-```text
-sitescore-api == 0.3.0
-sitescore-report == 0.3.0
-sitescore-commerce == 0.6.0
-n8n == 2.33.4
-```
-
-Do not use chat history as version evidence.
-
-## 6.2 Runtime process inventory
-
-Derive exact launch/import authority from source and package metadata for:
-
-```text
-commerce-web
-api-web
-api-worker
-api-beat
-commerce-dispatcher
-n8n-automation
-```
-
-For each process record:
-
-```text
-owner package
-entry module / console script
-exact intended run command shape
-network listener or no listener
-public/internal/worker classification
-durable state dependencies
-external provider dependencies
-singleton / horizontal-scaling constraint
-termination behavior relevant to safe shutdown
-```
-
-Do not invent a run command merely because it is conventional. Trace actual FastAPI app objects, Celery app builders, console scripts, and n8n frozen runtime evidence.
-
-## 6.3 Commerce dispatcher one-shot contract
-
-Live source currently exposes:
-
-```text
-sitescore-commerce-dispatch-paid-outbox
-```
-
-and `dispatcher.main()` calls exactly one `dispatch_once()` invocation before exiting.
-
-The handoff must explicitly record:
-
-```text
-CURRENT FORM: ONE-SHOT
-FUTURE DEPLOYMENT REQUIREMENT: deployment-owned supervisor/loop
-EMPTY behavior: short sleep in wrapper before next invocation
-transport failure behavior: bounded backoff
-signals: clean termination
-business/payment authority in wrapper: FORBIDDEN
-outbox/event identity mutation in wrapper: FORBIDDEN
-```
-
-The future supervisor may repeatedly invoke the frozen one-shot command but must not reimplement payment/order/outbox semantics.
-
-## 6.4 Celery runtime contract
-
-Read live `sitescore-api` Celery source and record at least:
-
-```text
-broker binding source
-broker URL source
-result backend behavior
-worker queue/task registration
-worker soft/hard limits
-acks_late
-acks_on_failure_or_timeout
-reject_on_worker_lost
-prefetch multiplier
-beat schedule
-```
-
-Reverify the frozen schedules:
-
-```text
-drain_outbox: 10 seconds
-reconcile_timeouts: 15 seconds
-```
-
-Record deployment requirements:
-
-```text
-api-worker -> horizontally bounded, staging initial concurrency = 1
-api-beat -> exactly one intended scheduler instance
-api-beat horizontal scaling -> forbidden absent scheduler-dedup proof
-```
-
-## 6.5 n8n frozen runtime contract
-
-Inventory current n8n evidence and record:
-
-```text
-version = 2.33.4
-frozen image digest
-order-paid workflow identity/hash
-recovery workflow identity/hash
-persistence requirement = PostgreSQL
-N8N_ENCRYPTION_KEY requirement
-replica target = 1 initially
-editor/admin/rest surface = non-public
-allowed externally reachable workflow ingress = exact locked order-paid webhook path only
-```
-
-Reverify the previously frozen expected identities from live repository evidence. If any exact hash differs from the frozen FAZ 6 record, stop and report blocker rather than normalizing the difference.
-
-## 6.6 Environment-variable inventory
-
-Enumerate **every production-relevant environment variable consumed by source** for:
-
-```text
-SiteScore API web/worker/beat
-Commerce web
-Commerce dispatcher
-n8n
-report/object storage
-provider clients
-OpenAI narrator if applicable
-Postmark
-Stripe
-```
-
-For each variable record columns:
-
-```text
-name
-consumer component
-source file
-required/optional/defaulted
+staging identity
+production identity
+may share? yes/no
+reason
 secret? yes/no
-staging/prod shared? must be NO where isolation is required
-rotation impact
-notes/validation constraints
+creation checkpoint
 ```
 
-Do not include actual secret values.
-
-At minimum classify these classes as secrets when present:
-
-```text
-DB credentials
-Valkey credentials
-Stripe secret key
-Stripe webhook secret
-Postmark token
-SiteScore service/API key material
-Commerce automation API key
-Commerce n8n ingress secret
-n8n encryption key
-Spaces access/secret keys
-OpenAI key
-provider API credentials
-API key pepper
-```
-
-## 6.7 External dependency matrix
-
-Record source-grounded outbound dependencies and authority roles, including as applicable:
-
-```text
-Stripe
-Postmark
-OpenAI
-Google Places
-Census ACS
-OSM/Nominatim
-Mapbox / routing provider(s)
-DigitalOcean PostgreSQL
-DigitalOcean Valkey
-DigitalOcean Spaces
-n8n
-```
-
-For each state:
-
-```text
-caller
-purpose
-authority level
-transport requirement
-timeout/retry behavior if visible
-failure posture
-cost-bearing? yes/no
-```
-
-Do not describe a provider as business truth if frozen architecture treats it only as evidence/transport.
-
-## 6.8 Migration inventory
-
-Record independent migration authorities for:
-
-```text
-sitescore-api
-sitescore-commerce
-n8n persistence schema/runtime
-```
-
-For API and Commerce identify:
-
-```text
-Alembic configuration path
-migration head
-production predeploy command shape
-single-writer requirement
-failure behavior = blocks deployment
-```
-
-Do not run production migrations in this checkpoint.
-
----
-
-# 7. `docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md` — REQUIRED CONTENT
-
-This is the normative FAZ 7 runtime topology contract consumed by 7.1–7.7.
-
-## 7.1 Environment isolation
-
-Define two independent environments:
-
-```text
-staging
-production
-```
-
-They must not share:
-
-```text
-Stripe secret keys
-Stripe webhook secrets
-Stripe Price IDs where environment-specific
-Postmark token
-SiteScore service key / API-key material
-Commerce automation key
-Commerce n8n ingress secret
-n8n encryption key
-DB credentials or customer data
-Valkey credentials
-Spaces bucket or storage credentials
-delivery capability tokens
-real customer email flow
-```
-
-Staging uses Stripe **test mode**.
-
-Document any variables that may be identical because they are non-secret constants, while preserving separate secret material and durable state.
-
-## 7.2 Component graph
-
-Define the intended topology for each environment:
-
-```text
-Cloudflare
-  -> commerce-web [public allowlisted routes only]
-  -> n8n order-paid ingress [exact path only, controlled HTTPS]
-
-commerce-web
-  -> commerce PostgreSQL
-  -> Stripe
-  -> Postmark where frozen flow requires
-  -> SiteScore api-web over internal routing
-  -> Spaces only through frozen delivery/report path as applicable
-
-commerce-dispatcher
-  -> commerce PostgreSQL
-  -> exact n8n order-paid HTTPS ingress
-
-api-web [internal only]
-  -> API PostgreSQL
-  -> broker/storage/providers as required
-
-api-worker
-  -> API PostgreSQL
-  -> Managed Valkey via rediss://
-  -> Spaces
-  -> providers/report dependencies
-
-api-beat
-  -> Managed Valkey via rediss://
-  -> API task scheduling only
-
-n8n-automation
-  -> n8n PostgreSQL
-  -> Commerce automation API over internal/private route
-```
-
-Correct any edge above if live frozen source proves it false, and explain the source evidence. Do not alter frozen business authority to force the diagram to match this prompt.
-
-## 7.3 Component deployment classes
-
-Normative targets:
-
-### commerce-web
-
-```text
-DigitalOcean App Platform service
-public service
-immutable image digest later in 7.1/7.2
-TCP/process health acceptable if no frozen /health route
-```
-
-Public internet allowlist must ultimately be only:
-
-```text
-POST /v1/orders
-POST /v1/webhooks/stripe
-GET /d/{opaque_token}
-```
-
-Commerce automation routes are internal only.
-
-### api-web
-
-```text
-App Platform internal service
-no public ingress
-immutable API image later
-TCP/process health acceptable
-private Commerce -> API routing only
-```
-
-### api-worker
-
-```text
-App Platform worker
-no public route
-bounded concurrency
-staging initial concurrency = 1
-```
-
-### api-beat
-
-```text
-App Platform worker
-exactly one intended instance
-no horizontal scale without deduplication proof
-```
-
-### commerce-dispatcher
-
-```text
-App Platform worker
-runs deployment-owned supervisor around frozen one-shot command
-no public route
-```
-
-### n8n-automation
-
-```text
-frozen n8n 2.33.4 lineage
-PostgreSQL persistence
-N8N_ENCRYPTION_KEY
-one replica initially
-editor/admin/rest non-public
-only exact locked order-paid webhook path externally reachable
-```
-
-## 7.4 Database contract
-
-Per environment define Managed PostgreSQL with isolated databases/users:
-
-```text
-sitescore_api
-sitescore_commerce
-n8n
-```
-
-Require:
-
-```text
-separate least-privilege users
-TLS
-private/VPC path where platform supports
-trusted sources
-PITR enabled later when infrastructure is created
-connection budgets per component reserved for 7.5 capacity proof
-```
-
-Never give n8n application credentials for SiteScore API or Commerce DBs.
-
-## 7.5 Managed Valkey contract
-
-Per environment:
-
-```text
-private/VPC reachable
-SSL/TLS required
-auth/trusted sources enabled
-target URL = rediss://...
-```
-
-The locked corrective means API Settings now accepts this target.
-
-Do not use `redis://` in production merely because it remains supported for local/test compatibility.
-
-## 7.6 Spaces contract
-
-Per environment:
-
-```text
-separate staging/prod buckets
-private objects
-bucket listing off/public ACL off
-report CDN off
-versioning target = on
-least-privilege credentials
-explicit region + endpoint
-no direct customer object URL
-```
-
-Customer delivery remains through frozen delivery-grant authority.
-
-## 7.7 n8n HTTPS / path-isolation constraint
-
-Commerce production settings require an HTTPS n8n webhook URL.
-
-The runtime contract must state:
-
-```text
-production Commerce -> n8n ingress must be HTTPS
-only exact order-paid webhook path may be externally reachable
-n8n editor/admin/rest must not become public as a side effect
-```
-
-If App Platform routing cannot prove safe path isolation for the n8n service, the allowed later design is a minimal operations-owned relay that:
-
-```text
-accepts only the exact webhook path
-applies authentication/rate/body controls
-forwards to internal n8n
-contains no payment/order/business authority
-```
-
-Do not solve this by exposing the whole n8n service.
-
-## 7.8 Public/private route matrix
-
-Create a table covering every known HTTP surface.
-
-Public candidates are strictly limited to:
-
-```text
-Commerce:
-  POST /v1/orders
-  POST /v1/webhooks/stripe
-  GET /d/{opaque_token}
-
-n8n:
-  exact frozen order-paid webhook ingress only
-```
-
-Internal only:
-
-```text
-SiteScore /v1/* analysis/report API
-Commerce /v1/automation/*
-n8n editor/admin/rest
-DB endpoints
-Valkey endpoint
-object storage credentials/origins
-workers/beat/dispatcher
-```
-
-For every Commerce route, derive the exact live route path and method from source rather than copying only this list.
-
-## 7.9 Health semantics
-
-Do not reopen frozen application code merely to add health endpoints in 7.0.
-
-Runtime contract:
-
-```text
-liveness/health = process + socket/TCP where sufficient
-dependency health = observed separately
-readiness must not fabricate business/scoring readiness
-```
-
-A TCP-successful app with unavailable DB/provider may be process-live but dependency-degraded; document these separately.
-
-## 7.10 Release/migration boundary preview
-
-Record future release constraints without implementing them:
-
-```text
-production deploy only from user-LOCKed main SHA
-immutable image digests
-explicit production GitHub Environment approval
-no automatic deploy_on_push to production
-API + Commerce Alembic migrations as explicit predeploy jobs
-migration failure blocks release
-release record must bind source SHA + image digests + migration heads + deploy result
-```
-
----
-
-# 8. FROZEN AUTHORITY BOUNDARIES — MUST APPEAR IN BOTH DOCUMENTS
-
-Both docs must clearly preserve:
-
-```text
-Stripe = external processor evidence
-Commerce PostgreSQL = durable commercial truth
-SiteScore API/PostgreSQL = analysis/report durable truth
-Redis/Valkey/Celery = transport/execution, not durable business truth
-n8n = orchestration only
-Postmark = email transport/provider evidence
-Spaces object = report artifact storage, not scoring authority
-```
-
-And analytical authority remains frozen:
-
-```text
-COMB-005 approval_state = NOT_APPROVED
-approved registry = ()
-weights = ()
-composition = UNRESOLVED
-real production analysis may correctly terminate not_score_ready
-```
-
-Forbidden in all operational documentation/design:
-
-```text
-fake road/parking scores
-default score 50
-neutral fallback
-hidden renormalization
-deployment shortcut that fabricates score readiness
-claim that staging/load testing is empirical business validation
-```
-
-Canonical validity statement remains:
-
-```text
-Mathematically validated scoring engine; empirical validation pending.
-```
-
----
-
-# 9. STAGING / PRODUCTION SEPARATION MATRIX
-
-The runtime contract must contain a matrix with at least these rows:
+and at minimum the required resource rows including:
 
 ```text
 App Platform app/project
@@ -828,148 +155,306 @@ customer emails
 backup targets
 ```
 
-Columns:
+The current runtime-contract matrix has only:
 
 ```text
-staging identity
-production identity
-may share? yes/no
+Resource / authority
+Staging
+Production
+Sharing rule
+```
+
+It therefore omits the mandatory explicit fields:
+
+```text
 reason
 secret? yes/no
 creation checkpoint
 ```
 
-For secret rows, do not write actual values.
+and it does not include the required `backup targets` row.
+
+### Required hardening
+
+Expand the existing matrix; do not create a second contradictory matrix.
+
+For every row provide explicit:
+
+```text
+staging identity/target
+production identity/target
+may share? YES/NO
+reason
+secret? YES/NO
+creation/implementation checkpoint
+```
+
+Use later checkpoint ownership consistently:
+
+```text
+7.1 containers/supply-chain/GitHub governance
+7.2 IaC/staging/networking/secrets and resource creation
+7.3 observability/Better Stack/SLO
+7.4 traffic/provider-cost controls
+7.5 capacity/release safety
+7.6 backup/restore/data protection/DR
+7.7 staging E2E/load/failure drills
+```
+
+Do not imply a resource already exists when it is only a target.
+
+## 3.2 Managed PostgreSQL contract is missing mandatory transport/network/PITR clauses
+
+The Reviewer contract required the per-environment PostgreSQL contract to state explicitly:
+
+```text
+separate least-privilege users
+TLS
+private/VPC path where platform supports
+trusted sources
+PITR enabled later when infrastructure is created
+connection budgets reserved for 7.5 capacity proof
+```
+
+The current document records isolated logical DBs/users and migration ownership, but does not explicitly freeze all of:
+
+```text
+TLS requirement
+private/VPC path requirement
+trusted-source restriction
+PITR target when infrastructure is created
+```
+
+### Required hardening
+
+Add these as normative PostgreSQL requirements. Keep actual deployment/proof deferred to 7.2 and PITR/restore evidence to 7.6 as appropriate. Do not claim they are already deployed.
+
+## 3.3 Spaces contract must explicitly bind region + endpoint
+
+The Reviewer contract required per-environment Spaces configuration to include:
+
+```text
+explicit region + endpoint
+```
+
+The current document describes the adapter as configurable and defers exact endpoint/credentials to 7.2, but the normative Spaces requirement list itself omits the explicit region+endpoint requirement.
+
+### Required hardening
+
+Add a normative statement that each environment's Spaces configuration must explicitly bind the intended bucket, region and HTTPS endpoint; exact values remain 7.2 IaC/secrets configuration and must not contain secret material in documentation.
 
 ---
 
-# 10. SOURCE-TO-RUNTIME TRACEABILITY
-
-Every important runtime assertion in the docs must cite an exact repository path, symbol, package metadata record, workflow JSON/hash record, or frozen audit artifact.
-
-Minimum source anchors include:
+# 4. OPS70-H003 — ENVIRONMENT INVENTORY TRACEABILITY SCHEMA INCOMPLETE
 
 ```text
-sitescore-api/src/sitescore_api/settings.py
-sitescore-api Celery app/task source
-sitescore-api FastAPI app/routes source
-sitescore-api pyproject + Alembic config
-sitescore-commerce/src/sitescore_commerce/settings.py
-sitescore-commerce/src/sitescore_commerce/dispatcher.py
-sitescore-commerce FastAPI route source
-sitescore-commerce/pyproject.toml
-sitescore-commerce Alembic config/migrations
-automation/n8n workflow/runtime evidence
-automation/n8n static/runtime test evidence
-FAZ 6 final integrated audit
+OPS70-H003: OPEN
+SEVERITY: LOCK BLOCKER
+FILE: docs/PRODUCTION_OPERATIONS_HANDOFF.md
 ```
 
-Do not cite historical chat text as runtime evidence.
+The Reviewer contract explicitly required every production-relevant environment-variable inventory row to expose these fields:
+
+```text
+name
+consumer component
+source file
+required/optional/defaulted
+secret? yes/no
+staging/prod sharing rule
+rotation impact
+notes/validation constraints
+```
+
+The current handoff is substantively strong, but several tables rely on section-level prose such as `Direct source: ...` instead of carrying the required per-row `source file` field, and some tables omit an explicit `consumer component` or `rotation impact` column.
+
+Examples:
+
+```text
+5.1 API table: no per-row source-file column
+5.3 narrative table: no per-row source-file column
+5.4 Commerce table: no consumer-component or source-file column
+5.5 dispatcher table: no consumer-component/source-file/rotation-impact columns
+5.6 n8n table: no consumer-component/source-file/rotation-impact columns
+```
+
+This matters because this document is the operational handoff that later IaC/secrets work will consume; source traceability must remain row-local and unambiguous.
+
+### Required hardening
+
+Normalize the environment inventory so every variable row, including SDK-level credential rows where documented, has explicit columns equivalent to:
+
+```text
+Variable
+Consumer
+Source
+Required/default
+Secret?
+Staging/prod sharing
+Rotation/operational impact
+Constraints/notes
+```
+
+It is acceptable for multiple rows to repeat the same source path. Do not reduce existing detail to shorten the table.
+
+For SDK/provider-chain values not directly read by SiteScore source, mark the source accurately, e.g.:
+
+```text
+Source = boto3 credential provider chain / SDK-level, not direct SiteScore os.getenv
+Source = OpenAI SDK credential provider / SDK-level, not direct SiteScore os.getenv
+```
+
+Do not invent provider environment-variable names that current source does not bind.
 
 ---
 
-# 11. COMPATIBILITY AUDIT / STOP CONDITIONS
-
-During 7.0, explicitly verify and record:
+# 5. OPS70-H004 — REQUIRED 9-PASS BROKER-TLS TEST RUN WAS NOT EXECUTED
 
 ```text
-A. API Settings accepts rediss:// on current main.
-B. Celery receives the broker URL unchanged.
-C. production target remains rediss://.
-D. Commerce production external/base/n8n URLs retain HTTPS requirements.
-E. dispatcher remains one-shot.
-F. n8n version/digest/workflow hashes match frozen FAZ 6 identities.
-G. API/Commerce DB migrations remain independent.
-H. no runtime currently requires SQLite/in-memory durable truth in production.
-I. no source route forces api-web to be internet-public.
-J. no frozen source requires n8n editor/admin to be public.
+OPS70-H004: OPEN
+SEVERITY: LOCK BLOCKER
+EVIDENCE: validation run 32485920900 / job 96782267264
 ```
 
-If any of A–J fails materially, stop and set the appropriate control flag/blocker rather than documenting an impossible topology.
-
-In particular:
+The Reviewer contract required:
 
 ```text
-unencrypted production broker -> BLOCK
-internal API forced public -> BLOCK
-n8n admin forced public -> BLOCK
-shared staging/prod secret requirement -> BLOCK
-frozen n8n identity drift -> BLOCK
-Commerce dispatcher cannot be safely supervised without changing authority -> BLOCK
+run the focused broker-TLS tests from the new base/branch
+expected unchanged result = 9 PASS
 ```
 
-Use blocker family:
+Reviewer independently inspected the successful validation job log.
+
+The job did **not** run pytest for:
 
 ```text
-OPS70-H001, OPS70-H002, ...
+sitescore-api/tests/test_broker_tls_compatibility.py
 ```
 
-`OPS70-H001` is already consumed and CLOSED for the rediss corrective. Do not reuse it for a different finding.
+Instead it performed static source checks such as:
+
+```text
+assert '("redis://", "rediss://")' in settings
+assert 'Celery("sitescore_api", broker=settings.broker_url, backend=None)' in celery
+assert 'rediss://' in tests
+print('BROKER_TLS_SOURCE_PROOF=PASS')
+```
+
+That static proof is useful but does not satisfy the explicitly required executable regression gate.
+
+### Required hardening
+
+After documentation hardening is complete, run the actual focused tests from the same PR branch/head lineage and record exact output:
+
+```text
+sitescore-api/tests/test_broker_tls_compatibility.py
+EXPECTED: 9 passed
+```
+
+Use the package's pinned/test-compatible environment. The exact command may vary with working directory, but the report must include the command and exact pass count.
+
+If a temporary validation workflow is used:
+
+```text
+1. update both docs first
+2. run validation on that exact document revision
+3. include actual focused pytest = 9 PASS
+4. remove only the temporary validation workflow
+5. prove validated-head -> final-head diff is only temporary workflow removal
+```
+
+Permanent PR scope after cleanup must remain exactly the two authorized docs.
+
+Do not change the broker corrective source/test file merely to satisfy this gate.
 
 ---
 
-# 12. GITHUB / REPOSITORY BASELINE RECORD
+# 6. HARDENING SCOPE
 
-Record current repository governance baseline in the 7.0 docs:
-
-```text
-main protected = false
-required status checks = none/enforcement off at current observation
-```
-
-This is **not** acceptable for production release, but remediation belongs to 7.1.
-
-Also record current supply-chain/IaC baseline:
+Continue on the same branch and PR:
 
 ```text
-canonical production Docker assets: not observed at 7.0 entry
-canonical OpenTofu production stack: not observed at 7.0 entry
+branch = faz7/7-0-production-operational-baseline
+PR = #33
+base = 3762ec643426e310ff82bdb00b20f58fb4ae9e09
 ```
 
-Implementer must independently repeat repository-wide discovery before writing this statement. If assets do exist, inventory them instead of repeating Reviewer’s search result.
+Permanent hardening changes remain limited to:
+
+```text
+docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
+docs/PRODUCTION_OPERATIONS_HANDOFF.md
+```
+
+A temporary GitHub Actions validation workflow is allowed only as ephemeral evidence and must be removed before final handoff.
+
+Still forbidden:
+
+```text
+application source changes
+package/dependency changes
+migration changes/execution
+Commerce/n8n semantic changes
+Docker/OpenTofu implementation
+cloud resource creation/deployment
+branch protection mutation
+scoring/financial/report/payment authority changes
+FAZ 7.1 implementation
+```
 
 ---
 
-# 13. REQUIRED VALIDATION EVIDENCE
+# 7. REQUIRED RE-VALIDATION
 
-Because 7.0 is documentation-only, acceptance is driven by source traceability and freeze preservation rather than new runtime behavior.
-
-Before `READY_FOR_REVIEW`, provide:
+Before returning `READY_FOR_REVIEW`, Implementer must provide exact evidence for the new final head:
 
 ```text
-1. exact BASE_SHA and HEAD_SHA
-2. PR number and state
-3. git diff --name-only <base>...<head>
-4. git diff --stat <base>...<head>
-5. git diff --check
-6. proof permanent PR diff is limited to the two authorized docs
-7. source inventory commands/searches used
-8. exact current package versions
-9. exact broker compatibility proof from current main/tests
-10. exact n8n frozen identity proof
-11. exact dispatcher one-shot proof
-12. exact branch-protection observation
-13. explicit statement: no cloud deployment/resource mutation performed
-14. explicit statement: no secret values committed
+A. PR #33 remains open/non-draft/unmerged
+B. live main remains the expected base or any movement is explicitly reconciled
+C. git diff --check PASS
+D. permanent changed files = exactly the two authorized docs
+E. source/package/n8n diff = NONE
+F. package inventory proof PASS
+G. actual focused broker-TLS pytest = 9 PASS
+H. Celery static source/binding proof PASS
+I. n8n 2.33.4 + frozen image/workflow identities PASS
+J. dispatcher one-shot proof PASS
+K. separation matrix contains all required columns and rows
+L. PostgreSQL contract explicitly contains TLS/private-VPC/trusted-source/PITR target clauses
+M. Spaces contract explicitly requires bucket + region + endpoint binding
+N. env inventory rows expose Consumer + Source + Required/default + Secret + Sharing + Rotation + Constraints
+O. no secret values introduced
+P. no cloud/resource/governance mutation performed
 ```
 
-Also run the focused broker-TLS tests from the new base/branch and record their exact result.
-
-At minimum expected unchanged focused result:
-
-```text
-9 PASS
-```
-
-If any production source/test file appears in the checkpoint PR diff, stop: 7.0 scope has been violated unless Reviewer explicitly reopened the contract.
-
-The historical FAZ 6 provenance-only Commerce test remains phase-local. Do not edit it in 7.0. No Commerce/n8n code bytes are authorized to change.
+If validation uses a temporary workflow, prove again that validated -> final head changes only remove that workflow and do not alter permanent document bytes.
 
 ---
 
-# 14. REQUIRED `implementer.md` HANDOFF
+# 8. BLOCKER DISPOSITION
 
-When implementation is complete, Implementer must update its coordination file and stop with:
+Current disposition:
+
+```text
+OPS70-H001: CLOSED  # rediss corrective
+OPS70-H002: OPEN    # runtime-contract mandatory field completeness
+OPS70-H003: OPEN    # env inventory row-level traceability schema
+OPS70-H004: OPEN    # required executable broker-TLS 9-PASS gate absent
+```
+
+No contract reopen is required. These are same-checkpoint hardening items.
+
+```text
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
+```
+
+---
+
+# 9. IMPLEMENTER STOP FORMAT AFTER HARDENING
+
+After all three blockers are addressed, update `implementer.md` and stop with:
 
 ```text
 CURRENT_PHASE: FAZ 7
@@ -980,102 +465,33 @@ LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 BASE_SHA: 3762ec643426e310ff82bdb00b20f58fb4ae9e09
 BRANCH: faz7/7-0-production-operational-baseline
-PR: #N
-HEAD_SHA: <exact SHA>
+PR: #33
+HEAD_SHA: <new exact final SHA>
+OPS70-H002: RESOLUTION_REPORTED
+OPS70-H003: RESOLUTION_REPORTED
+OPS70-H004: RESOLUTION_REPORTED
+FOCUSED_BROKER_TLS_TESTS: 9 PASS
+PERMANENT_CHANGED_FILES: 2
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-BLOCKERS_REPORTED_BY_IMPLEMENTER: NONE
-PERMANENT_FILES_CHANGED:
-- docs/PRODUCTION_OPERATIONS_HANDOFF.md
-- docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
+NEXT_CHECKPOINT_AUTHORIZED: NO
+START_FAZ8: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
 
-If a blocker exists, replace the zero/none values truthfully and stop.
+Do not merge. Do not start 7.1.
 
-Do not merge.
-Do not issue your own LOCK.
-Do not begin 7.1.
-
----
-
-# 15. REVIEWER ACCEPTANCE STANDARD
-
-Reviewer will independently audit the exact PR HEAD for:
-
-```text
-scope correctness
-source-to-document traceability
-package/runtime inventory completeness
-environment-variable completeness
-secret classification
-staging/prod isolation
-public/private route accuracy
-Celery worker/beat constraints
-Commerce dispatcher one-shot treatment
-n8n frozen identity/persistence/admin isolation
-PostgreSQL/Valkey/Spaces authority boundaries
-TLS compatibility
-migration ownership
-health semantics
-cloud-platform compatibility
-frozen analytical/business authority preservation
-absence of future-checkpoint implementation leakage
-absence of secrets
-```
-
-Reviewer will return one of:
+Reviewer will independently re-audit the new exact PR head and issue either:
 
 ```text
 HARDENING_REQUIRED
+```
+
+or:
+
+```text
 READY_TO_LOCK
 ```
 
-READY_TO_LOCK will bind to one exact HEAD SHA only.
-
-Only literal user `LOCK` permits merge.
-
----
-
-# 16. 7.0 EXIT CRITERIA
-
-FAZ 7.0 may be marked READY_TO_LOCK only when:
-
-```text
-production runtime inventory is complete and source-grounded
-staging/prod isolation is explicit
-component graph is explicit
-public/private boundary is explicit
-rediss:// production contract is explicit and compatible
-one-shot dispatcher supervision requirement is explicit
-Celery beat singleton requirement is explicit
-n8n persistence/encryption/admin isolation is explicit
-DB/Valkey/Spaces ownership is explicit
-migration authority is explicit
-current repo/governance gaps are explicit
-all later-checkpoint work is clearly deferred
-no production source code changed
-no cloud deployment occurred
-no secret leaked
-no blocker remains
-```
-
-FAZ 7.1 is not authorized until 7.0 receives user LOCK, is merged, and Reviewer performs post-lock verification.
-
----
-
-# 17. FINAL REVIEWER DECLARATION
-
-```text
-FAZ 7.0 ENTRY CORRECTIVE: LOCKED / VERIFIED
-OPS70-H001: CLOSED
-LIVE MAIN: 3762ec643426e310ff82bdb00b20f58fb4ae9e09
-BROKER TLS GATE: PASS
-NORMAL FAZ 7.0: CONTRACT ISSUED
-IMPLEMENTER MAY IMPLEMENT 7.0 ONLY
-PRODUCTION DEPLOY: NOT AUTHORIZED
-FAZ 7.1: NOT AUTHORIZED
-FAZ 8: NOT AUTHORIZED
-PUBLIC LAUNCH: NOT AUTHORIZED
-LOCK AUTHORITY: USER ONLY
-```
+Only literal user `LOCK` after exact-SHA `READY_TO_LOCK` authorizes merge.
