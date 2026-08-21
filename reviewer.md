@@ -6,8 +6,8 @@
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.0 ENTRY CORRECTIVE
 CHECKPOINT_TITLE: Managed Valkey TLS / rediss:// Transport Compatibility Corrective
-REVIEWER_STATE: CONTRACT_CHANGE_REQUIRED
-IMPLEMENTER_ACTION: IMPLEMENT_CORRECTIVE
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: WAIT_FOR_USER_LOCK
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -15,35 +15,31 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
 EXPECTED_BASE_TREE_SHA: 5660f97ad59a8d48419d29e57ee0fc3e2d140e24
 CORRECTIVE_BRANCH: faz7/corrective-broker-tls-rediss
-PR: TBD
-REVIEWED_HEAD_SHA: NONE
+PR: #32
+REVIEWED_HEAD_SHA: d5207d6d5a7483d7150ae0c68034428a5d70d6e2
 
 LIVE_MAIN_VERIFIED: YES
 FAZ6_FINAL_PR: #31
-FAZ6_FINAL_PR_STATE: CLOSED_MERGED
-FAZ6_FINAL_REVIEWED_HEAD: 9856619a98fca93f14027347e26f04a13e18163c
+FAZ6_FINAL_STATE: LOCKED_FROZEN
 FAZ6_FINAL_MERGE_COMMIT: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-FAZ6_FINAL_MERGE_PARENT_1: df4e3181712e7f426f8f1752628952a620c98f05
-FAZ6_FINAL_MERGE_PARENT_2: 9856619a98fca93f14027347e26f04a13e18163c
 FAZ_3_STATUS: FROZEN
 FAZ_4_STATUS: FROZEN
 FAZ_5_STATUS: FROZEN
 FAZ_6_STATUS: FROZEN
-FAZ_6_FINAL_STATUS: LOCKED
 
 NORMAL_7_0_BRANCH: faz7/7-0-production-operational-baseline
-NORMAL_7_0_BRANCH_VS_MAIN: IDENTICAL
-NORMAL_7_0_OPEN_PR: NONE
 NORMAL_7_0_AUTHORIZED: NO
-NORMAL_7_0_PREVIOUS_CONTRACT: SUPERSEDED_PENDING_CORRECTIVE_LOCK
+NORMAL_7_0_RESUME_REQUIRES: CORRECTIVE_LOCK_MERGE_POST_LOCK_VERIFICATION
 
-BROKER_TLS_GATE: FAILED
+BROKER_TLS_GATE: PASS_AT_REVIEWED_HEAD
 DIGITALOCEAN_MANAGED_VALKEY_TLS_REQUIRED: YES
-CURRENT_API_REDISS_SUPPORT: NO
+CURRENT_MAIN_REDISS_SUPPORT: NO
+REVIEWED_HEAD_REDISS_SUPPORT: YES
 PRODUCTION_BROKER_TARGET: rediss://
 BLOCKER_ID: OPS70-H001
+BLOCKER_REVIEW_STATE: RESOLVED_AT_REVIEWED_HEAD_PENDING_LOCK
 
-CONTRACT_CHANGE_REQUIRED: 1
+CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 NEXT_CHECKPOINT_AUTHORIZED: NO
@@ -52,369 +48,257 @@ START_FAZ8: NO
 
 ---
 
-# 1. REVIEWER DECISION
+# 1. REVIEW VERDICT
 
-Normal FAZ 7.0 work is blocked before implementation.
-
-The live `main` source at exact SHA
-`ee45e4fdd3d805137387a0fc1198eedf8d461fb2` contains this production API validation in:
+Reviewer independently inspected PR #32 at exact head:
 
 ```text
-sitescore-api/src/sitescore_api/settings.py
+d5207d6d5a7483d7150ae0c68034428a5d70d6e2
 ```
 
-Canonical current behavior:
-
-```python
-if not self.broker_url.startswith("redis://"):
-    raise ValueError("broker_url must use Redis")
-```
-
-Therefore a secure broker URL beginning with:
-
-```text
-rediss://
-```
-
-is rejected. The exact predicate is false for `rediss://...` and therefore this is a real transport-compatibility defect, not an IaC/documentation gap.
-
-DigitalOcean Managed Valkey documentation was reverified on 2026-08-21. DigitalOcean states that Managed Valkey traffic is encrypted in transit and that clients are required to connect using SSL/TLS. The connection guide explicitly requires TLS for Managed Valkey connections.
-
-The selected FAZ 7 platform contract requires encrypted Managed Valkey transport. We must not weaken or bypass that platform requirement merely to satisfy a frozen validator.
-
-Result:
-
-```text
-OPS70-H001: OPEN
-CONTRACT_CHANGE_REQUIRED: 1
-NORMAL_FA7_0_IMPLEMENTATION: BLOCKED
-```
-
-This corrective must be LOCKED by the user before normal FAZ 7.0 resumes.
-
----
-
-# 2. WHY THE PREVIOUS NORMAL 7.0 CONTRACT IS SUPERSEDED
-
-The prior coordination contract recorded:
-
-```text
-VALKEY_TLS_COMPATIBILITY: UNPROVEN_7_1_ENTRY_GATE
-```
-
-That is not acceptable under the FAZ 7 master authority. Broker TLS compatibility is an explicit **7.0 entry gate**, and an incompatibility must stop normal checkpoint flow immediately.
-
-Live verification now resolves that gate:
-
-```text
-VALKEY_TLS_COMPATIBILITY: FAILED
-```
-
-The existing branch:
-
-```text
-faz7/7-0-production-operational-baseline
-```
-
-is currently identical to `main` and has no PR. Do not implement the normal 7.0 documentation/topology contract on it yet.
-
-After this corrective is reviewed, user-LOCKed, merged, and post-lock verified, Reviewer will issue a fresh normal 7.0 contract against the new exact `main` SHA.
-
----
-
-# 3. CORRECTIVE PURPOSE
-
-Add only the minimum secure Redis/Valkey broker URL scheme compatibility required for the selected production transport:
-
-```text
-redis://   -> remains supported for existing local/test compatibility
-rediss://  -> must become supported for encrypted production broker transport
-other schemes -> remain rejected
-```
-
-This corrective changes **transport compatibility only**.
-
-It must not create new business, scoring, payment, report, orchestration, deployment, or infrastructure authority.
-
----
-
-# 4. ALLOWED IMPLEMENTATION SCOPE
-
-Permanent source changes are limited to:
-
-```text
-sitescore-api/src/sitescore_api/settings.py
-```
-
-and the minimum API test file(s) required to prove the corrective. Preferred narrow test location:
-
-```text
-sitescore-api/tests/test_broker_tls_compatibility.py
-```
-
-If the Implementer can prove an existing settings-focused test file is a materially cleaner home, that existing test file may be used instead. Do not touch unrelated tests merely to satisfy counts.
-
-No package dependency change is authorized.
-No package-version bump is authorized in this corrective.
-No schema migration is authorized.
-No route change is authorized.
-No runtime topology/IaC/Docker change is authorized.
-No cloud resource creation is authorized.
-No GitHub governance change is authorized here.
-No n8n/Commerce change is authorized.
-
-Any permanent change outside the allowed source + minimal tests is a scope blocker unless Reviewer explicitly reopens the contract first.
-
----
-
-# 5. REQUIRED SOURCE SEMANTICS
-
-The corrected `Settings` validation must satisfy all of the following:
-
-1. A non-empty `redis://...` broker URL continues to pass the existing Redis-family scheme gate.
-2. A non-empty `rediss://...` broker URL passes the scheme gate.
-3. Unsupported schemes such as `http://`, `https://`, `amqp://`, or arbitrary text remain rejected.
-4. The corrective must not rewrite `rediss://` to `redis://`.
-5. The corrective must not disable TLS verification or introduce an insecure TLS flag.
-6. The corrective must not special-case DigitalOcean hostnames; scheme support must remain provider-neutral Redis/Valkey transport compatibility.
-7. Existing required-setting checks remain intact.
-8. Existing PostgreSQL validation remains intact.
-9. Existing API-key-pepper minimum-length validation remains intact.
-10. Existing worker/report/time-limit validation remains intact.
-
-Prefer the smallest explicit validation change. Do not introduce a new URL-parsing dependency for this two-scheme compatibility problem unless a real correctness requirement proves it necessary.
-
----
-
-# 6. CELERY BINDING MUST REMAIN EXACT
-
-Live source currently constructs Celery as:
-
-```python
-Celery("sitescore_api", broker=settings.broker_url, backend=None)
-```
-
-The corrective must preserve this authority boundary.
-
-Required proof:
-
-```text
-Settings(rediss://...) accepts the secure URL
--> build_celery(settings)
--> Celery broker configuration retains rediss:// transport
-```
-
-Do not add a second broker URL, hidden fallback, URL rewrite, or environment-specific downgrade.
-
-The following frozen Celery semantics must remain unchanged:
-
-```text
-task_ignore_result = true
-task_store_errors_even_if_ignored = false
-task_acks_late = true
-task_acks_on_failure_or_timeout = true
-task_reject_on_worker_lost = true
-worker_prefetch_multiplier = 1
-soft time limit = existing Settings value
-hard time limit = existing Settings value
-beat drain_outbox = every 10 seconds
-beat reconcile_timeouts = every 15 seconds
-```
-
----
-
-# 7. REQUIRED CORRECTIVE TESTS
-
-Add focused deterministic tests proving at minimum:
-
-```text
-TEST-TLS-001  redis:// remains accepted
-TEST-TLS-002  rediss:// is accepted
-TEST-TLS-003  Settings.from_env accepts SITESCORE_BROKER_URL=rediss://...
-TEST-TLS-004  unsupported non-Redis schemes remain rejected
-TEST-TLS-005  build_celery preserves rediss:// broker transport without rewrite
-```
-
-Use fake local credential/host strings only. No live DigitalOcean connection and no real secret is required for this corrective.
-
-Tests must not weaken existing validation to make fixtures pass.
-
----
-
-# 8. REQUIRED REGRESSION EVIDENCE
-
-Before `READY_FOR_REVIEW`, Implementer must run and record exact commands, exact pass counts and exact corrective HEAD SHA for:
-
-```text
-A. focused broker-TLS corrective tests
-B. complete sitescore-api test suite
-C. frozen FAZ 3/4/5 regression scenarios (pre-corrective baseline: 1504 PASS)
-D. sitescore-commerce suite (pre-corrective baseline: 417 PASS)
-E. n8n static suite (baseline: 12 PASS)
-F. combined pytest regression covering the prior 1921-PASS Commerce + frozen baseline plus the newly added corrective tests
-```
-
-The exact final count may increase because new corrective tests are added. The requirement is:
-
-```text
-all prior tests remain passing
-+ every new corrective test passes
-+ zero skipped/xfail substitutions introduced to hide a regression
-```
-
-If an existing test must be changed because it explicitly asserted `rediss://` rejection, report that test and justify the semantic change. Do not broadly rewrite test expectations.
-
----
-
-# 9. REQUIRED DIFF/FREEZE PROOFS
-
-Implementer report must prove:
-
-```text
-base = ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-branch = faz7/corrective-broker-tls-rediss
-PR = <number>
-head = <exact SHA>
-```
-
-and include:
-
-```text
-git diff --name-only <base>...<head>
-git diff --stat <base>...<head>
-```
-
-Expected permanent diff is only:
-
-```text
-sitescore-api/src/sitescore_api/settings.py
-sitescore-api/tests/<minimum corrective test file(s)>
-```
-
-Reviewer will reject:
-
-```text
-scoring/math changes
-COMB-005 changes
-financial model changes
-application/report authority changes
-Commerce/payment changes
-n8n changes
-Docker/IaC/deployment changes
-production cloud changes
-secret files
-lockfile/dependency churn
-unrelated formatting/refactor churn
-```
-
----
-
-# 10. SECURITY ACCEPTANCE GATE
-
-The corrective is acceptable only if Reviewer can independently prove from the exact PR HEAD:
-
-```text
-1. rediss:// is accepted by API Settings.
-2. rediss:// reaches Celery unchanged.
-3. redis:// local/test compatibility remains intact.
-4. unsupported schemes remain rejected.
-5. no TLS downgrade or verification-disable behavior was introduced.
-6. no real credential/secret was committed.
-7. no frozen analytical/business authority changed.
-8. complete regression is green.
-```
-
-This corrective **does not by itself prove a live Managed Valkey connection**. Live staging connectivity belongs to the later infrastructure/staging checkpoints. It only removes the frozen API transport blocker so that a secure `rediss://` production contract is representable.
-
----
-
-# 11. KNOWN NON-CORRECTIVE GAPS — DO NOT FIX HERE
-
-The following remain real FAZ 7 work but are intentionally outside this corrective:
-
-```text
-main branch protection currently disabled
-no production Dockerfiles
-no permanent GitHub Actions supply-chain workflow
-no OpenTofu/IaC
-no App Platform production/staging spec
-no production deployment
-one-shot Commerce dispatcher needs deployment-owned supervision later
-n8n production persistence/network isolation remains later work
-production acquisition factory/provider env schema absent
-public/private ingress proof absent
-observability/alerts absent
-backup/restore proof absent
-load/failure drills absent
-```
-
-They will be handled by the normal FAZ 7 checkpoint sequence after this corrective is LOCKED.
-
----
-
-# 12. IMPLEMENTER STOP FORMAT
-
-When implementation is complete, update `implementer.md` with evidence and stop with:
-
-```text
-CURRENT_PHASE: FAZ 7
-CURRENT_CHECKPOINT: 7.0 ENTRY CORRECTIVE
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-IMPLEMENTER_ACTION: STOP
-LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
-BASE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
-BRANCH: faz7/corrective-broker-tls-rediss
-PR: #N
-HEAD_SHA: <exact SHA>
-CORRECTIVE_SCOPE: BROKER_TLS_REDISS_ONLY
-CONTRACT_CHANGE_REQUIRED: 1
-BLOCKER_TARGET: OPS70-H001
-TESTS: <exact evidence>
-```
-
-Do not merge.
-Do not mark the blocker resolved yourself.
-Do not resume normal 7.0.
-
----
-
-# 13. REVIEWER NEXT ACTION
-
-After Implementer reports `READY_FOR_REVIEW`, Reviewer will independently inspect:
-
-```text
-PR metadata
-exact base/head
-all changed files
-settings validation semantics
-Celery transport binding
-focused tests
-full regression evidence
-secret/scope leakage
-```
-
-Reviewer will then issue either:
-
-```text
-HARDENING_REQUIRED
-```
-
-or exact-SHA:
+Decision:
 
 ```text
 READY_TO_LOCK
 ```
 
-Only a literal user `LOCK` permits Implementer to merge the exact reviewed head.
+This decision applies **only** to that exact PR head. Any new commit invalidates the review and requires re-review before LOCK.
 
-After merge, Reviewer must verify merge parentage/tree and the corrected live `main`. Only then may normal FAZ 7.0 be re-authored and started.
+Do not merge until the user sends literal `LOCK`.
 
 ---
 
-# 14. FROZEN AUTHORITY REMINDERS
+# 2. EXACT PR / DIFF PROOF
 
-This corrective must preserve:
+Verified PR metadata:
+
+```text
+PR: #32
+state: OPEN
+base branch: main
+base SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+head branch: faz7/corrective-broker-tls-rediss
+head SHA: d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+mergeable: true
+```
+
+Verified permanent changed-file set is exactly:
+
+```text
+sitescore-api/src/sitescore_api/settings.py
+sitescore-api/tests/test_broker_tls_compatibility.py
+```
+
+No permanent n8n, Commerce, scoring, financial, report, migration, dependency, Docker, IaC, deployment, secret, or governance file is changed by PR #32.
+
+The temporary validation workflow used during evidence generation was removed before the final handoff. The exact delta from validated SHA
+`135800461ef5d4d9446f23a3213671678e6bc231`
+to reviewed final SHA
+`d5207d6d5a7483d7150ae0c68034428a5d70d6e2`
+is one commit whose only file change is removal of:
+
+```text
+.github/workflows/faz7-corrective-broker-tls-validation.yml
+```
+
+Therefore the validated permanent source/test bytes are unchanged at the reviewed final PR head.
+
+---
+
+# 3. SOURCE SEMANTICS REVIEW
+
+The only production source semantic change is the broker scheme gate:
+
+```python
+if not self.broker_url.startswith(("redis://", "rediss://")):
+    raise ValueError("broker_url must use Redis")
+```
+
+Reviewer verified that this satisfies the corrective contract:
+
+```text
+redis://   -> accepted, preserving local/test compatibility
+rediss://  -> accepted, enabling encrypted Redis/Valkey broker transport
+http://    -> rejected
+https://   -> rejected
+amqp://    -> rejected
+memory://  -> rejected
+arbitrary unsupported schemes -> rejected
+```
+
+No URL rewrite is introduced.
+No TLS downgrade is introduced.
+No TLS verification-disable switch is introduced.
+No DigitalOcean-hostname special case is introduced.
+No dependency change is introduced.
+
+Celery continues to receive the exact configured URL through:
+
+```python
+Celery("sitescore_api", broker=settings.broker_url, backend=None)
+```
+
+The focused test proves a `rediss://` URL survives this boundary unchanged.
+
+---
+
+# 4. FOCUSED AND PACKAGE REGRESSION EVIDENCE
+
+The temporary exact-head validation established the following passing suites before workflow removal:
+
+```text
+broker TLS corrective: 9 PASS
+sitescore-api: 114 PASS
+sitescore-report: 24 PASS
+sitescore-app: 19 PASS
+sitescore-pipeline: 53 PASS
+sitescore-benchmarks: 191 PASS
+sitescore-metrics: 67 PASS
+sitescore-spatial: 180 PASS
+sitescore-providers: 418 PASS
+sitescore-data: 361 PASS
+sitescore-core: 86 PASS
+n8n static: 12 PASS
+```
+
+The first combined Commerce attempt also exposed two test-environment coupling failures caused by running API and Commerce Alembic chains against the same PostgreSQL database. They were not product regressions; isolated Commerce validation was then executed with its own database/runtime graph.
+
+The isolated Commerce proof workflow run `32482930204` completed successfully with two independent jobs:
+
+```text
+commerce-frozen-base-full: SUCCESS
+commerce-current-head-applicable: SUCCESS
+```
+
+Frozen-base replay checked out exact FAZ 6 locked main:
+
+```text
+ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+```
+
+and produced:
+
+```text
+417 passed
+```
+
+after Commerce Alembic upgrade -> downgrade -> upgrade.
+
+The corrective-head applicable Commerce replay produced:
+
+```text
+416 passed, 1 deselected
+```
+
+with Commerce and n8n bytes proven unchanged from the corrective base.
+
+---
+
+# 5. LEGACY FAZ 6 PROVENANCE ASSERTION — REVIEWER CLASSIFICATION
+
+The one deselected test is:
+
+```text
+sitescore-commerce/tests/test_faz6_final_freeze_gate.py::
+test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only
+```
+
+Reviewer independently read the frozen source. That test is a **FAZ 6 final-candidate provenance assertion**, not a timeless semantic regression test.
+
+Its core assertion computes the permanent changed-file set from the FAZ 6 corrective-locked main SHA and requires that set to equal only the two FAZ 6 finalization artifacts:
+
+```text
+sitescore-commerce/docs/FAZ6_FINAL_INTEGRATED_COMMERCE_AUDIT.md
+sitescore-commerce/tests/test_faz6_final_freeze_gate.py
+```
+
+By construction, any legitimate later-phase permanent file causes that assertion to fail even when Commerce behavior is completely unchanged. Therefore:
+
+```text
+CLASSIFICATION: PHASE_LOCAL_PROVENANCE_GATE
+APPLICABLE_TO_FA7_FORWARD_CHANGE_AS_GLOBAL_REGRESSION: NO
+FAZ6_FROZEN_BASE_REPLAY_REQUIRED: YES
+FAZ6_FROZEN_BASE_REPLAY_RESULT: 417/417 PASS
+CURRENT_HEAD_COMMERCE_APPLICABLE_RESULT: 416 PASS / 1 PHASE_LOCAL DESELECTED
+ADDITIONAL_REOPEN_REQUIRED: 0
+```
+
+This is **not** authorization to delete, weaken, or rewrite the FAZ 6 freeze test in this corrective. It remains valuable when validating the historical FAZ 6 freeze candidate/base. Future permanent CI design must scope phase-local provenance gates to their phase instead of treating them as forever-applicable semantic tests.
+
+---
+
+# 6. SECURITY / AUTHORITY ACCEPTANCE
+
+Reviewer acceptance matrix:
+
+```text
+rediss:// accepted by Settings                         PASS
+rediss:// reaches Celery unchanged                    PASS
+redis:// compatibility retained                       PASS
+unsupported schemes rejected                          PASS
+TLS downgrade absent                                  PASS
+TLS verification-disable behavior absent              PASS
+real secrets committed                                NO
+Commerce/n8n permanent bytes changed                  NO
+scoring/math/COMB-005 changed                          NO
+financial/business authority changed                  NO
+routes/migrations/dependencies changed                 NO
+frozen FAZ6 baseline replay                           417/417 PASS
+applicable current-head Commerce regression           416 PASS
+focused corrective regression                         9 PASS
+```
+
+The corrective proves URL transport compatibility only. It does not claim a live DigitalOcean Managed Valkey connection. Live staging connectivity remains a later FAZ 7 infrastructure proof obligation.
+
+---
+
+# 7. BLOCKER DISPOSITION
+
+```text
+OPS70-H001: RESOLVED_AT_REVIEWED_HEAD_PENDING_LOCK
+```
+
+The blocker is not yet closed on `main` because PR #32 is still unmerged and user LOCK has not been issued.
+
+Normal FAZ 7.0 remains unauthorized until all of these occur:
+
+```text
+1. user sends literal LOCK
+2. Implementer verifies PR #32 still points to exact reviewed head d5207d6d...
+3. Implementer merges only that reviewed head
+4. Reviewer independently verifies merge parentage/tree and live main
+5. Reviewer issues a fresh normal FAZ 7.0 contract against the new exact main SHA
+```
+
+---
+
+# 8. LOCK INSTRUCTION
+
+If and only if the user sends literal:
+
+```text
+LOCK
+```
+
+Implementer is authorized to merge PR #32 **only if**:
+
+```text
+PR base == main
+PR base SHA == ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+PR head SHA == d5207d6d5a7483d7150ae0c68034428a5d70d6e2
+PR changed-file set remains exactly the reviewed two permanent files
+PR is still mergeable
+```
+
+If any SHA/file/state differs, do not merge; return to Reviewer.
+
+After a successful merge, Implementer must update `implementer.md` with the merge commit SHA and stop. Reviewer performs post-lock verification before normal 7.0 is authorized.
+
+---
+
+# 9. FROZEN AUTHORITY REMINDERS
+
+The corrective does not change:
 
 ```text
 COMB-005 approval_state = NOT_APPROVED
@@ -431,17 +315,15 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 START_FAZ8 = NO
 ```
 
-No transport fix may fabricate scoring readiness or alter money/business truth.
-
 ---
 
-# 15. REVIEWER DECLARATION
+# 10. REVIEWER DECLARATION
 
 ```text
-OPS70-H001 is OPEN.
-The current frozen API cannot represent the required TLS Managed Valkey broker URL.
-The selected production broker must remain encrypted.
-Normal FAZ 7.0 is blocked.
-Only the narrow rediss:// transport compatibility corrective above is authorized.
-User LOCK is required before the normal FAZ 7 flow can resume.
+PR #32 exact head d5207d6d5a7483d7150ae0c68034428a5d70d6e2 is READY_TO_LOCK.
+OPS70-H001 is resolved at the reviewed head but not yet on main.
+The FAZ6 permanent-diff assertion is phase-local provenance evidence and is not a forward-phase global blocker.
+No additional reopen is required.
+No normal FAZ 7.0 work is authorized before corrective LOCK + merge + post-lock verification.
+USER_LOCK_AUTHORIZED remains NO until the user sends literal LOCK.
 ```
