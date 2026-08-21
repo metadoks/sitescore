@@ -59,34 +59,37 @@ production
 
 They are separate operational systems. Staging is not a namespace inside production and production is not a promoted staging database.
 
-### 2.1 Separation matrix
+### 2.1 Staging / production separation matrix
 
-| Resource / authority | Staging | Production | Sharing rule |
-|---|---|---|---|
-| App Platform app/project | dedicated staging app/project | dedicated production app/project | **do not share** |
-| PostgreSQL cluster / logical DBs | dedicated staging cluster or explicitly isolated staging cluster/DB/users | dedicated production cluster/DB/users | customer/business data **do not share** |
-| API database | `sitescore_api` staging DB/user | `sitescore_api` production DB/user | **do not share creds/data** |
-| Commerce database | `sitescore_commerce` staging DB/user | `sitescore_commerce` production DB/user | **do not share creds/data** |
-| n8n database | dedicated n8n staging DB/user | dedicated n8n production DB/user | **do not share creds/data** |
-| Valkey | dedicated staging Managed Valkey | dedicated production Managed Valkey | **do not share credentials/queue state** |
-| Spaces bucket | dedicated staging report bucket | dedicated production report bucket | **do not share** |
-| Stripe mode | **test mode** | intended live mode only after production authorization | **strictly separate** |
-| Stripe secret key | staging test key | production live key | **do not share** |
-| Stripe webhook secret | staging endpoint secret | production endpoint secret | **do not share** |
-| Stripe Price ID | staging test Price | production Price | **do not share when environment-specific** |
-| Postmark token | staging credential | production credential | **do not share** |
-| SiteScore service credentials | staging API consumer/service key | production API consumer/service key | **do not share** |
-| API key pepper | staging pepper | production pepper | **do not share** |
-| Commerce automation key | staging key | production key | **do not share** |
-| Commerce n8n ingress secret | staging secret | production secret | **do not share** |
-| n8n encryption key | staging key | production key | **do not share** |
-| Spaces access/secret key | staging least-privilege credential | production least-privilege credential | **do not share** |
-| provider API credentials/budgets | staging credential/quota/budget where provider supports it | production credential/quota/budget | **prefer strict isolation; never silently share money authority** |
-| OpenAI credential/budget | staging credential/project/budget | production credential/project/budget | **do not share** |
-| Cloudflare hostname/policies | staging hostname/policy set | production hostname/policy set | separate policy targeting |
-| Better Stack source/token | staging source/token | production source/token | **do not share token/source identity** |
-| customer emails | synthetic/approved test recipients only | real customer recipients | **never copy production customer mail flow into staging** |
-| delivery capability tokens | staging-generated only | production-generated only | **never share/replay across environments** |
+The identities below are **targets**, not claims that resources already exist. Resource creation and proof remain owned by the indicated later checkpoint.
+
+| Resource / authority | Staging identity / target | Production identity / target | May share? | Reason | Secret? | Creation / implementation checkpoint |
+|---|---|---|---|---|---|---|
+| App Platform app/project | dedicated staging app/project | dedicated production app/project | **NO** | deployment, traffic, runtime and rollback state must not cross environments | no | 7.2 resource creation; 7.1 supplies immutable containers |
+| PostgreSQL cluster / logical DBs | dedicated staging cluster or explicitly isolated staging cluster/DB/users | dedicated production cluster/DB/users | **NO** | durable application/orchestration data and credentials must remain isolated | no; credentials are secret separately | 7.2; PITR/restore proof 7.6 |
+| API database | `sitescore_api` staging DB/user | `sitescore_api` production DB/user | **NO** | analysis/report durable state must not cross environments | DB credential **yes**, DB identity no | 7.2; capacity budgets 7.5; restore proof 7.6 |
+| Commerce database | `sitescore_commerce` staging DB/user | `sitescore_commerce` production DB/user | **NO** | commercial/payment/fulfillment durable truth must not cross environments | DB credential **yes**, DB identity no | 7.2; capacity budgets 7.5; restore proof 7.6 |
+| n8n database | dedicated n8n staging DB/user | dedicated n8n production DB/user | **NO** | workflow/runtime persistence and encrypted credential state must not cross environments | DB credential **yes**, DB identity no | 7.2; restore proof 7.6 |
+| Valkey cluster | dedicated staging Managed Valkey | dedicated production Managed Valkey | **NO** | queue/execution transport and credentials must not cross environments | credential **yes** | 7.2; capacity/backpressure proof 7.5 |
+| Spaces bucket | dedicated staging private report bucket | dedicated production private report bucket | **NO** | report bytes/customer data and lifecycle policies must remain isolated | bucket identity no; access keys **yes** | 7.2; backup/data-protection proof 7.6 |
+| Stripe mode | test mode | live mode only after production authorization | **NO** | test and real money authority must never mix | no | 7.2 secret/provider configuration; production readiness 7.7 |
+| Stripe secret key | staging test secret key | production live secret key | **NO** | credentials carry processor authority and environment mode | **yes** | 7.2 |
+| Stripe webhook secret | staging endpoint secret | production endpoint secret | **NO** | signed webhook authority is endpoint/environment bound | **yes** | 7.2 |
+| Stripe Price ID | staging test Price | production live Price | **NO** | Price identity is mode/environment-specific catalog binding | no | 7.2 |
+| Postmark credentials | staging credential | production credential | **NO** | email transport identity, reputation and real-recipient risk must be isolated | **yes** | 7.2; provider controls 7.4 |
+| SiteScore service credentials | staging API consumer/service key | production API consumer/service key | **NO** | internal API authorization and durable consumer ownership must remain isolated | **yes** | 7.2 |
+| API key pepper | staging pepper | production pepper | **NO** | authentication hash authority must be environment-isolated | **yes** | 7.2 |
+| Commerce automation key | staging automation key | production automation key | **NO** | internal Commerce command authority must not cross environments | **yes** | 7.2 |
+| Commerce n8n ingress secret | staging ingress secret | production ingress secret | **NO** | order-paid transport authentication must be isolated and distinct from automation key | **yes** | 7.2 |
+| n8n encryption key | staging encryption key | production encryption key | **NO** | encrypted n8n credential state is environment-specific | **yes** | 7.2 |
+| Spaces access/secret key | staging least-privilege credential | production least-privilege credential | **NO** | bucket access must not permit cross-environment object access | **yes** | 7.2 |
+| Provider API credentials / budgets | staging credential/quota/budget where supported | production credential/quota/budget | **NO** | provider spend, rate limits and evidence acquisition must be attributable by environment | credential **yes**; budget identity no | 7.2 credentials; 7.4 budget/cost controls |
+| OpenAI credential / budget | staging credential/project/budget | production credential/project/budget | **NO** | provider spend and narrative-provider failures must be isolated | credential **yes**; budget identity no | 7.2 credentials; 7.4 budget controls |
+| Cloudflare hostname / policies | staging hostname/policy set | production hostname/policy set | **NO** | edge routing and security policy must target the correct environment only | policy/hostname no; deployment/API credential **yes** | 7.2 networking; 7.4 traffic controls |
+| Better Stack source / token | staging source/token | production source/token | **NO** | logs/alerts must remain attributable and tokens isolated | token **yes** | 7.3 |
+| customer emails | synthetic/approved test recipients only | real customer recipients | **NO** | production PII and real delivery effects must never be copied into staging | customer data, treat as sensitive | 7.7 staging E2E policy; production only after launch authorization |
+| delivery capability tokens | staging-generated only | production-generated only | **NO** | bearer delivery capabilities are environment/order bound and cannot be replayed across environments | **yes / bearer capability** | frozen Commerce runtime; environment enforcement 7.2/7.7 |
+| backup targets | staging backup/PITR target for staging stores | production backup/PITR target for production stores | **NO** | backups contain environment-specific durable state and customer data; restore must not cross-contaminate | backup data **yes/sensitive**; target identity no | 7.6 |
 
 No production secret value belongs in Git, PR text, workflow exports, Terraform/OpenTofu outputs, logs, issue comments, or this contract.
 
@@ -237,15 +240,20 @@ sitescore_commerce
 n8n
 ```
 
-Minimum isolation requirements:
+Normative Managed PostgreSQL requirements for each environment:
 
-- API application credentials access only the API database/schema required by API migrations/runtime.
-- Commerce application credentials access only Commerce durable state.
-- n8n database credentials access only n8n persistence.
-- n8n never receives API or Commerce PostgreSQL application credentials.
-- Commerce and API migrations are executed by explicit release/predeploy authority, not by arbitrary web/worker replicas.
-- Database backup/restore/DR proof is deferred to 7.6.
-- Connection budgets and replica/concurrency capacity are deferred to 7.5.
+- **separate least-privilege users** for API, Commerce and n8n; no component receives another component's application credential;
+- **TLS is required** for application/database transport;
+- use a **private/VPC path wherever the selected platform supports it**; public database exposure is not the target topology;
+- configure **trusted-source restrictions** so only explicitly authorized App Platform/VPC/migration sources can connect;
+- when infrastructure is created in 7.2, the managed database design must have **PITR enabled/targeted** where the service capability supports it; backup retention, restore evidence and DR acceptance remain owned by 7.6;
+- reserve and document **connection budgets per component**; sizing and concurrency proof are owned by 7.5 and may not be guessed by 7.0;
+- API application credentials access only the API database/schema required by API migrations/runtime;
+- Commerce application credentials access only Commerce durable state;
+- n8n database credentials access only n8n persistence;
+- Commerce and API migrations are executed by explicit serialized release/predeploy authority, not arbitrary web/worker replicas.
+
+These are target requirements. FAZ 7.0 does not claim TLS/VPC/trusted-source/PITR resources are already deployed. Network/resource creation is 7.2; restore/DR proof is 7.6.
 
 ### 5.1 API migration authority
 
@@ -293,9 +301,12 @@ Valkey contents are transport/execution state. Loss/unavailability can interrupt
 
 ## 7. Spaces contract
 
-Per environment:
+Per environment, Spaces configuration must explicitly bind the intended **bucket + region + HTTPS endpoint**. The exact non-secret resource identities and secret credentials are 7.2 IaC/secrets inputs and are not claimed to exist at 7.0.
 
 ```text
+bucket = explicit environment-specific bucket
+region = explicit intended Spaces region
+endpoint = explicit HTTPS Spaces endpoint
 separate staging/prod buckets
 private objects
 public ACL = off
@@ -623,11 +634,11 @@ Source anchors: `sitescore-api/src/sitescore_api/settings.py`, `celery_app.py`, 
 
 ### PostgreSQL compatibility
 
-API and Commerce both use SQLAlchemy/psycopg PostgreSQL URLs and Alembic migrations. Current Commerce frozen runtime identity was validated with PostgreSQL 16. Production topology must keep API/Commerce/n8n databases isolated.
+API and Commerce both use SQLAlchemy/psycopg PostgreSQL URLs and Alembic migrations. Current Commerce frozen runtime identity was validated with PostgreSQL 16. Production topology must keep API/Commerce/n8n databases isolated and implement the TLS/private-VPC/trusted-source/PITR targets in Sections 2 and 5 before production readiness.
 
 ### Spaces/S3 compatibility
 
-API uses a boto3 S3-compatible adapter with configurable bucket, region, and endpoint URL. Production Spaces use must remain private and least-privilege; exact endpoint/credentials are 7.2 configuration.
+API uses a boto3 S3-compatible adapter with configurable bucket, region, and endpoint URL. Production Spaces use must explicitly bind an environment-specific bucket, intended region and HTTPS endpoint, remain private and least-privilege; exact values/credentials are 7.2 configuration.
 
 ### App Platform compatibility
 
@@ -652,6 +663,7 @@ At this base, independent repository/state review establishes:
 | OpenTofu production stack | not observed | 7.2 |
 | App Platform staging/prod specs | not observed | 7.2 |
 | VPC/private networking proof | not deployed/proved | 7.2 |
+| PostgreSQL TLS/trusted-source/private-path proof | target defined, not deployed | 7.2 |
 | environment secret injection | not deployed/proved | 7.2 |
 | n8n PostgreSQL production persistence | target defined, not deployed | 7.2 |
 | exact n8n external path isolation | target defined, not proved | 7.2 |
@@ -662,6 +674,7 @@ At this base, independent repository/state review establishes:
 | provider/OpenAI budget controls | not implemented | 7.4 |
 | backpressure/capacity/load-driven concurrency | not proved | 7.5 |
 | release safety/canary/rollback evidence | not proved | 7.5 |
+| PostgreSQL/Spaces backup/PITR/restore proof | target defined, not proved | 7.6 |
 | backup/restore/data protection | not proved | 7.6 |
 | disaster recovery drill | not proved | 7.6 |
 | staging E2E with real topology | not performed | 7.7 |
