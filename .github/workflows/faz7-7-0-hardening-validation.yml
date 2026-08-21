@@ -148,8 +148,10 @@ jobs:
       - name: Actual focused broker TLS pytest
         run: |
           set -euo pipefail
-          python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py -q | tee /tmp/broker.log
-          grep -Eq '^9 passed' /tmp/broker.log
+          python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py -q
+          collected="$(python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py --collect-only -q | awk '/::/{count++} END {print count+0}')"
+          echo "FOCUSED_BROKER_TLS_COLLECTED=${collected}"
+          test "$collected" -eq 9
           echo FOCUSED_BROKER_TLS_TESTS=9_PASS
 
       - name: Celery static source binding proof
