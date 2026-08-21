@@ -27,7 +27,7 @@ class Settings:
                 raise ValueError(f"{name} must be configured")
         if not self.database_url.startswith(("postgresql+psycopg://", "postgresql://")):
             raise ValueError("database_url must use PostgreSQL")
-        if not self.broker_url.startswith("redis://"):
+        if not self.broker_url.startswith(("redis://", "rediss://")):
             raise ValueError("broker_url must use Redis")
         if len(self.api_key_pepper.encode("utf-8")) < 32:
             raise ValueError("api_key_pepper must contain at least 32 UTF-8 bytes")
