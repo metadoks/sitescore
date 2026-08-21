@@ -149,10 +149,24 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py -q
-          collected="$(python -m pytest sitescore-api/tests/test_broker_tls_compatibility.py --collect-only -q | awk '/::/{count++} END {print count+0}')"
-          echo "FOCUSED_BROKER_TLS_COLLECTED=${collected}"
-          test "$collected" -eq 9
-          echo FOCUSED_BROKER_TLS_TESTS=9_PASS
+          python - <<'PY'
+          import pytest
+
+          class Collector:
+              count = None
+              def pytest_collection_finish(self, session):
+                  self.count = len(session.items)
+
+          collector = Collector()
+          rc = pytest.main(
+              ['sitescore-api/tests/test_broker_tls_compatibility.py', '--collect-only', '-q'],
+              plugins=[collector],
+          )
+          assert rc == pytest.ExitCode.OK, rc
+          assert collector.count == 9, collector.count
+          print(f'FOCUSED_BROKER_TLS_COLLECTED={collector.count}')
+          print('FOCUSED_BROKER_TLS_TESTS=9_PASS')
+          PY
 
       - name: Celery static source binding proof
         run: |
