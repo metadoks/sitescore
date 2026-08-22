@@ -42,7 +42,10 @@ jobs:
           set -euo pipefail
           mkdir -p deploy/containers /tmp/faz7-digests
           resolve_digest() {
-            local image="$1" key="$2" output="/tmp/faz7-digests/${key}.txt" digest
+            local image key output digest
+            image="$1"
+            key="$2"
+            output="/tmp/faz7-digests/${key}.txt"
             docker buildx imagetools inspect "$image" > "$output"
             digest="$(awk '/^Digest:/ {print $2; found=1} found {exit}' "$output")"
             test -n "$digest"
