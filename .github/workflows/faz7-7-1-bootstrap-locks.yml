@@ -22,6 +22,7 @@ jobs:
       DEBIAN_SNAPSHOT: '20260821T000000Z'
       SYFT_TAG: anchore/syft:v1.44.0
       GRYPE_TAG: anchore/grype:v0.116.1
+      COSIGN_TAG: sigstore/cosign:v3.1.2
       N8N_IMAGE: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
     steps:
       - name: Checkout exact source head without third-party action
@@ -36,43 +37,26 @@ jobs:
           git switch -C "${TARGET_BRANCH}"
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
-      - name: Resolve immutable Python base image identity
+      - name: Resolve immutable container tool identities
         run: |
           set -euo pipefail
           mkdir -p deploy/containers
-          docker buildx imagetools inspect "${PYTHON_IMAGE_TAG}" > /tmp/python-image-inspect.txt
-          digest="$(awk '/^Digest:/ {print $2; exit}' /tmp/python-image-inspect.txt)"
-          test -n "${digest}"
-          case "${digest}" in sha256:*) ;; *) echo "invalid digest ${digest}" >&2; exit 1;; esac
+          resolve_digest() {
+            docker buildx imagetools inspect "$1" | awk '/^Digest:/ {print $2; exit}'
+          }
+          python_digest="$(resolve_digest "${PYTHON_IMAGE_TAG}")"
+          syft_digest="$(resolve_digest "${SYFT_TAG}")"
+          grype_digest="$(resolve_digest "${GRYPE_TAG}")"
+          cosign_digest="$(resolve_digest "${COSIGN_TAG}")"
+          for d in "$python_digest" "$syft_digest" "$grype_digest" "$cosign_digest"; do case "$d" in sha256:*) ;; *) exit 1;; esac; done
           cat > deploy/containers/base-image.lock <<EOF
           # FAZ 7.1 immutable base-image authority
           PYTHON_IMAGE_TAG=${PYTHON_IMAGE_TAG}
-          PYTHON_IMAGE_DIGEST=${digest}
-          PYTHON_IMAGE=${PYTHON_IMAGE_TAG}@${digest}
+          PYTHON_IMAGE_DIGEST=${python_digest}
+          PYTHON_IMAGE=${PYTHON_IMAGE_TAG}@${python_digest}
           TARGET_PLATFORM=linux/amd64
           DEBIAN_SNAPSHOT=${DEBIAN_SNAPSHOT}
           EOF
-
-      - name: Resolve supply-chain tool digests and official attestation action SHAs
-        run: |
-          set -euo pipefail
-          resolve_digest() {
-            local image="$1"
-            docker buildx imagetools inspect "$image" | awk '/^Digest:/ {print $2; exit}'
-          }
-          resolve_tag_sha() {
-            local repo="$1" tag="$2" sha
-            sha="$(git ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}^{}" | awk 'NR==1 {print $1}')"
-            if [ -z "$sha" ]; then
-              sha="$(git ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}" | awk 'NR==1 {print $1}')"
-            fi
-            test "${#sha}" -eq 40
-            printf '%s' "$sha"
-          }
-          syft_digest="$(resolve_digest "${SYFT_TAG}")"
-          grype_digest="$(resolve_digest "${GRYPE_TAG}")"
-          attest_prov_sha="$(resolve_tag_sha actions/attest-build-provenance v2)"
-          attest_sbom_sha="$(resolve_tag_sha actions/attest-sbom v2)"
           cat > deploy/containers/supply-chain-tools.lock <<EOF
           SYFT_TAG=${SYFT_TAG}
           SYFT_DIGEST=${syft_digest}
@@ -80,13 +64,13 @@ jobs:
           GRYPE_TAG=${GRYPE_TAG}
           GRYPE_DIGEST=${grype_digest}
           GRYPE_IMAGE=${GRYPE_TAG}@${grype_digest}
-          ATTEST_BUILD_PROVENANCE_REPO=actions/attest-build-provenance
-          ATTEST_BUILD_PROVENANCE_TAG=v2
-          ATTEST_BUILD_PROVENANCE_SHA=${attest_prov_sha}
-          ATTEST_SBOM_REPO=actions/attest-sbom
-          ATTEST_SBOM_TAG=v2
-          ATTEST_SBOM_SHA=${attest_sbom_sha}
+          COSIGN_TAG=${COSIGN_TAG}
+          COSIGN_DIGEST=${cosign_digest}
+          COSIGN_IMAGE=${COSIGN_TAG}@${cosign_digest}
+          SBOM_FORMAT=spdx-json
+          PROVENANCE_MODE=cosign-keyless-github-oidc
           EOF
+          cat deploy/containers/base-image.lock
           cat deploy/containers/supply-chain-tools.lock
 
       - name: Generate direct runtime inputs from frozen pyprojects
@@ -95,46 +79,37 @@ jobs:
           cat > /tmp/generate_inputs.py <<'PY'
           from __future__ import annotations
           import pathlib, re, tomllib
-          root = pathlib.Path('.')
           projects = {}
-          for path in sorted(root.glob('sitescore-*/pyproject.toml')):
-              data = tomllib.loads(path.read_text())
-              project = data.get('project', {})
-              name = project.get('name')
-              if name:
-                  projects[name.lower().replace('_','-')] = project
-          def dep_name(spec: str) -> str:
-              base = spec.split(';', 1)[0].strip()
-              m = re.match(r'([A-Za-z0-9_.-]+)', base)
-              if not m:
-                  raise ValueError(spec)
+          for path in sorted(pathlib.Path('.').glob('sitescore-*/pyproject.toml')):
+              project = tomllib.loads(path.read_text()).get('project', {})
+              if project.get('name'):
+                  projects[project['name'].lower().replace('_','-')] = project
+          def dep_name(spec):
+              m=re.match(r'([A-Za-z0-9_.-]+)', spec.split(';',1)[0].strip())
+              if not m: raise ValueError(spec)
               return m.group(1).lower().replace('_','-')
-          def external_closure(start: str) -> list[str]:
-              seen = set(); external = {}
-              def visit(name: str):
-                  key = name.lower().replace('_','-')
+          def closure(start):
+              seen=set(); external={}
+              def visit(name):
+                  key=name.lower().replace('_','-')
                   if key in seen: return
                   seen.add(key)
-                  for spec in projects[key].get('dependencies', []):
-                      child = dep_name(spec)
-                      if child in projects:
-                          visit(child)
+                  for spec in projects[key].get('dependencies',[]):
+                      child=dep_name(spec)
+                      if child in projects: visit(child)
                       else:
-                          previous = external.get(child)
-                          if previous is not None and previous != spec:
-                              raise RuntimeError(f'conflicting direct requirement for {child}: {previous!r} vs {spec!r}')
-                          external[child] = spec
+                          prior=external.get(child)
+                          if prior is not None and prior != spec: raise RuntimeError((child, prior, spec))
+                          external[child]=spec
               visit(start)
               return [external[k] for k in sorted(external)]
-          api = external_closure('sitescore-api') + ['uvicorn==0.52.1']
-          commerce = external_closure('sitescore-commerce') + ['uvicorn==0.52.1']
-          pathlib.Path('.faz7-api.in').write_text('\n'.join(api) + '\n')
-          pathlib.Path('.faz7-commerce.in').write_text('\n'.join(commerce) + '\n')
+          pathlib.Path('.faz7-api.in').write_text('\n'.join(closure('sitescore-api')+['uvicorn==0.52.1'])+'\n')
+          pathlib.Path('.faz7-commerce.in').write_text('\n'.join(closure('sitescore-commerce')+['uvicorn==0.52.1'])+'\n')
           pathlib.Path('.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
           PY
           python /tmp/generate_inputs.py
 
-      - name: Generate hashed locks under exact CPython tag
+      - name: Generate hashed Python locks under exact CPython tag
         run: |
           set -euo pipefail
           mkdir -p deploy/containers/api deploy/containers/commerce
@@ -175,9 +150,7 @@ jobs:
           git config user.name 'sitescore-ci'
           git config user.email 'sitescore-ci@users.noreply.github.com'
           git add deploy/containers/base-image.lock deploy/containers/supply-chain-tools.lock deploy/containers/build-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
-          if git diff --cached --quiet; then
-            echo 'No lock changes to commit.'
-          else
+          if ! git diff --cached --quiet; then
             git commit -m 'FAZ 7.1 resolve immutable supply-chain inputs'
             git push origin "HEAD:${TARGET_BRANCH}"
           fi
@@ -194,22 +167,17 @@ jobs:
           echo "N8N_USER=${user}"
           test "$arch" = amd64
           test -n "$user" && test "$user" != 0 && test "$user" != root
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "${N8N_IMAGE}" -o spdx-json=/tmp/n8n.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "${N8N_IMAGE}" -o spdx-json > /tmp/n8n.spdx.json
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "${N8N_IMAGE}" -o json > /tmp/n8n.grype.json
           python - <<'PY'
           import json
           data=json.load(open('/tmp/n8n.grype.json'))
           blockers=[]
           for match in data.get('matches',[]):
-              v=match.get('vulnerability',{})
-              sev=str(v.get('severity','')).upper()
-              fix=v.get('fix') or {}
-              versions=fix.get('versions') or []
+              v=match.get('vulnerability',{}); sev=str(v.get('severity','')).upper(); fix=v.get('fix') or {}; versions=fix.get('versions') or []
               if sev=='CRITICAL' or (sev=='HIGH' and versions):
-                  art=match.get('artifact',{})
-                  blockers.append((v.get('id'),sev,art.get('name'),art.get('version'),versions))
+                  a=match.get('artifact',{}); blockers.append((v.get('id'),sev,a.get('name'),a.get('version'),versions))
           print(f'N8N_POLICY_BLOCKERS={len(blockers)}')
-          for b in blockers[:50]: print('BLOCKER',b)
-          if blockers:
-              raise SystemExit(42)
+          for b in blockers[:100]: print('N8N_BLOCKER',b)
+          if blockers: raise SystemExit(42)
           PY
