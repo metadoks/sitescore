@@ -1,0 +1,142 @@
+name: faz7-7-1-n8n-resume-probe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/faz7-7-1-n8n-resume-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  enumerate:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.versions.outputs.matrix }}
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      AFTER_VERSION: '2.34.5'
+    steps:
+      - name: Checkout exact source without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - id: versions
+        name: Enumerate next official stable candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re, urllib.request
+          from urllib.parse import urlencode
+          after = tuple(map(int, os.environ['AFTER_VERSION'].split('.')))
+          token = os.environ['GH_TOKEN']
+          versions = set()
+          for page in range(1, 11):
+              url = 'https://api.github.com/repos/n8n-io/n8n/releases?' + urlencode({'per_page': 100, 'page': page})
+              req = urllib.request.Request(url, headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'User-Agent': 'sitescore-faz7-n8n-resume-probe',
+              })
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  data = json.load(response)
+              if not data:
+                  break
+              for release in data:
+                  if release.get('draft') or release.get('prerelease'):
+                      continue
+                  match = re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)', str(release.get('tag_name', '')))
+                  if not match:
+                      continue
+                  version = tuple(map(int, match.groups()))
+                  if version > after:
+                      versions.add(version)
+              if len(data) < 100:
+                  break
+          ordered = ['.'.join(map(str, version)) for version in sorted(versions)]
+          batch = ordered[:24]
+          if not batch:
+              raise SystemExit('no official stable candidates found after ' + os.environ['AFTER_VERSION'])
+          print('CANDIDATES=' + ','.join(batch))
+          print('matrix=' + json.dumps(batch, separators=(',', ':')))
+          PY
+
+  scan:
+    needs: enumerate
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        version: ${{ fromJSON(needs.enumerate.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    name: scan-${{ matrix.version }}
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      CANDIDATE_VERSION: ${{ matrix.version }}
+    steps:
+      - name: Checkout exact source without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Scan exact linux amd64 digest with pinned Grype
+        run: |
+          set -euo pipefail
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          test -n "$grype_image"
+          tag="n8nio/n8n:${CANDIDATE_VERSION}"
+          docker buildx imagetools inspect --raw "$tag" > /tmp/manifest.json
+          digest="$(python - <<'PY'
+          import json
+          data = json.load(open('/tmp/manifest.json'))
+          matches = [m for m in (data.get('manifests') or []) if (m.get('platform') or {}).get('os') == 'linux' and (m.get('platform') or {}).get('architecture') == 'amd64']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one linux/amd64 manifest, found {len(matches)}')
+          print(matches[0]['digest'])
+          PY
+          )"
+          case "$digest" in sha256:*) ;; *) echo "invalid digest: $digest" >&2; exit 1;; esac
+          image="n8nio/n8n@${digest}"
+          docker run --rm "$grype_image" "registry:${image}" -o json > /tmp/grype.json
+          read -r critical high < <(python - <<'PY'
+          import json
+          data = json.load(open('/tmp/grype.json'))
+          counts = {'CRITICAL': 0, 'HIGH': 0}
+          for match in data.get('matches', []):
+              severity = str((match.get('vulnerability') or {}).get('severity', '')).upper()
+              if severity in counts:
+                  counts[severity] += 1
+          print(counts['CRITICAL'], counts['HIGH'])
+          PY
+          )
+          user='NOT_CHECKED_REJECTED'
+          runtime='NOT_CHECKED_REJECTED'
+          status='REJECTED'
+          if test "$critical" -eq 0 && test "$high" -eq 0; then
+            docker pull --platform linux/amd64 "$image" >/dev/null
+            test "$(docker image inspect "$image" --format '{{.Architecture}}')" = amd64
+            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+            test -n "$user" && test "$user" != 0 && test "$user" != root
+            runtime="$(docker run --rm "$image" n8n --version | tail -n 1 | tr -d '\r')"
+            status='ACCEPTABLE_SECURITY_CANDIDATE'
+          fi
+          printf 'CANDIDATE_RESULT version=%s digest=%s critical=%s high=%s user=%s runtime=%s status=%s\n' \
+            "$CANDIDATE_VERSION" "$digest" "$critical" "$high" "$user" "$runtime" "$status"
