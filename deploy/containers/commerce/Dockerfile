@@ -1,3 +1,6 @@
+ARG SOURCE_REVISION=unknown
+ARG SOURCE_VERSION=unknown
+
 FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -23,9 +26,16 @@ RUN mkdir -p /wheels \
 
 FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS runtime-base
 
+ARG SOURCE_REVISION
+ARG SOURCE_VERSION
+LABEL org.opencontainers.image.source="https://github.com/metadoks/sitescore" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.version="${SOURCE_VERSION}" \
+      org.opencontainers.image.title="sitescore-commerce"
 ENV VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:$PATH \
     HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/xdg-cache \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
