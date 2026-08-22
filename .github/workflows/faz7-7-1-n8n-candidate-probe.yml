@@ -1,0 +1,158 @@
+name: faz7-7-1-n8n-candidate-probe
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  n8n-candidate-probe:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      HISTORICAL_VERSION: '2.33.4'
+    steps:
+      - name: Checkout exact source head without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Probe official stable n8n candidates in ascending semver order
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/containers/artifacts/n8n-candidates
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          test -n "$grype_image"
+          test -n "$syft_image"
+
+          python - <<'PY' > /tmp/n8n-candidates.txt
+          import json, os, re, urllib.request
+          from urllib.parse import urlencode
+
+          hist = tuple(map(int, os.environ['HISTORICAL_VERSION'].split('.')))
+          token = os.environ['GH_TOKEN']
+          versions = set()
+          page = 1
+          while page <= 10:
+              url = 'https://api.github.com/repos/n8n-io/n8n/releases?' + urlencode({'per_page': 100, 'page': page})
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'sitescore-faz7-n8n-probe',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  data = json.load(r)
+              if not data:
+                  break
+              for rel in data:
+                  if rel.get('draft') or rel.get('prerelease'):
+                      continue
+                  m = re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)', str(rel.get('tag_name', '')))
+                  if not m:
+                      continue
+                  v = tuple(map(int, m.groups()))
+                  if v > hist:
+                      versions.add(v)
+              if len(data) < 100:
+                  break
+              page += 1
+          for v in sorted(versions):
+              print('.'.join(map(str, v)))
+          PY
+
+          if ! test -s /tmp/n8n-candidates.txt; then
+            echo 'NO_STABLE_CANDIDATE_ABOVE_HISTORICAL_BASELINE=1' | tee deploy/containers/artifacts/n8n-candidates/summary.txt
+            exit 43
+          fi
+
+          printf 'candidate_version\tamd64_digest\truntime_user\tcritical\thigh\tstatus\n' > deploy/containers/artifacts/n8n-candidates/results.tsv
+          selected=''
+          while IFS= read -r version; do
+            test -n "$version"
+            tag="n8nio/n8n:${version}"
+            raw="deploy/containers/artifacts/n8n-candidates/${version}.manifest.json"
+            docker buildx imagetools inspect --raw "$tag" > "$raw"
+            amd64_digest="$(python - "$raw" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          manifests = data.get('manifests') or []
+          matches = [m for m in manifests if (m.get('platform') or {}).get('os') == 'linux' and (m.get('platform') or {}).get('architecture') == 'amd64']
+          if len(matches) != 1:
+              raise SystemExit(f'expected one linux/amd64 manifest, found {len(matches)}')
+          print(matches[0]['digest'])
+          PY
+            )"
+            case "$amd64_digest" in sha256:*) ;; *) echo "invalid amd64 digest: $amd64_digest" >&2; exit 1;; esac
+            image="n8nio/n8n@${amd64_digest}"
+            docker pull --platform linux/amd64 "$image"
+            arch="$(docker image inspect "$image" --format '{{.Architecture}}')"
+            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+            test "$arch" = amd64
+            test -n "$user" && test "$user" != 0 && test "$user" != root
+
+            grype_json="deploy/containers/artifacts/n8n-candidates/${version}.grype.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "$grype_json"
+            read -r critical high < <(python - "$grype_json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          counts = {'CRITICAL': 0, 'HIGH': 0}
+          for match in data.get('matches', []):
+              sev = str((match.get('vulnerability') or {}).get('severity', '')).upper()
+              if sev in counts:
+                  counts[sev] += 1
+          print(counts['CRITICAL'], counts['HIGH'])
+          PY
+            )
+            status='REJECTED'
+            if test "$critical" -eq 0 && test "$high" -eq 0; then
+              status='SELECTED'
+              selected="$version"
+              selected_image="$image"
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > deploy/containers/artifacts/n8n-candidates/selected.spdx.json
+              docker run --rm "$image" n8n --version > deploy/containers/artifacts/n8n-candidates/runtime-version.txt
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$version" "$amd64_digest" "$user" "$critical" "$high" "$status" | tee -a deploy/containers/artifacts/n8n-candidates/results.tsv
+            if test -n "$selected"; then
+              cat > deploy/containers/artifacts/n8n-candidates/selected.env <<EOF
+          SELECTED_N8N_VERSION=${selected}
+          SELECTED_N8N_DIGEST=${amd64_digest}
+          SELECTED_N8N_IMAGE=${selected_image}
+          N8N_CRITICAL=${critical}
+          N8N_HIGH=${high}
+          N8N_RUNTIME_USER=${user}
+          EOF
+              break
+            fi
+          done < /tmp/n8n-candidates.txt
+
+          if test -z "$selected"; then
+            echo 'NO_ACCEPTABLE_STABLE_CANDIDATE=1' | tee deploy/containers/artifacts/n8n-candidates/summary.txt
+            exit 42
+          fi
+          cat deploy/containers/artifacts/n8n-candidates/selected.env | tee deploy/containers/artifacts/n8n-candidates/summary.txt
+
+      - name: Upload candidate probe evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-7-1-n8n-candidate-probe
+          if-no-files-found: error
+          retention-days: 14
+          path: deploy/containers/artifacts/n8n-candidates/
