@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - faz7/7-1-reproducible-containers-supply-chain-governance
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,19 +17,21 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       TARGET_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PYTHON_IMAGE_TAG: python:3.11.16-slim-bookworm
       DEBIAN_SNAPSHOT: '20260821T000000Z'
     steps:
-      - name: Checkout exact triggering commit without third-party action
+      - name: Checkout exact source head without third-party action
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git init .
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           git switch -C "${TARGET_BRANCH}"
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
       - name: Resolve immutable Python base image identity
         run: |
@@ -46,22 +51,21 @@ jobs:
           EOF
           cat deploy/containers/base-image.lock
 
-      - name: Generate hashed Python runtime/build locks under CPython 3.11.16
+      - name: Generate direct runtime inputs from frozen pyprojects
         run: |
           set -euo pipefail
-          mkdir -p deploy/containers/api deploy/containers/commerce /tmp/lock-inputs
           cat > /tmp/generate_inputs.py <<'PY'
           from __future__ import annotations
           import pathlib, re, tomllib
 
-          root = pathlib.Path('/repo')
+          root = pathlib.Path('.')
           projects = {}
           for path in sorted(root.glob('sitescore-*/pyproject.toml')):
               data = tomllib.loads(path.read_text())
               project = data.get('project', {})
               name = project.get('name')
               if name:
-                  projects[name.lower().replace('_','-')] = (path.parent, project)
+                  projects[name.lower().replace('_','-')] = project
 
           def dep_name(spec: str) -> str:
               base = spec.split(';', 1)[0].strip()
@@ -71,43 +75,42 @@ jobs:
               return m.group(1).lower().replace('_','-')
 
           def external_closure(start: str) -> list[str]:
-              seen_internal = set()
+              seen = set()
               external = {}
               def visit(name: str):
                   key = name.lower().replace('_','-')
-                  if key in seen_internal:
+                  if key in seen:
                       return
-                  seen_internal.add(key)
-                  _, project = projects[key]
+                  seen.add(key)
+                  project = projects[key]
                   for spec in project.get('dependencies', []):
                       child = dep_name(spec)
                       if child in projects:
                           visit(child)
                       else:
-                          prior = external.get(child)
-                          if prior is not None and prior != spec:
-                              raise RuntimeError(f'conflicting direct requirement for {child}: {prior!r} vs {spec!r}')
+                          previous = external.get(child)
+                          if previous is not None and previous != spec:
+                              raise RuntimeError(f'conflicting direct requirement for {child}: {previous!r} vs {spec!r}')
                           external[child] = spec
               visit(start)
               return [external[k] for k in sorted(external)]
 
           api = external_closure('sitescore-api') + ['uvicorn==0.52.1']
           commerce = external_closure('sitescore-commerce') + ['uvicorn==0.52.1']
-          pathlib.Path('/repo/.faz7-api.in').write_text('\n'.join(api) + '\n')
-          pathlib.Path('/repo/.faz7-commerce.in').write_text('\n'.join(commerce) + '\n')
-          pathlib.Path('/repo/.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
+          pathlib.Path('.faz7-api.in').write_text('\n'.join(api) + '\n')
+          pathlib.Path('.faz7-commerce.in').write_text('\n'.join(commerce) + '\n')
+          pathlib.Path('.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
           print('API_DIRECT_EXTERNAL')
           print('\n'.join(api))
           print('COMMERCE_DIRECT_EXTERNAL')
           print('\n'.join(commerce))
           PY
-          docker run --rm -v "$PWD:/repo" -w /repo "${PYTHON_IMAGE_TAG}" sh -euxc '
-            python /tmp/does-not-exist 2>/dev/null || true
-            python -m pip install --disable-pip-version-check pip-tools==7.6.0
-            python /repo/../repo/.faz7-bootstrap-inputs.py 2>/dev/null || true
-          ' || true
-          # Generate inputs on host Python; parsing only, resolution remains in CPython 3.11 container.
           python /tmp/generate_inputs.py
+
+      - name: Generate hashed locks under exact CPython tag
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/containers/api deploy/containers/commerce
           docker run --rm -v "$PWD:/repo" -w /repo "${PYTHON_IMAGE_TAG}" sh -euxc '
             python -m pip install --disable-pip-version-check pip-tools==7.6.0
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/api/requirements.lock .faz7-api.in
@@ -115,20 +118,15 @@ jobs:
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/build-tools.lock .faz7-build-tools.in
           '
           rm -f .faz7-api.in .faz7-commerce.in .faz7-build-tools.in
-          test -s deploy/containers/api/requirements.lock
-          test -s deploy/containers/commerce/requirements.lock
-          test -s deploy/containers/build-tools.lock
           grep -q -- '--hash=sha256:' deploy/containers/api/requirements.lock
           grep -q -- '--hash=sha256:' deploy/containers/commerce/requirements.lock
           grep -q -- '--hash=sha256:' deploy/containers/build-tools.lock
 
-      - name: Resolve reproducible API native runtime package lock from Debian snapshot
+      - name: Resolve API native package versions from fixed Debian snapshot
         run: |
           set -euo pipefail
           image="$(awk -F= '$1=="PYTHON_IMAGE" {print $2}' deploy/containers/base-image.lock)"
-          snapshot="${DEBIAN_SNAPSHOT}"
-          packages='fontconfig fonts-dejavu-core libffi8 libjpeg62-turbo libopenjp2-7 libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 shared-mime-info'
-          docker run --rm -e SNAPSHOT="$snapshot" "$image" sh -euxc '
+          docker run --rm -e SNAPSHOT="${DEBIAN_SNAPSHOT}" "$image" sh -euxc '
             rm -f /etc/apt/sources.list.d/debian.sources
             cat > /etc/apt/sources.list <<EOF
           deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${SNAPSHOT}/ bookworm main
@@ -144,6 +142,7 @@ jobs:
           cat deploy/containers/api/apt-runtime.lock
 
       - name: Commit generated immutable lock inputs
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
