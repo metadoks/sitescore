@@ -1,0 +1,15 @@
+Get:1 https://snapshot.debian.org/archive/debian/20260821T000000Z bookworm InRelease [151 kB]
+Get:2 https://snapshot.debian.org/archive/debian-security/20260821T000000Z bookworm-security InRelease [34.8 kB]
+Get:3 https://snapshot.debian.org/archive/debian/20260821T000000Z bookworm/main amd64 Packages [8790 kB]
+Get:4 https://snapshot.debian.org/archive/debian-security/20260821T000000Z bookworm-security/main amd64 Packages [339 kB]
+Fetched 9315 kB in 3s (3406 kB/s)
+Reading package lists...
+fontconfig=2.14.1-4
+fonts-dejavu-core=2.37-6
+libffi8=3.4.4-1
+libjpeg62-turbo=1:2.1.5-2
+libopenjp2-7=2.5.0-2+deb12u3
+libpango-1.0-0=1.50.12+ds-1
+libpangoft2-1.0-0=1.50.12+ds-1
+libharfbuzz-subset0=6.0.0+dfsg-3
+shared-mime-info=2.2-1
