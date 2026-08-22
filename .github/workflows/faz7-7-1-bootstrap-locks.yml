@@ -22,7 +22,7 @@ jobs:
       DEBIAN_SNAPSHOT: '20260821T000000Z'
       SYFT_TAG: anchore/syft:v1.44.0
       GRYPE_TAG: anchore/grype:v0.116.1
-      COSIGN_TAG: sigstore/cosign:v3.1.2
+      COSIGN_TAG: ghcr.io/sigstore/cosign/cosign:v3.1.2
       N8N_IMAGE: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
     steps:
       - name: Checkout exact source head without third-party action
