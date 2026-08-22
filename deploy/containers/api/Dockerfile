@@ -89,10 +89,11 @@ FROM runtime-base AS test
 USER 0:0
 COPY deploy/containers/test-tools.lock /locks/test-tools.lock
 RUN /opt/venv/bin/pip install --require-hashes -r /locks/test-tools.lock
-COPY sitescore-api/tests/ /tests/sitescore-api/
-COPY sitescore-report/tests/ /tests/sitescore-report/
+COPY sitescore-api/ /testsrc/sitescore-api/
+COPY sitescore-report/ /testsrc/sitescore-report/
 USER 10001:10001
-CMD ["python", "-m", "pytest", "-q", "/tests/sitescore-api", "/tests/sitescore-report"]
+WORKDIR /testsrc
+CMD ["python", "-m", "pytest", "-q", "/testsrc/sitescore-api/tests", "/testsrc/sitescore-report/tests"]
 
 FROM runtime-base AS runtime
 CMD ["/opt/sitescore/bin/api-web"]
