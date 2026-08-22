@@ -1,22 +1,18 @@
 name: faz7-7-1-bootstrap-locks
 
 on:
-  push:
-    branches:
-      - faz7/7-1-reproducible-containers-supply-chain-governance
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bootstrap-locks:
     runs-on: ubuntu-24.04
     env:
-      TARGET_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PYTHON_IMAGE_TAG: python:3.11.16-slim-bookworm
       DEBIAN_SNAPSHOT: '20260821T000000Z'
@@ -34,18 +30,27 @@ jobs:
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
-          git switch -C "${TARGET_BRANCH}"
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
-      - name: Resolve immutable container tool identities
+      - name: Preserve committed lock authority
         run: |
           set -euo pipefail
-          mkdir -p deploy/containers /tmp/faz7-digests
+          mkdir -p /tmp/committed-locks deploy/containers/artifacts
+          cp deploy/containers/base-image.lock /tmp/committed-locks/base-image.lock
+          cp deploy/containers/supply-chain-tools.lock /tmp/committed-locks/supply-chain-tools.lock
+          cp deploy/containers/build-tools.lock /tmp/committed-locks/build-tools.lock
+          cp deploy/containers/test-tools.lock /tmp/committed-locks/test-tools.lock
+          cp deploy/containers/api/requirements.lock /tmp/committed-locks/api-requirements.lock
+          cp deploy/containers/api/apt-runtime.lock /tmp/committed-locks/api-apt-runtime.lock
+          cp deploy/containers/commerce/requirements.lock /tmp/committed-locks/commerce-requirements.lock
+
+      - name: Re-resolve immutable container tool identities
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/faz7-digests
           resolve_digest() {
             local image key output digest
-            image="$1"
-            key="$2"
-            output="/tmp/faz7-digests/${key}.txt"
+            image="$1"; key="$2"; output="/tmp/faz7-digests/${key}.txt"
             docker buildx imagetools inspect "$image" > "$output"
             digest="$(awk '/^Digest:/ {print $2; found=1} found {exit}' "$output")"
             test -n "$digest"
@@ -79,10 +84,11 @@ jobs:
           SBOM_FORMAT=spdx-json
           PROVENANCE_MODE=cosign-keyless-github-oidc
           EOF
-          cat deploy/containers/base-image.lock
-          cat deploy/containers/supply-chain-tools.lock
+          cmp /tmp/committed-locks/base-image.lock deploy/containers/base-image.lock
+          cmp /tmp/committed-locks/supply-chain-tools.lock deploy/containers/supply-chain-tools.lock
+          echo 'CONTAINER_TOOL_LOCK_REPRODUCIBILITY=PASS'
 
-      - name: Generate direct runtime and test inputs from frozen pyprojects
+      - name: Regenerate hashed Python locks from frozen pyprojects
         run: |
           set -euo pipefail
           cat > /tmp/generate_inputs.py <<'PY'
@@ -94,35 +100,34 @@ jobs:
               if project.get('name'):
                   projects[project['name'].lower().replace('_','-')] = project
           def dep_name(spec):
-              m=re.match(r'([A-Za-z0-9_.-]+)', spec.split(';',1)[0].strip())
-              if not m: raise ValueError(spec)
+              m = re.match(r'([A-Za-z0-9_.-]+)', spec.split(';', 1)[0].strip())
+              if not m:
+                  raise ValueError(spec)
               return m.group(1).lower().replace('_','-')
           def closure(start):
-              seen=set(); external={}
+              seen = set(); external = {}
               def visit(name):
-                  key=name.lower().replace('_','-')
-                  if key in seen: return
+                  key = name.lower().replace('_','-')
+                  if key in seen:
+                      return
                   seen.add(key)
-                  for spec in projects[key].get('dependencies',[]):
-                      child=dep_name(spec)
-                      if child in projects: visit(child)
+                  for spec in projects[key].get('dependencies', []):
+                      child = dep_name(spec)
+                      if child in projects:
+                          visit(child)
                       else:
-                          prior=external.get(child)
-                          if prior is not None and prior != spec: raise RuntimeError((child, prior, spec))
-                          external[child]=spec
+                          prior = external.get(child)
+                          if prior is not None and prior != spec:
+                              raise RuntimeError((child, prior, spec))
+                          external[child] = spec
               visit(start)
               return [external[k] for k in sorted(external)]
-          pathlib.Path('.faz7-api.in').write_text('\n'.join(closure('sitescore-api')+['uvicorn==0.52.1'])+'\n')
-          pathlib.Path('.faz7-commerce.in').write_text('\n'.join(closure('sitescore-commerce')+['uvicorn==0.52.1'])+'\n')
+          pathlib.Path('.faz7-api.in').write_text('\n'.join(closure('sitescore-api') + ['uvicorn==0.52.1']) + '\n')
+          pathlib.Path('.faz7-commerce.in').write_text('\n'.join(closure('sitescore-commerce') + ['uvicorn==0.52.1']) + '\n')
           pathlib.Path('.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
           pathlib.Path('.faz7-test-tools.in').write_text('pytest==8.4.2\npypdf==6.14.2\n')
           PY
           python /tmp/generate_inputs.py
-
-      - name: Generate hashed Python locks under exact CPython tag
-        run: |
-          set -euo pipefail
-          mkdir -p deploy/containers/api deploy/containers/commerce
           docker run --rm -v "$PWD:/repo" -w /repo "${PYTHON_IMAGE_TAG}" sh -euxc '
             python -m pip install --disable-pip-version-check pip-tools==7.6.0
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/api/requirements.lock .faz7-api.in
@@ -131,11 +136,13 @@ jobs:
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/test-tools.lock .faz7-test-tools.in
           '
           rm -f .faz7-api.in .faz7-commerce.in .faz7-build-tools.in .faz7-test-tools.in
-          for f in deploy/containers/api/requirements.lock deploy/containers/commerce/requirements.lock deploy/containers/build-tools.lock deploy/containers/test-tools.lock; do
-            grep -q -- '--hash=sha256:' "$f"
-          done
+          cmp /tmp/committed-locks/api-requirements.lock deploy/containers/api/requirements.lock
+          cmp /tmp/committed-locks/commerce-requirements.lock deploy/containers/commerce/requirements.lock
+          cmp /tmp/committed-locks/build-tools.lock deploy/containers/build-tools.lock
+          cmp /tmp/committed-locks/test-tools.lock deploy/containers/test-tools.lock
+          echo 'PYTHON_HASHED_LOCK_REPRODUCIBILITY=PASS'
 
-      - name: Resolve API native package versions from fixed Debian snapshot
+      - name: Regenerate API native package lock from fixed Debian snapshot
         run: |
           set -euo pipefail
           image="$(awk -F= '$1=="PYTHON_IMAGE" {print $2}' deploy/containers/base-image.lock)"
@@ -153,22 +160,10 @@ jobs:
               printf "%s=%s\n" "$p" "$v"
             done
           ' > deploy/containers/api/apt-runtime.lock
-          test "$(grep -c '^[a-z0-9]' deploy/containers/api/apt-runtime.lock)" -eq 9
-          cat deploy/containers/api/apt-runtime.lock
+          cmp /tmp/committed-locks/api-apt-runtime.lock deploy/containers/api/apt-runtime.lock
+          echo 'APT_SNAPSHOT_LOCK_REPRODUCIBILITY=PASS'
 
-      - name: Commit generated immutable lock inputs
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          set -euo pipefail
-          git config user.name 'sitescore-ci'
-          git config user.email 'sitescore-ci@users.noreply.github.com'
-          git add deploy/containers/base-image.lock deploy/containers/supply-chain-tools.lock deploy/containers/build-tools.lock deploy/containers/test-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
-          if ! git diff --cached --quiet; then
-            git commit -m 'FAZ 7.1 resolve immutable supply-chain inputs'
-            git push origin "HEAD:${TARGET_BRANCH}"
-          fi
-
-      - name: Probe frozen n8n platform user SBOM and vulnerability policy
+      - name: Probe frozen n8n image and preserve SBOM vulnerability evidence
         run: |
           set -euo pipefail
           syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
@@ -176,21 +171,59 @@ jobs:
           docker pull --platform linux/amd64 "${N8N_IMAGE}"
           arch="$(docker image inspect "${N8N_IMAGE}" --format '{{.Architecture}}')"
           user="$(docker image inspect "${N8N_IMAGE}" --format '{{.Config.User}}')"
-          echo "N8N_ARCH=${arch}"
-          echo "N8N_USER=${user}"
+          printf 'N8N_ARCH=%s\nN8N_USER=%s\n' "$arch" "$user" | tee deploy/containers/artifacts/n8n-image-contract.txt
           test "$arch" = amd64
           test -n "$user" && test "$user" != 0 && test "$user" != root
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "${N8N_IMAGE}" -o spdx-json > /tmp/n8n.spdx.json
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "${N8N_IMAGE}" -o json > /tmp/n8n.grype.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "${N8N_IMAGE}" -o spdx-json > deploy/containers/artifacts/n8n.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "${N8N_IMAGE}" -o json > deploy/containers/artifacts/n8n.grype.json
+          python - <<'PY'
+          import json, pathlib
+          p = pathlib.Path('deploy/containers/artifacts')
+          data = json.loads((p/'n8n.grype.json').read_text())
+          blockers = []
+          for match in data.get('matches', []):
+              v = match.get('vulnerability', {})
+              sev = str(v.get('severity', '')).upper()
+              versions = (v.get('fix') or {}).get('versions') or []
+              if sev == 'CRITICAL' or (sev == 'HIGH' and versions):
+                  a = match.get('artifact', {})
+                  blockers.append({'id': v.get('id'), 'severity': sev, 'package': a.get('name'), 'version': a.get('version'), 'fix_versions': versions})
+          (p/'n8n-policy.json').write_text(json.dumps({'blocker_count': len(blockers), 'blockers': blockers}, indent=2, sort_keys=True) + '\n')
+          print(f'N8N_POLICY_BLOCKERS={len(blockers)}')
+          for b in blockers[:100]:
+              print('N8N_BLOCKER', b)
+          PY
+
+      - name: Upload bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-7-1-bootstrap-evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            deploy/containers/base-image.lock
+            deploy/containers/supply-chain-tools.lock
+            deploy/containers/build-tools.lock
+            deploy/containers/test-tools.lock
+            deploy/containers/api/requirements.lock
+            deploy/containers/api/apt-runtime.lock
+            deploy/containers/commerce/requirements.lock
+            deploy/containers/artifacts/n8n-image-contract.txt
+            deploy/containers/artifacts/n8n.spdx.json
+            deploy/containers/artifacts/n8n.grype.json
+            deploy/containers/artifacts/n8n-policy.json
+
+      - name: Enforce frozen n8n vulnerability policy
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s deploy/containers/artifacts/n8n-policy.json
           python - <<'PY'
           import json
-          data=json.load(open('/tmp/n8n.grype.json'))
-          blockers=[]
-          for match in data.get('matches',[]):
-              v=match.get('vulnerability',{}); sev=str(v.get('severity','')).upper(); fix=v.get('fix') or {}; versions=fix.get('versions') or []
-              if sev=='CRITICAL' or (sev=='HIGH' and versions):
-                  a=match.get('artifact',{}); blockers.append((v.get('id'),sev,a.get('name'),a.get('version'),versions))
-          print(f'N8N_POLICY_BLOCKERS={len(blockers)}')
-          for b in blockers[:100]: print('N8N_BLOCKER',b)
-          if blockers: raise SystemExit(42)
+          data = json.load(open('deploy/containers/artifacts/n8n-policy.json'))
+          count = int(data['blocker_count'])
+          print(f'N8N_POLICY_BLOCKERS={count}')
+          if count:
+              raise SystemExit(42)
           PY
