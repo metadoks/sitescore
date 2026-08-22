@@ -40,15 +40,21 @@ jobs:
       - name: Resolve immutable container tool identities
         run: |
           set -euo pipefail
-          mkdir -p deploy/containers
+          mkdir -p deploy/containers /tmp/faz7-digests
           resolve_digest() {
-            docker buildx imagetools inspect "$1" | awk '/^Digest:/ {print $2; exit}'
+            local image="$1" key="$2" output="/tmp/faz7-digests/${key}.txt" digest
+            docker buildx imagetools inspect "$image" > "$output"
+            digest="$(awk '/^Digest:/ {print $2; found=1} found {exit}' "$output")"
+            test -n "$digest"
+            printf '%s' "$digest"
           }
-          python_digest="$(resolve_digest "${PYTHON_IMAGE_TAG}")"
-          syft_digest="$(resolve_digest "${SYFT_TAG}")"
-          grype_digest="$(resolve_digest "${GRYPE_TAG}")"
-          cosign_digest="$(resolve_digest "${COSIGN_TAG}")"
-          for d in "$python_digest" "$syft_digest" "$grype_digest" "$cosign_digest"; do case "$d" in sha256:*) ;; *) exit 1;; esac; done
+          python_digest="$(resolve_digest "${PYTHON_IMAGE_TAG}" python)"
+          syft_digest="$(resolve_digest "${SYFT_TAG}" syft)"
+          grype_digest="$(resolve_digest "${GRYPE_TAG}" grype)"
+          cosign_digest="$(resolve_digest "${COSIGN_TAG}" cosign)"
+          for d in "$python_digest" "$syft_digest" "$grype_digest" "$cosign_digest"; do
+            case "$d" in sha256:*) ;; *) echo "invalid digest: $d" >&2; exit 1;; esac
+          done
           cat > deploy/containers/base-image.lock <<EOF
           # FAZ 7.1 immutable base-image authority
           PYTHON_IMAGE_TAG=${PYTHON_IMAGE_TAG}
@@ -73,7 +79,7 @@ jobs:
           cat deploy/containers/base-image.lock
           cat deploy/containers/supply-chain-tools.lock
 
-      - name: Generate direct runtime inputs from frozen pyprojects
+      - name: Generate direct runtime and test inputs from frozen pyprojects
         run: |
           set -euo pipefail
           cat > /tmp/generate_inputs.py <<'PY'
@@ -106,6 +112,7 @@ jobs:
           pathlib.Path('.faz7-api.in').write_text('\n'.join(closure('sitescore-api')+['uvicorn==0.52.1'])+'\n')
           pathlib.Path('.faz7-commerce.in').write_text('\n'.join(closure('sitescore-commerce')+['uvicorn==0.52.1'])+'\n')
           pathlib.Path('.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
+          pathlib.Path('.faz7-test-tools.in').write_text('pytest==8.4.2\npypdf==6.14.2\n')
           PY
           python /tmp/generate_inputs.py
 
@@ -118,11 +125,12 @@ jobs:
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/api/requirements.lock .faz7-api.in
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/commerce/requirements.lock .faz7-commerce.in
             pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/build-tools.lock .faz7-build-tools.in
+            pip-compile --generate-hashes --resolver=backtracking --strip-extras --output-file deploy/containers/test-tools.lock .faz7-test-tools.in
           '
-          rm -f .faz7-api.in .faz7-commerce.in .faz7-build-tools.in
-          grep -q -- '--hash=sha256:' deploy/containers/api/requirements.lock
-          grep -q -- '--hash=sha256:' deploy/containers/commerce/requirements.lock
-          grep -q -- '--hash=sha256:' deploy/containers/build-tools.lock
+          rm -f .faz7-api.in .faz7-commerce.in .faz7-build-tools.in .faz7-test-tools.in
+          for f in deploy/containers/api/requirements.lock deploy/containers/commerce/requirements.lock deploy/containers/build-tools.lock deploy/containers/test-tools.lock; do
+            grep -q -- '--hash=sha256:' "$f"
+          done
 
       - name: Resolve API native package versions from fixed Debian snapshot
         run: |
@@ -135,13 +143,15 @@ jobs:
           deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${SNAPSHOT}/ bookworm main
           deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${SNAPSHOT}/ bookworm-security main
           EOF
-            apt-get -o Acquire::Check-Valid-Until=false update >/dev/null
+            apt-get -o Acquire::Check-Valid-Until=false update >/dev/null 2>&1
             for p in fontconfig fonts-dejavu-core libffi8 libjpeg62-turbo libopenjp2-7 libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 shared-mime-info; do
               v="$(apt-cache policy "$p" | awk "/Candidate:/ {print \$2}")"
               test -n "$v" && test "$v" != "(none)"
               printf "%s=%s\n" "$p" "$v"
             done
           ' > deploy/containers/api/apt-runtime.lock
+          test "$(grep -c '^[a-z0-9]' deploy/containers/api/apt-runtime.lock)" -eq 9
+          cat deploy/containers/api/apt-runtime.lock
 
       - name: Commit generated immutable lock inputs
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -149,7 +159,7 @@ jobs:
           set -euo pipefail
           git config user.name 'sitescore-ci'
           git config user.email 'sitescore-ci@users.noreply.github.com'
-          git add deploy/containers/base-image.lock deploy/containers/supply-chain-tools.lock deploy/containers/build-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
+          git add deploy/containers/base-image.lock deploy/containers/supply-chain-tools.lock deploy/containers/build-tools.lock deploy/containers/test-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
           if ! git diff --cached --quiet; then
             git commit -m 'FAZ 7.1 resolve immutable supply-chain inputs'
             git push origin "HEAD:${TARGET_BRANCH}"
