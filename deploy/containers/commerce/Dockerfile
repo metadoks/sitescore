@@ -1,0 +1,51 @@
+FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /src
+
+COPY deploy/containers/build-tools.lock /locks/build-tools.lock
+COPY deploy/containers/commerce/requirements.lock /locks/runtime-requirements.lock
+RUN python -m venv /opt/build-venv \
+ && /opt/build-venv/bin/pip install --require-hashes -r /locks/build-tools.lock
+
+COPY sitescore-commerce/ sitescore-commerce/
+RUN mkdir -p /wheels \
+ && /opt/build-venv/bin/pip wheel \
+      --no-deps \
+      --no-build-isolation \
+      --wheel-dir /wheels \
+      /src/sitescore-commerce \
+ && python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --require-hashes -r /locks/runtime-requirements.lock \
+ && /opt/venv/bin/pip install --no-deps /wheels/*.whl
+
+FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS runtime-base
+
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH \
+    HOME=/tmp \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+COPY --from=builder /opt/venv /opt/venv
+COPY deploy/containers/runtime/commerce-web.sh /opt/sitescore/bin/commerce-web
+COPY deploy/containers/runtime/commerce-dispatcher-supervisor.py /opt/sitescore/bin/commerce-dispatcher-supervisor.py
+COPY deploy/containers/verify_image_contract.py /opt/sitescore/verify_image_contract.py
+RUN chmod 0555 /opt/sitescore/bin/commerce-web /opt/sitescore/bin/commerce-dispatcher-supervisor.py \
+ && chmod 0444 /opt/sitescore/verify_image_contract.py
+
+WORKDIR /app
+USER 10001:10001
+
+FROM runtime-base AS test
+USER 0:0
+COPY deploy/containers/test-tools.lock /locks/test-tools.lock
+RUN /opt/venv/bin/pip install --require-hashes -r /locks/test-tools.lock
+COPY sitescore-commerce/tests/ /tests/sitescore-commerce/
+USER 10001:10001
+CMD ["python", "-m", "pytest", "-q", "/tests/sitescore-commerce"]
+
+FROM runtime-base AS runtime
+CMD ["/opt/sitescore/bin/commerce-web"]
