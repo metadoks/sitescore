@@ -20,6 +20,9 @@ jobs:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PYTHON_IMAGE_TAG: python:3.11.16-slim-bookworm
       DEBIAN_SNAPSHOT: '20260821T000000Z'
+      SYFT_TAG: anchore/syft:v1.44.0
+      GRYPE_TAG: anchore/grype:v0.116.1
+      N8N_IMAGE: n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
     steps:
       - name: Checkout exact source head without third-party action
         env:
@@ -49,7 +52,42 @@ jobs:
           TARGET_PLATFORM=linux/amd64
           DEBIAN_SNAPSHOT=${DEBIAN_SNAPSHOT}
           EOF
-          cat deploy/containers/base-image.lock
+
+      - name: Resolve supply-chain tool digests and official attestation action SHAs
+        run: |
+          set -euo pipefail
+          resolve_digest() {
+            local image="$1"
+            docker buildx imagetools inspect "$image" | awk '/^Digest:/ {print $2; exit}'
+          }
+          resolve_tag_sha() {
+            local repo="$1" tag="$2" sha
+            sha="$(git ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}^{}" | awk 'NR==1 {print $1}')"
+            if [ -z "$sha" ]; then
+              sha="$(git ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}" | awk 'NR==1 {print $1}')"
+            fi
+            test "${#sha}" -eq 40
+            printf '%s' "$sha"
+          }
+          syft_digest="$(resolve_digest "${SYFT_TAG}")"
+          grype_digest="$(resolve_digest "${GRYPE_TAG}")"
+          attest_prov_sha="$(resolve_tag_sha actions/attest-build-provenance v2)"
+          attest_sbom_sha="$(resolve_tag_sha actions/attest-sbom v2)"
+          cat > deploy/containers/supply-chain-tools.lock <<EOF
+          SYFT_TAG=${SYFT_TAG}
+          SYFT_DIGEST=${syft_digest}
+          SYFT_IMAGE=${SYFT_TAG}@${syft_digest}
+          GRYPE_TAG=${GRYPE_TAG}
+          GRYPE_DIGEST=${grype_digest}
+          GRYPE_IMAGE=${GRYPE_TAG}@${grype_digest}
+          ATTEST_BUILD_PROVENANCE_REPO=actions/attest-build-provenance
+          ATTEST_BUILD_PROVENANCE_TAG=v2
+          ATTEST_BUILD_PROVENANCE_SHA=${attest_prov_sha}
+          ATTEST_SBOM_REPO=actions/attest-sbom
+          ATTEST_SBOM_TAG=v2
+          ATTEST_SBOM_SHA=${attest_sbom_sha}
+          EOF
+          cat deploy/containers/supply-chain-tools.lock
 
       - name: Generate direct runtime inputs from frozen pyprojects
         run: |
@@ -57,7 +95,6 @@ jobs:
           cat > /tmp/generate_inputs.py <<'PY'
           from __future__ import annotations
           import pathlib, re, tomllib
-
           root = pathlib.Path('.')
           projects = {}
           for path in sorted(root.glob('sitescore-*/pyproject.toml')):
@@ -66,24 +103,19 @@ jobs:
               name = project.get('name')
               if name:
                   projects[name.lower().replace('_','-')] = project
-
           def dep_name(spec: str) -> str:
               base = spec.split(';', 1)[0].strip()
               m = re.match(r'([A-Za-z0-9_.-]+)', base)
               if not m:
                   raise ValueError(spec)
               return m.group(1).lower().replace('_','-')
-
           def external_closure(start: str) -> list[str]:
-              seen = set()
-              external = {}
+              seen = set(); external = {}
               def visit(name: str):
                   key = name.lower().replace('_','-')
-                  if key in seen:
-                      return
+                  if key in seen: return
                   seen.add(key)
-                  project = projects[key]
-                  for spec in project.get('dependencies', []):
+                  for spec in projects[key].get('dependencies', []):
                       child = dep_name(spec)
                       if child in projects:
                           visit(child)
@@ -94,16 +126,11 @@ jobs:
                           external[child] = spec
               visit(start)
               return [external[k] for k in sorted(external)]
-
           api = external_closure('sitescore-api') + ['uvicorn==0.52.1']
           commerce = external_closure('sitescore-commerce') + ['uvicorn==0.52.1']
           pathlib.Path('.faz7-api.in').write_text('\n'.join(api) + '\n')
           pathlib.Path('.faz7-commerce.in').write_text('\n'.join(commerce) + '\n')
           pathlib.Path('.faz7-build-tools.in').write_text('setuptools==80.9.0\nwheel==0.45.1\n')
-          print('API_DIRECT_EXTERNAL')
-          print('\n'.join(api))
-          print('COMMERCE_DIRECT_EXTERNAL')
-          print('\n'.join(commerce))
           PY
           python /tmp/generate_inputs.py
 
@@ -126,33 +153,63 @@ jobs:
         run: |
           set -euo pipefail
           image="$(awk -F= '$1=="PYTHON_IMAGE" {print $2}' deploy/containers/base-image.lock)"
-          docker run --rm -e SNAPSHOT="${DEBIAN_SNAPSHOT}" "$image" sh -euxc '
+          docker run --rm -e SNAPSHOT="${DEBIAN_SNAPSHOT}" "$image" sh -c '
+            set -eu
             rm -f /etc/apt/sources.list.d/debian.sources
             cat > /etc/apt/sources.list <<EOF
           deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${SNAPSHOT}/ bookworm main
           deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${SNAPSHOT}/ bookworm-security main
           EOF
-            apt-get -o Acquire::Check-Valid-Until=false update
+            apt-get -o Acquire::Check-Valid-Until=false update >/dev/null
             for p in fontconfig fonts-dejavu-core libffi8 libjpeg62-turbo libopenjp2-7 libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 shared-mime-info; do
               v="$(apt-cache policy "$p" | awk "/Candidate:/ {print \$2}")"
               test -n "$v" && test "$v" != "(none)"
               printf "%s=%s\n" "$p" "$v"
             done
           ' > deploy/containers/api/apt-runtime.lock
-          cat deploy/containers/api/apt-runtime.lock
 
       - name: Commit generated immutable lock inputs
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'sitescore-ci'
           git config user.email 'sitescore-ci@users.noreply.github.com'
-          git add deploy/containers/base-image.lock deploy/containers/build-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
+          git add deploy/containers/base-image.lock deploy/containers/supply-chain-tools.lock deploy/containers/build-tools.lock deploy/containers/api/requirements.lock deploy/containers/api/apt-runtime.lock deploy/containers/commerce/requirements.lock
           if git diff --cached --quiet; then
             echo 'No lock changes to commit.'
-            exit 0
+          else
+            git commit -m 'FAZ 7.1 resolve immutable supply-chain inputs'
+            git push origin "HEAD:${TARGET_BRANCH}"
           fi
-          git commit -m 'FAZ 7.1 resolve immutable container lock inputs'
-          git push origin "HEAD:${TARGET_BRANCH}"
+
+      - name: Probe frozen n8n platform user SBOM and vulnerability policy
+        run: |
+          set -euo pipefail
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          docker pull --platform linux/amd64 "${N8N_IMAGE}"
+          arch="$(docker image inspect "${N8N_IMAGE}" --format '{{.Architecture}}')"
+          user="$(docker image inspect "${N8N_IMAGE}" --format '{{.Config.User}}')"
+          echo "N8N_ARCH=${arch}"
+          echo "N8N_USER=${user}"
+          test "$arch" = amd64
+          test -n "$user" && test "$user" != 0 && test "$user" != root
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "${N8N_IMAGE}" -o spdx-json=/tmp/n8n.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "${N8N_IMAGE}" -o json > /tmp/n8n.grype.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/n8n.grype.json'))
+          blockers=[]
+          for match in data.get('matches',[]):
+              v=match.get('vulnerability',{})
+              sev=str(v.get('severity','')).upper()
+              fix=v.get('fix') or {}
+              versions=fix.get('versions') or []
+              if sev=='CRITICAL' or (sev=='HIGH' and versions):
+                  art=match.get('artifact',{})
+                  blockers.append((v.get('id'),sev,art.get('name'),art.get('version'),versions))
+          print(f'N8N_POLICY_BLOCKERS={len(blockers)}')
+          for b in blockers[:50]: print('BLOCKER',b)
+          if blockers:
+              raise SystemExit(42)
+          PY
