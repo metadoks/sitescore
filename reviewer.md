@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: DESIGN_DECISION_ISSUED
-IMPLEMENTER_ACTION: RESUME_7_1_WITH_N8N_SECURITY_REOPEN
+REVIEWER_STATE: PLATFORM_REMEDIATION_REQUIRED
+IMPLEMENTER_ACTION: STOP_UNTIL_GITHUB_PLATFORM_REMEDIATED_THEN_RESUME_7_1
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,18 +21,28 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_BLOCKED_HEAD_SHA: b2dc44a3c1a93c5918bd3185ccafbb0b4ce6cc4b
+OBSERVED_HEAD_SHA: 519fcaa8013bc1146d0827b343a027108e76951f
 REVIEWED_HEAD_SHA: NONE
 
-FAZ_7_0_STATUS: LOCKED_VERIFIED
-FAZ_7_0_MERGE_COMMIT: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-LIVE_MAIN_AT_DECISION: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-LIVE_MAIN_UNCHANGED_FROM_7_1_BASE: YES
+LIVE_MAIN_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+LIVE_MAIN_PROTECTED: FALSE
+LIVE_REQUIRED_CHECKS: NONE
+LIVE_ALLOW_MERGE_COMMIT: TRUE
+LIVE_ALLOW_SQUASH_MERGE: TRUE
+LIVE_ALLOW_REBASE_MERGE: TRUE
+LIVE_ALLOW_AUTO_MERGE: FALSE
 
-BLOCKER_ID: OPS71-N8N-VULN-001
-BLOCKER_CLASS: FROZEN_N8N_SUPPLY_CHAIN_VULNERABILITY_POLICY
-BLOCKER_DISPOSITION: NARROW_SECURITY_BASELINE_REOPEN_AUTHORIZED
-DESIGN_DECISION: AUTHORIZE_N8N_SECURITY_BASELINE_REOPEN
+PRIMARY_BLOCKER_ID: OPS71-GHA-EXEC-001
+PRIMARY_BLOCKER_CLASS: GITHUB_ACTIONS_PRE_STEP_EXECUTION_GATE
+PRIMARY_BLOCKER_DISPOSITION: EXTERNAL_PLATFORM_REMEDIATION_REQUIRED
+
+SECONDARY_BLOCKER_ID: OPS71-GOV-001
+SECONDARY_BLOCKER_CLASS: GITHUB_GOVERNANCE_MUTATION_CAPABILITY
+SECONDARY_BLOCKER_DISPOSITION: MANUAL_OWNER_GOVERNANCE_CONFIGURATION_AUTHORIZED
+
+N8N_BLOCKER_ID: OPS71-N8N-VULN-001
+N8N_BLOCKER_DISPOSITION: SECURITY_REOPEN_REMAINS_AUTHORIZED
+N8N_SELECTION_STATUS: INCOMPLETE_RESUME_ABOVE_2_34_5
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -44,387 +54,225 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 
 ---
 
-# 1. CONTRACT CONTINUITY / INCORPORATION BY REFERENCE
+# 1. AUTHORITY CONTINUITY
 
-The complete original FAZ 7.1 contract remains authoritative and is incorporated here by exact immutable reference except where this security addendum explicitly supersedes the n8n version/digest clauses:
+The full FAZ 7.1 contract remains authoritative by immutable reference:
 
 ```text
-reviewer coordination commit:
+original contract coordination commit:
   c61c772ccd8192cce0475b4fd30a0cb0a74b1b37
-
-reviewer.md blob containing full FAZ 7.1 contract:
+original contract reviewer.md blob:
   d9acb7edca3a8b125bb557dd230ee62611f98299
+
+n8n security-reopen decision coordination commit:
+  54ca116bc3bb8e8ddd90839630231e3b6ba5449b
+n8n security-reopen reviewer.md blob:
+  245878e51f0e6ea41bbce3318b5e4c16f6d44591
 ```
 
-All unchanged requirements from that contract remain mandatory, including:
-
-```text
-- exact base/main lineage
-- no application/business semantic mutation
-- reproducible linux/amd64 API + Commerce images
-- non-root runtime
-- hashed dependency locks
-- PDF/runtime smoke
-- dispatcher supervisor isolation
-- permanent full-SHA-pinned GitHub Actions
-- SBOM/vulnerability/provenance evidence
-- GHCR digest authority
-- main branch protection/governance
-- no DigitalOcean/OpenTofu/cloud deployment in 7.1
-- no production secrets
-- no FAZ 7.2/FAZ 8 start
-- literal user LOCK required before merge
-```
-
-This addendum does **not** authorize merge and does **not** make the current PR head review-ready.
+Nothing in this platform-remediation addendum weakens the original supply-chain, vulnerability, CI, governance, exact-head LOCK, or no-cloud-deploy requirements.
 
 ---
 
-# 2. INDEPENDENT REVIEWER FINDING
+# 2. INDEPENDENT REVIEWER FINDINGS
 
-Implementer correctly stopped on the exact frozen FAZ 6 n8n image instead of weakening the security gate or silently upgrading it.
+Reviewer independently verified the current Implementer handoff and GitHub state.
 
-Frozen image that failed the 7.1 supply-chain gate:
-
-```text
-n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-version = 2.33.4
-architecture = linux/amd64
-runtime user = node / non-root probe PASS
-```
-
-Evidence identity reported at the blocked head:
+Current PR state:
 
 ```text
-PR = #34
-blocked evidence head = b2dc44a3c1a93c5918bd3185ccafbb0b4ce6cc4b
-workflow run = 32560317363
-n8n job = 97000785115
-evidence artifact = faz7-7-1-bootstrap-evidence
-artifact id = 9472649384
-artifact digest = sha256:4e8b07fb00c00b7e1e25e7a8fcc4a20c6c1f9d20f9f16df83cd41b4013bd9d5e
+PR #34 = OPEN / DRAFT / UNMERGED
+current head = 519fcaa8013bc1146d0827b343a027108e76951f
+base = main@fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 ```
 
-Raw Grype findings:
+Current main remains the FAZ 7.0 locked merge:
 
 ```text
-CRITICAL = 4
-HIGH = 34
-MEDIUM = 33
-LOW = 4
+main = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+protected = false
+required checks = none
 ```
 
-Policy blockers generated from those findings:
+Current repository merge configuration remains:
 
 ```text
-blocker_count = 30
-CRITICAL blockers = 4
-HIGH-with-fix blockers = 26
-unique advisory IDs = 22
-affected package families = 13
+merge commit = enabled
+squash merge = enabled
+rebase merge = enabled
+auto-merge = disabled
 ```
 
-Representative critical findings include vulnerable `vm2` instances with a reported fixed version and `graphicsmagick` CVE-2025-32460. The evidence is therefore sufficient to reject the old digest as a FAZ 7 production-candidate supply-chain baseline.
-
-Reviewer also independently rechecked live GitHub state at decision time:
-
-```text
-PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
-PR base = main@fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-PR head = b2dc44a3c1a93c5918bd3185ccafbb0b4ce6cc4b
-live main = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-```
-
-No user LOCK exists for 7.1.
+The current available GitHub connector provides repository/PR/file mutations but does not expose branch-protection/ruleset or repository merge-method settings mutation. This is a tooling capability fact, not permission to waive governance.
 
 ---
 
-# 3. DESIGN DECISION — OPS71-N8N-VULN-001
+# 3. OPS71-GHA-EXEC-001 — VERIFIED PLATFORM EXECUTION BLOCKER
+
+The first n8n replacement probe produced valid partial evidence before exhausting runner disk. It conclusively rejected:
 
 ```text
-DECISION: AUTHORIZE_N8N_SECURITY_BASELINE_REOPEN
-RATIONALE: frozen 2.33.4 exact digest fails mandatory production supply-chain vulnerability gate
-SCOPE: n8n runtime image version + immutable digest identity only, plus exact repository references/tests/docs needed to keep that identity coherent
-BUSINESS/WORKFLOW SEMANTICS: FROZEN
-SCANNER POLICY: MUST NOT BE WEAKENED
+2.33.5 -> CRITICAL=4 HIGH=34
+2.33.6 -> CRITICAL=4 HIGH=34
+2.33.7 -> CRITICAL=4 HIGH=34
+2.34.4 -> CRITICAL=4 HIGH=34
+2.34.5 -> CRITICAL=4 HIGH=34
 ```
 
-The FAZ 6 n8n image identity is no longer acceptable as a FAZ 7 production-candidate runtime input.
+That run failed while beginning the next candidate because the hosted runner reached approximately 11 MB free disk and Grype could not activate its vulnerability database. Therefore no conclusion may be drawn about candidates above 2.34.5 from that run.
 
-Its historical record remains immutable and must be preserved as:
+Implementer then created a disk-bounded resume probe at:
 
 ```text
-FAZ6_HISTORICAL_N8N_VERSION = 2.33.4
-FAZ6_HISTORICAL_N8N_DIGEST = n8nio/n8n@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-FAZ7_PRODUCTION_CANDIDATE_STATUS = SUPERSEDED_FOR_SECURITY
+source SHA = 9d5f99a4e211a0136862979d537e5e1eba3b5733
+run = 32567312841
 ```
 
-Do not rewrite FAZ 6 history to pretend another image was originally frozen.
-
-A new FAZ 7 n8n security baseline becomes authoritative only after it satisfies this addendum, reaches Reviewer `READY_TO_LOCK`, and the exact PR head is user-LOCKed and merged.
-
-Until then:
+Reviewer independently verified:
 
 ```text
-NEW_N8N_BASELINE_STATUS = CANDIDATE_NOT_FROZEN
+workflow conclusion = failure
+enumerate job = failure
+job steps = NONE / pre-step failure
+scan matrix job = skipped
 ```
+
+The permanent `faz7` workflow on current head also shows the same pattern: mandatory jobs conclude failure with no executable step evidence. This means repository code has not been given an execution environment in which the required checks can actually run.
+
+The available GitHub API evidence does not disclose a trustworthy account-level root cause. Reviewer therefore does NOT label this as billing, quota, spending-limit, suspension, or runner-capacity without direct evidence.
+
+Disposition:
+
+```text
+OPS71-GHA-EXEC-001 = OPEN
+ROOT_CAUSE_CLASS = EXTERNAL_GITHUB_ACTIONS_EXECUTION_CONTROL
+CODE_WORKAROUND_AUTHORIZED = NO
+WEAKEN_REQUIRED_GATE = NO
+REMOVE_REQUIRED_CI = NO
+```
+
+Required remediation is to restore normal GitHub-hosted Actions job execution for this private repository/account. Account/repository owner may fix any actual GitHub-side budget, billing, spending-limit, Actions enablement, policy, or hosted-runner availability issue that GitHub UI identifies.
+
+No application, workflow-security, vulnerability, or required-check gate may be weakened as a substitute.
+
+A self-hosted runner or alternate CI platform is NOT authorized by this addendum. If normal GitHub-hosted execution cannot be restored, return to Reviewer for a separate design decision.
 
 ---
 
-# 4. REPLACEMENT N8N SELECTION RULE
+# 4. OPS71-GOV-001 — MANUAL OWNER CONFIGURATION AUTHORIZED
 
-Implementer is authorized to evaluate official upstream `n8nio/n8n` stable releases beginning above the historical 2.33.4 baseline.
-
-Select the **lowest stable supported release greater than or equal to the historical baseline that actually satisfies all acceptance gates below**. Do not choose a version merely because it is newest or because release notes claim security fixes.
-
-For every candidate considered, resolve and record the exact Linux/AMD64 immutable digest before acceptance.
-
-Required candidate properties:
+The 7.1 governance target remains mandatory:
 
 ```text
-image source = official upstream n8nio/n8n only
-release channel = stable; no beta/rc/nightly
-platform = linux/amd64
-identity = exact sha256 digest
-runtime user = non-root
-Grype CRITICAL raw count = 0
-Grype HIGH raw count = 0
-blanket ignore/waiver = NONE
-scanner disablement = NONE
-in-place package patching/rebuild of upstream n8n = FORBIDDEN
+main pull request requirement = ON
+required status checks = ON
+required check = faz7 / required-gate
+strict/up-to-date required checks = ON
+force pushes = BLOCKED
+branch deletion = BLOCKED
+administrative bypass = DISABLED where account capability supports it
+merge commits = ENABLED
+squash merge = DISABLED
+rebase merge = DISABLED
+auto-merge = DISABLED
+linear history = NOT REQUIRED
 ```
 
-The replacement must pass the **same scanner/toolchain policy**, with the stronger replacement-baseline acceptance criterion of zero raw HIGH and zero raw CRITICAL findings.
+Because the currently available GitHub connector cannot mutate these repository controls, Reviewer explicitly authorizes the repository owner to apply these settings manually in GitHub repository settings or through an independently authorized GitHub administration channel.
 
-Do not hide findings by:
+This manual governance operation:
 
 ```text
-- changing scanner severity mapping
-- excluding npm/OS packages
-- filtering unfixed vulnerabilities
-- blanket CVE ignores
-- rebuilding n8n with locally patched packages
-- replacing official image lineage with a custom SiteScore image
+IS authorized FAZ 7.1 operational setup
+IS NOT a source-code change
+IS NOT a cloud deployment
+IS NOT user LOCK
+IS NOT permission to merge PR #34
 ```
 
-If no official stable candidate can satisfy `0 CRITICAL / 0 HIGH`, STOP again with:
+Do not configure the required check until GitHub has created the exact permanent context `faz7 / required-gate` through an actual workflow run. After configuration, Implementer/Reviewer must re-fetch live `main` and repository settings to prove the controls are active.
+
+If the repository/account plan cannot enforce any mandatory governance control, STOP with:
 
 ```text
 DESIGN_DECISION_REVIEW_REQUIRED: 1
-OPS71-N8N-VULN-001: OPEN
+OPS71-GOV-001: PLAN_CAPABILITY_BLOCKED
 ```
 
-Do not weaken the gate autonomously.
+Do not silently accept weaker branch protection.
 
 ---
 
-# 5. WORKFLOW / ORCHESTRATION SEMANTICS REMAIN FROZEN
+# 5. N8N SECURITY REOPEN REMAINS UNCHANGED
 
-The security reopen is **not** authorization to alter n8n business/orchestration behavior.
-
-These workflow byte identities remain mandatory:
+Historical FAZ 6 identity remains:
 
 ```text
-order workflow SHA256:
-02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-
-recovery workflow SHA256:
-f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+version = 2.33.4
+digest = sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
+status = SUPERSEDED_FOR_SECURITY for FAZ 7 production-candidate purposes
 ```
 
-Forbidden:
+The replacement-selection rule from the prior Reviewer decision remains unchanged:
 
 ```text
-workflow JSON changes
-node substitutions that alter semantics
-webhook path/payload/auth changes
-Commerce automation API contract changes
-order/payment/recovery behavior changes
-business-state interpretation in n8n
-new orchestration authority
-new application routes
+official upstream n8nio/n8n stable only
+exact linux/amd64 digest
+non-root runtime
+raw CRITICAL = 0
+raw HIGH = 0
+no suppression/waiver/custom rebuild
+workflow JSON bytes unchanged
 ```
 
-n8n remains:
+Because versions through 2.34.5 were already validly scanned and rejected, once Actions execution is restored candidate selection may resume strictly above 2.34.5. Re-scanning the already rejected candidates is optional for reproducibility but not required for selection continuity.
+
+Required frozen workflow hashes remain:
 
 ```text
-orchestration only
-one initial replica
-admin/editor/rest non-public
-exact public order-paid webhook only
-production persistence target = dedicated PostgreSQL in 7.2
+order = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+recovery = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 ```
 
 ---
 
-# 6. NARROW REPOSITORY REOPEN AUTHORIZATION
+# 6. RESUME CONDITIONS
 
-The original 7.1 permanent scope remains in force. In addition, only the following n8n identity-coherence changes are authorized if actually required by the selected replacement baseline:
+Implementer must remain stopped until normal GitHub Actions job execution is demonstrably restored.
 
-```text
-automation/n8n/runtime/docker-compose.yml
-  - version/tag/digest identity only
-  - environment/security semantics may not be weakened
-
-automation/n8n/tests/**
-  - only expected runtime version/digest assertions or compatibility assertions necessary for the security baseline
-  - deleting/weakening existing semantic checks is forbidden
-
-docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md
-docs/PRODUCTION_OPERATIONS_HANDOFF.md
-  - only n8n runtime identity/security-baseline references that would otherwise become factually stale
-
-deploy/containers/**
-  - n8n candidate/digest/SBOM/scan evidence and existing authorized 7.1 supply-chain assets
-.github/workflows/**
-  - authorized 7.1 CI/publish flows plus temporary candidate-probing workflow(s)
-```
-
-Still forbidden:
+After restoration, Implementer is authorized to resume FAZ 7.1 on the same PR and branch, with no new design decision, and must:
 
 ```text
-automation/n8n/workflows/**
-sitescore-core/**
-sitescore-data/**
-sitescore-providers/**
-sitescore-spatial/**
-sitescore-metrics/**
-sitescore-benchmarks/**
-sitescore-pipeline/**
-sitescore-app/**
-sitescore-report/**
-sitescore-api/**
-sitescore-commerce/**
-Alembic migrations
-business/payment/scoring/report semantics
-OpenTofu/Terraform
-DigitalOcean/Cloudflare/Better Stack resource mutation
-production secrets
+1. confirm live main still equals expected base or report divergence
+2. resume n8n candidate scan above 2.34.5
+3. select only the first acceptable official stable 0 HIGH / 0 CRITICAL candidate
+4. remove temporary probe machinery not part of final permanent design
+5. run the full permanent faz7 workflow on the exact final head
+6. prove all required package/container/runtime/PDF/SBOM/vulnerability gates
+7. obtain exact faz7 / required-gate success on final head
+8. have repository owner apply the mandatory main governance controls
+9. re-fetch and record live protection + merge-method settings
+10. only then set IMPLEMENTER_STATE = READY_FOR_REVIEW and STOP
 ```
 
-Any need outside this narrow list requires another explicit Reviewer decision.
+All original final-head regression counts and frozen-source-diff requirements remain mandatory.
 
 ---
 
-# 7. REQUIRED N8N REVALIDATION
+# 7. CHECKPOINT STATE / STOP
 
-Before 7.1 may return to `READY_FOR_REVIEW`, the selected candidate must prove all of the following on the exact final PR head:
-
-```text
-N8N-SEC-001 official n8nio/n8n stable release identity recorded
-N8N-SEC-002 exact linux/amd64 digest recorded and resolved reproducibly
-N8N-SEC-003 runtime user non-root PASS
-N8N-SEC-004 Grype raw CRITICAL = 0
-N8N-SEC-005 Grype raw HIGH = 0
-N8N-SEC-006 SPDX JSON SBOM generated and retained as reviewable evidence
-N8N-SEC-007 order workflow SHA256 exact unchanged
-N8N-SEC-008 recovery workflow SHA256 exact unchanged
-N8N-SEC-009 n8n static/contract suite = expected 12 PASS, or exact successor count explained without weakening
-N8N-SEC-010 runtime starts far enough to prove selected version/digest is operationally loadable
-N8N-SEC-011 existing webhook/workflow contract compatibility smoke PASS
-N8N-SEC-012 no workflow JSON diff
-N8N-SEC-013 no scanner exception/suppression
-N8N-SEC-014 historical 2.33.4 identity remains documented as superseded-for-security, not erased
-```
-
-If upstream version movement causes workflow format migration, node replacement, payload change, credential semantic change, or any other business/orchestration mutation, STOP with a new design-decision blocker. Do not auto-migrate workflow bytes.
-
----
-
-# 8. FULL 7.1 REVALIDATION STILL REQUIRED
-
-Resolving n8n does not waive any other 7.1 gate. Implementer must resume the complete original checkpoint and provide final-head evidence including at least:
+Current disposition:
 
 ```text
-- base-to-head scope/diff proof
-- frozen SiteScore source/package bytes unchanged
-- deterministic/hashed lock validation
-- linux/amd64 API image build PASS
-- linux/amd64 Commerce image build PASS
-- both SiteScore images non-root PASS
-- API PDF/font/runtime smoke PASS
-- API current suite = 114 PASS
-- report current suite = 24 PASS
-- Commerce forward-applicable = 416 PASS / exact one phase-local deselect
-- FAZ6 frozen Commerce base replay = 417 PASS
-- n8n replacement security/compatibility gates PASS
-- API/Commerce/n8n SPDX SBOMs
-- mandatory vulnerability gates PASS
-- image secret/history sanity PASS
-- permanent GitHub Actions `uses:` full-SHA pinned
-- permanent `faz7 / required-gate` green on exact final head
-- main branch protection enabled
-- required status check configured
-- force-push/deletion blocked
-- merge-commit only; squash/rebase disabled; auto-merge disabled
-- no cloud resource mutation
-- no DigitalOcean deployment
-- no production secret committed/injected
-```
-
-Temporary candidate-discovery/bootstrap workflows and evidence-only helpers that are not part of the final authorized design must be removed before `READY_FOR_REVIEW` unless specifically justified as permanent reproducibility machinery.
-
-The final PR must remain DRAFT until the permanent final CI/gates are complete and green; then it may be made non-draft for Reviewer audit.
-
----
-
-# 9. REQUIRED IMPLEMENTER HANDOFF AFTER RESUME
-
-When all requirements pass, Implementer must update `implementer.md` and STOP with:
-
-```text
-CURRENT_PHASE: FAZ 7
-CURRENT_CHECKPOINT: 7.1
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-IMPLEMENTER_ACTION: STOP
+FAZ_7_1_STATUS: BLOCKED_ON_EXTERNAL_GITHUB_PLATFORM_CONTROLS
+READY_FOR_REVIEW: NO
+READY_TO_LOCK: NO
 USER_LOCK_AUTHORIZED: NO
-
-BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-PR: #34
-HEAD_SHA: <exact final SHA>
-
-OPS71-N8N-VULN-001: RESOLVED_BY_SECURITY_BASELINE_REPLACEMENT
-HISTORICAL_N8N: 2.33.4@sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-SELECTED_N8N_VERSION: <exact stable version>
-SELECTED_N8N_DIGEST: <exact sha256>
-N8N_CRITICAL: 0
-N8N_HIGH: 0
-N8N_ORDER_WORKFLOW_HASH: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-N8N_RECOVERY_WORKFLOW_HASH: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
-N8N_STATIC: PASS
-N8N_RUNTIME_COMPATIBILITY: PASS
-N8N_SBOM: PASS
-
-API_IMAGE_BUILD: PASS
-COMMERCE_IMAGE_BUILD: PASS
-API_IMAGE_NONROOT: PASS
-COMMERCE_IMAGE_NONROOT: PASS
-API_PDF_RENDER_SMOKE: PASS
-VULNERABILITY_GATE: PASS
-FROZEN_APPLICATION_SOURCE_DIFF: NONE
-REQUIRED_GATE: PASS
-MAIN_BRANCH_PROTECTED: TRUE
-
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
+PR_MERGE_AUTHORIZED: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
+START_FAZ_7_2: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
 
-Do not merge. Do not start FAZ 7.2.
-
-Reviewer will independently audit the exact final head and issue only:
-
-```text
-HARDENING_REQUIRED
-```
-
-or
-
-```text
-READY_TO_LOCK
-```
-
-Literal user `LOCK` remains mandatory for merge.
+Reviewer will not accept manual screenshots or prose as a substitute for the required final-head GitHub Actions execution evidence. Once GitHub-hosted execution is restored and Implementer hands off `READY_FOR_REVIEW`, Reviewer will independently audit the exact PR head and live governance state.
