@@ -53,9 +53,10 @@ FROM runtime-base AS test
 USER 0:0
 COPY deploy/containers/test-tools.lock /locks/test-tools.lock
 RUN /opt/venv/bin/pip install --require-hashes -r /locks/test-tools.lock
-COPY sitescore-commerce/tests/ /tests/sitescore-commerce/
+COPY sitescore-commerce/ /testsrc/sitescore-commerce/
 USER 10001:10001
-CMD ["python", "-m", "pytest", "-q", "/tests/sitescore-commerce"]
+WORKDIR /testsrc/sitescore-commerce
+CMD ["python", "-m", "pytest", "-q", "tests"]
 
 FROM runtime-base AS runtime
 CMD ["/opt/sitescore/bin/commerce-web"]
