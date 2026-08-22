@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/faz7-7-1-n8n-candidate-probe.yml'
+      - 'deploy/containers/n8n-probe-trigger'
   workflow_dispatch:
 
 permissions:
@@ -27,126 +30,168 @@ jobs:
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
-      - name: Probe official stable n8n candidates in ascending semver order
+      - name: Probe official stable candidates in ordered four-version batches
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p deploy/containers/artifacts/n8n-candidates
-          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          test -n "$grype_image"
-          test -n "$syft_image"
+          export GRYPE_IMAGE="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          export SYFT_IMAGE="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          test -n "$GRYPE_IMAGE"
+          test -n "$SYFT_IMAGE"
+          python - <<'PY'
+          from __future__ import annotations
 
-          python - <<'PY' > /tmp/n8n-candidates.txt
-          import json, os, re, urllib.request
+          import concurrent.futures
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import urllib.request
           from urllib.parse import urlencode
 
-          hist = tuple(map(int, os.environ['HISTORICAL_VERSION'].split('.')))
-          token = os.environ['GH_TOKEN']
-          versions = set()
-          page = 1
-          while page <= 10:
+          ARTIFACTS = pathlib.Path('deploy/containers/artifacts/n8n-candidates')
+          HISTORICAL = tuple(map(int, os.environ['HISTORICAL_VERSION'].split('.')))
+          TOKEN = os.environ['GH_TOKEN']
+          GRYPE_IMAGE = os.environ['GRYPE_IMAGE']
+          SYFT_IMAGE = os.environ['SYFT_IMAGE']
+          BATCH_SIZE = 4
+
+          def run(*args: str, capture: bool = False) -> str:
+              result = subprocess.run(args, check=True, text=True, capture_output=capture)
+              return result.stdout if capture else ''
+
+          versions: set[tuple[int, int, int]] = set()
+          for page in range(1, 11):
               url = 'https://api.github.com/repos/n8n-io/n8n/releases?' + urlencode({'per_page': 100, 'page': page})
               req = urllib.request.Request(
                   url,
                   headers={
-                      'Authorization': f'Bearer {token}',
+                      'Authorization': f'Bearer {TOKEN}',
                       'Accept': 'application/vnd.github+json',
                       'X-GitHub-Api-Version': '2022-11-28',
                       'User-Agent': 'sitescore-faz7-n8n-probe',
                   },
               )
-              with urllib.request.urlopen(req, timeout=30) as r:
-                  data = json.load(r)
-              if not data:
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  releases = json.load(response)
+              if not releases:
                   break
-              for rel in data:
-                  if rel.get('draft') or rel.get('prerelease'):
+              for release in releases:
+                  if release.get('draft') or release.get('prerelease'):
                       continue
-                  m = re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)', str(rel.get('tag_name', '')))
-                  if not m:
-                      continue
-                  v = tuple(map(int, m.groups()))
-                  if v > hist:
-                      versions.add(v)
-              if len(data) < 100:
+                  match = re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)', str(release.get('tag_name', '')))
+                  if match:
+                      version_tuple = tuple(map(int, match.groups()))
+                      if version_tuple > HISTORICAL:
+                          versions.add(version_tuple)
+              if len(releases) < 100:
                   break
-              page += 1
-          for v in sorted(versions):
-              print('.'.join(map(str, v)))
+
+          ordered = ['.'.join(map(str, version)) for version in sorted(versions)]
+          (ARTIFACTS / 'candidate-order.txt').write_text('\n'.join(ordered) + ('\n' if ordered else ''))
+          if not ordered:
+              (ARTIFACTS / 'summary.txt').write_text('NO_STABLE_CANDIDATE_ABOVE_HISTORICAL_BASELINE=1\n')
+              raise SystemExit(43)
+
+          def scan(version: str) -> dict[str, object]:
+              tag = f'n8nio/n8n:{version}'
+              raw_path = ARTIFACTS / f'{version}.manifest.json'
+              raw = run('docker', 'buildx', 'imagetools', 'inspect', '--raw', tag, capture=True)
+              raw_path.write_text(raw)
+              manifest = json.loads(raw)
+              matches = [
+                  item for item in manifest.get('manifests', [])
+                  if (item.get('platform') or {}).get('os') == 'linux'
+                  and (item.get('platform') or {}).get('architecture') == 'amd64'
+              ]
+              if len(matches) != 1:
+                  raise RuntimeError(f'{version}: expected one linux/amd64 manifest, got {len(matches)}')
+              digest = matches[0]['digest']
+              if not str(digest).startswith('sha256:'):
+                  raise RuntimeError(f'{version}: invalid digest {digest}')
+              image = f'n8nio/n8n@{digest}'
+              run('docker', 'pull', '--platform', 'linux/amd64', image)
+              arch = run('docker', 'image', 'inspect', image, '--format', '{{.Architecture}}', capture=True).strip()
+              user = run('docker', 'image', 'inspect', image, '--format', '{{.Config.User}}', capture=True).strip()
+              if arch != 'amd64' or not user or user in {'0', 'root'}:
+                  raise RuntimeError(f'{version}: runtime contract failed arch={arch!r} user={user!r}')
+              grype_path = ARTIFACTS / f'{version}.grype.json'
+              with grype_path.open('w') as output:
+                  subprocess.run(
+                      ['docker', 'run', '--rm', '-v', '/var/run/docker.sock:/var/run/docker.sock', GRYPE_IMAGE, image, '-o', 'json'],
+                      check=True,
+                      text=True,
+                      stdout=output,
+                  )
+              data = json.loads(grype_path.read_text())
+              counts = {'CRITICAL': 0, 'HIGH': 0}
+              for item in data.get('matches', []):
+                  severity = str((item.get('vulnerability') or {}).get('severity', '')).upper()
+                  if severity in counts:
+                      counts[severity] += 1
+              return {
+                  'version': version,
+                  'digest': digest,
+                  'image': image,
+                  'user': user,
+                  'critical': counts['CRITICAL'],
+                  'high': counts['HIGH'],
+              }
+
+          results: list[dict[str, object]] = []
+          selected: dict[str, object] | None = None
+          for start in range(0, len(ordered), BATCH_SIZE):
+              batch = ordered[start:start + BATCH_SIZE]
+              print('N8N_PROBE_BATCH', ','.join(batch), flush=True)
+              with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                  batch_results = list(executor.map(scan, batch))
+              batch_results.sort(key=lambda item: tuple(map(int, str(item['version']).split('.'))))
+              results.extend(batch_results)
+              passing = [item for item in batch_results if item['critical'] == 0 and item['high'] == 0]
+              if passing:
+                  selected = passing[0]
+                  break
+
+          with (ARTIFACTS / 'results.tsv').open('w') as output:
+              output.write('candidate_version\tamd64_digest\truntime_user\tcritical\thigh\tstatus\n')
+              for item in results:
+                  status = 'SELECTED' if selected is item else 'REJECTED'
+                  output.write(
+                      f"{item['version']}\t{item['digest']}\t{item['user']}\t{item['critical']}\t{item['high']}\t{status}\n"
+                  )
+
+          if selected is None:
+              (ARTIFACTS / 'summary.txt').write_text('NO_ACCEPTABLE_STABLE_CANDIDATE=1\n')
+              raise SystemExit(42)
+
+          image = str(selected['image'])
+          with (ARTIFACTS / 'selected.spdx.json').open('w') as output:
+              subprocess.run(
+                  ['docker', 'run', '--rm', '-v', '/var/run/docker.sock:/var/run/docker.sock', SYFT_IMAGE, image, '-o', 'spdx-json'],
+                  check=True,
+                  text=True,
+                  stdout=output,
+              )
+          runtime_version = run('docker', 'run', '--rm', image, 'n8n', '--version', capture=True).strip().splitlines()[-1]
+          (ARTIFACTS / 'runtime-version.txt').write_text(runtime_version + '\n')
+          if runtime_version != selected['version']:
+              raise SystemExit(f"runtime version mismatch expected={selected['version']} actual={runtime_version}")
+
+          selected_env = (
+              f"SELECTED_N8N_VERSION={selected['version']}\n"
+              f"SELECTED_N8N_DIGEST={selected['digest']}\n"
+              f"SELECTED_N8N_IMAGE={selected['image']}\n"
+              f"N8N_CRITICAL={selected['critical']}\n"
+              f"N8N_HIGH={selected['high']}\n"
+              f"N8N_RUNTIME_USER={selected['user']}\n"
+          )
+          (ARTIFACTS / 'selected.env').write_text(selected_env)
+          (ARTIFACTS / 'summary.txt').write_text(selected_env)
+          print(selected_env, end='')
           PY
-
-          if ! test -s /tmp/n8n-candidates.txt; then
-            echo 'NO_STABLE_CANDIDATE_ABOVE_HISTORICAL_BASELINE=1' | tee deploy/containers/artifacts/n8n-candidates/summary.txt
-            exit 43
-          fi
-
-          printf 'candidate_version\tamd64_digest\truntime_user\tcritical\thigh\tstatus\n' > deploy/containers/artifacts/n8n-candidates/results.tsv
-          selected=''
-          while IFS= read -r version; do
-            test -n "$version"
-            tag="n8nio/n8n:${version}"
-            raw="deploy/containers/artifacts/n8n-candidates/${version}.manifest.json"
-            docker buildx imagetools inspect --raw "$tag" > "$raw"
-            amd64_digest="$(python - "$raw" <<'PY'
-          import json, sys
-          data = json.load(open(sys.argv[1]))
-          manifests = data.get('manifests') or []
-          matches = [m for m in manifests if (m.get('platform') or {}).get('os') == 'linux' and (m.get('platform') or {}).get('architecture') == 'amd64']
-          if len(matches) != 1:
-              raise SystemExit(f'expected one linux/amd64 manifest, found {len(matches)}')
-          print(matches[0]['digest'])
-          PY
-            )"
-            case "$amd64_digest" in sha256:*) ;; *) echo "invalid amd64 digest: $amd64_digest" >&2; exit 1;; esac
-            image="n8nio/n8n@${amd64_digest}"
-            docker pull --platform linux/amd64 "$image"
-            arch="$(docker image inspect "$image" --format '{{.Architecture}}')"
-            user="$(docker image inspect "$image" --format '{{.Config.User}}')"
-            test "$arch" = amd64
-            test -n "$user" && test "$user" != 0 && test "$user" != root
-
-            grype_json="deploy/containers/artifacts/n8n-candidates/${version}.grype.json"
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "$grype_json"
-            read -r critical high < <(python - "$grype_json" <<'PY'
-          import json, sys
-          data = json.load(open(sys.argv[1]))
-          counts = {'CRITICAL': 0, 'HIGH': 0}
-          for match in data.get('matches', []):
-              sev = str((match.get('vulnerability') or {}).get('severity', '')).upper()
-              if sev in counts:
-                  counts[sev] += 1
-          print(counts['CRITICAL'], counts['HIGH'])
-          PY
-            )
-            status='REJECTED'
-            if test "$critical" -eq 0 && test "$high" -eq 0; then
-              status='SELECTED'
-              selected="$version"
-              selected_image="$image"
-              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > deploy/containers/artifacts/n8n-candidates/selected.spdx.json
-              docker run --rm "$image" n8n --version > deploy/containers/artifacts/n8n-candidates/runtime-version.txt
-            fi
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$version" "$amd64_digest" "$user" "$critical" "$high" "$status" | tee -a deploy/containers/artifacts/n8n-candidates/results.tsv
-            if test -n "$selected"; then
-              cat > deploy/containers/artifacts/n8n-candidates/selected.env <<EOF
-          SELECTED_N8N_VERSION=${selected}
-          SELECTED_N8N_DIGEST=${amd64_digest}
-          SELECTED_N8N_IMAGE=${selected_image}
-          N8N_CRITICAL=${critical}
-          N8N_HIGH=${high}
-          N8N_RUNTIME_USER=${user}
-          EOF
-              break
-            fi
-          done < /tmp/n8n-candidates.txt
-
-          if test -z "$selected"; then
-            echo 'NO_ACCEPTABLE_STABLE_CANDIDATE=1' | tee deploy/containers/artifacts/n8n-candidates/summary.txt
-            exit 42
-          fi
-          cat deploy/containers/artifacts/n8n-candidates/selected.env | tee deploy/containers/artifacts/n8n-candidates/summary.txt
 
       - name: Upload candidate probe evidence
         if: always()
