@@ -1,0 +1,167 @@
+name: faz7-7-1-n8n-vendor-openvex-reconcile
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Resolve latest official stable release and exact amd64 digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=deploy/containers/artifacts/n8n-vendor-openvex-reconciliation
+          mkdir -p "$out" /tmp/n8n-vex
+          python - <<'PY'
+          import json, os, re, urllib.request
+          from urllib.parse import urlencode
+          token=os.environ['GH_TOKEN']
+          releases=[]
+          for page in range(1, 11):
+              req=urllib.request.Request(
+                  'https://api.github.com/repos/n8n-io/n8n/releases?'+urlencode({'per_page':100,'page':page}),
+                  headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-vex-reconcile'})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  batch=json.load(r)
+              if not batch: break
+              for rel in batch:
+                  if rel.get('draft') or rel.get('prerelease'): continue
+                  m=re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)', str(rel.get('tag_name','')))
+                  if m:
+                      releases.append((tuple(map(int,m.groups())), rel))
+              if len(batch)<100: break
+          if not releases:
+              raise SystemExit('no official stable semantic n8n releases found')
+          version_tuple, rel=max(releases, key=lambda x:x[0])
+          version='.'.join(map(str,version_tuple))
+          ctx={'selected_version':version,'release_tag':rel['tag_name'],'release_id':rel['id'],'published_at':rel.get('published_at'),'release_url':rel.get('html_url')}
+          json.dump(ctx, open('/tmp/n8n-vex/release-pre.json','w'), indent=2, sort_keys=True)
+          print('SELECTED_N8N_VERSION='+version)
+          print('SELECTED_N8N_RELEASE_ID='+str(rel['id']))
+          PY
+          version="$(python -c 'import json;print(json.load(open("/tmp/n8n-vex/release-pre.json"))["selected_version"])')"
+          tag="n8nio/n8n:${version}"
+          docker buildx imagetools inspect --raw "$tag" > "$out/manifest.json"
+          digest="$(python - <<'PY'
+          import json
+          data=json.load(open('deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/manifest.json'))
+          hits=[m for m in (data.get('manifests') or []) if (m.get('platform') or {}).get('os')=='linux' and (m.get('platform') or {}).get('architecture')=='amd64']
+          if len(hits)!=1: raise SystemExit(f'expected one linux/amd64 manifest, got {len(hits)}')
+          print(hits[0]['digest'])
+          PY
+          )"
+          case "$digest" in sha256:*) ;; *) echo "invalid digest $digest" >&2; exit 1;; esac
+          python - "$digest" <<'PY'
+          import json,sys
+          p='/tmp/n8n-vex/release-pre.json'; d=json.load(open(p)); d['selected_digest']=sys.argv[1]; d['selected_image']='n8nio/n8n@'+sys.argv[1]
+          json.dump(d, open('deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/release-context.json','w'), indent=2, sort_keys=True)
+          PY
+          cat "$out/release-context.json"
+
+      - name: Prove runtime identity loadability and frozen workflow bytes
+        run: |
+          set -euo pipefail
+          out=deploy/containers/artifacts/n8n-vendor-openvex-reconciliation
+          image="$(python -c 'import json;print(json.load(open("deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/release-context.json"))["selected_image"])')"
+          version="$(python -c 'import json;print(json.load(open("deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/release-context.json"))["selected_version"])')"
+          docker pull --platform linux/amd64 "$image" >/dev/null
+          test "$(docker image inspect "$image" --format '{{.Architecture}}')" = amd64
+          user="$(docker image inspect "$image" --format '{{.Config.User}}')"
+          test -n "$user" && test "$user" != root && test "$user" != 0
+          runtime="$(docker run --rm "$image" n8n --version | tr -d '\r' | tail -n 1)"
+          test "$runtime" = "$version"
+          printf 'N8N_USER=%s\nRUNTIME_VERSION=%s\n' "$user" "$runtime" | tee "$out/runtime.txt"
+          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n8n -e N8N_ENCRYPTION_KEY=ci-only-encryption-key-00000000000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -p 127.0.0.1:15678:5678 "$image")"
+          trap 'docker logs "$cid" > deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/runtime.log 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
+          python - <<'PY'
+          import socket,time
+          for _ in range(90):
+              try:
+                  with socket.create_connection(('127.0.0.1',15678),timeout=1): break
+              except OSError: time.sleep(1)
+          else: raise SystemExit('n8n runtime did not open port 5678')
+          PY
+          docker logs "$cid" > "$out/runtime.log" 2>&1 || true
+          docker stop -t 5 "$cid" >/dev/null
+          trap - EXIT
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = "02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1"
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = "f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c"
+
+      - name: Generate SPDX SBOM and raw Grype evidence
+        run: |
+          set -euo pipefail
+          out=deploy/containers/artifacts/n8n-vendor-openvex-reconciliation
+          image="$(python -c 'import json;print(json.load(open("deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/release-context.json"))["selected_image"])')"
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > "$out/n8n.spdx.json"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "$out/n8n.grype.json"
+
+      - name: Fetch and cryptographically bind exact release OpenVEX plus CISA KEV
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out=deploy/containers/artifacts/n8n-vendor-openvex-reconciliation
+          curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o "$out/cisa-kev.json"
+          python - <<'PY'
+          import hashlib,json,os,urllib.request
+          out='deploy/containers/artifacts/n8n-vendor-openvex-reconciliation'
+          ctx=json.load(open(out+'/release-context.json'))
+          token=os.environ['GH_TOKEN']
+          req=urllib.request.Request(f'https://api.github.com/repos/n8n-io/n8n/releases/{ctx["release_id"]}/assets',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-vex-reconcile'})
+          with urllib.request.urlopen(req,timeout=30) as r: assets=json.load(r)
+          asset=next((a for a in assets if a.get('name')=='vex.openvex.json'),None)
+          if not asset: raise SystemExit('selected exact stable release has no vex.openvex.json asset')
+          json.dump(asset,open(out+'/openvex-asset-metadata.json','w'),indent=2,sort_keys=True)
+          urllib.request.urlretrieve(asset['browser_download_url'],out+'/upstream.openvex.json')
+          computed='sha256:'+hashlib.sha256(open(out+'/upstream.openvex.json','rb').read()).hexdigest()
+          recorded=asset.get('digest')
+          verified=bool(recorded and recorded==computed)
+          result={'asset_id':asset.get('id'),'asset_name':asset.get('name'),'metadata_digest':recorded,'computed_digest':computed,'verified':verified}
+          json.dump(result,open(out+'/openvex-asset-verification.json','w'),indent=2,sort_keys=True)
+          if not verified: raise SystemExit(f'OpenVEX asset digest mismatch or missing metadata digest: recorded={recorded} computed={computed}')
+          ctx.update({'openvex_asset_id':asset.get('id'),'openvex_asset_metadata_digest':recorded,'openvex_asset_computed_digest':computed})
+          json.dump(ctx,open(out+'/release-context.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+
+      - name: Reconcile aliases KEV vendor OpenVEX and scanner evidence
+        run: |
+          set -euo pipefail
+          python deploy/containers/n8n_openvex_reconcile.py deploy/containers/artifacts/n8n-vendor-openvex-reconciliation
+
+      - name: Upload verified reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-n8n-vendor-openvex-${{ github.event.pull_request.head.sha }}
+          path: deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce verified vendor OpenVEX gate
+        run: |
+          set -euo pipefail
+          test "$(cat deploy/containers/artifacts/n8n-vendor-openvex-reconciliation/gate.txt)" = PASS
