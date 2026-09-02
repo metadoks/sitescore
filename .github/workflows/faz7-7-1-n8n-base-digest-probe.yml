@@ -15,9 +15,20 @@ jobs:
       - name: Resolve current official same-Node-line base digest
         run: |
           set -euo pipefail
-          current="$(docker buildx imagetools inspect n8nio/base:26.5.1 | awk '/^Digest:/ {print $2; exit}')"
           pinned='sha256:1b0bca5c94bbd04ad2120b9e9892a8bc717a1d88efa76fefe452c59bdc611d25'
-          printf 'PINNED_26_5_1_BASE=%s\nCURRENT_26_5_1_BASE=%s\n' "$pinned" "$current"
+          echo "PINNED_26_5_1_BASE=$pinned"
+          set +e
+          docker pull --platform linux/amd64 n8nio/base:26.5.1 2>&1 | tee /tmp/base-pull.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "BASE_PULL_EXIT=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo 'SAME_NODE_LINE_BASE_PROBE=UNAVAILABLE'
+            exit 0
+          fi
+          repo_digest="$(docker image inspect n8nio/base:26.5.1 --format '{{range .RepoDigests}}{{println .}}{{end}}' | head -n1)"
+          current="${repo_digest#*@}"
+          printf 'CURRENT_26_5_1_REPODIGEST=%s\nCURRENT_26_5_1_BASE=%s\n' "$repo_digest" "$current"
           if [ "$current" = "$pinned" ]; then
             echo 'SAME_NODE_LINE_NEWER_BASE_AVAILABLE=NO'
           else
