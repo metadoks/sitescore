@@ -10,27 +10,37 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Resolve current official same-Node-line base digest
+      - name: Resolve and compare official same-Node-line base security state
         run: |
           set -euo pipefail
-          pinned='sha256:1b0bca5c94bbd04ad2120b9e9892a8bc717a1d88efa76fefe452c59bdc611d25'
-          echo "PINNED_26_5_1_BASE=$pinned"
-          set +e
-          docker pull --platform linux/amd64 n8nio/base:26.5.1 2>&1 | tee /tmp/base-pull.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          echo "BASE_PULL_EXIT=$rc"
-          if [ "$rc" -ne 0 ]; then
-            echo 'SAME_NODE_LINE_BASE_PROBE=UNAVAILABLE'
-            exit 0
-          fi
+          old='n8nio/base:26.5.1@sha256:1b0bca5c94bbd04ad2120b9e9892a8bc717a1d88efa76fefe452c59bdc611d25'
+          pinned_digest='sha256:1b0bca5c94bbd04ad2120b9e9892a8bc717a1d88efa76fefe452c59bdc611d25'
+          grype='anchore/grype:v0.116.1@sha256:1e71065c0a4cff3e6bd3b8add525ffac4343eb4971694eb90a31cf6d4d3e85db'
+          docker pull --platform linux/amd64 n8nio/base:26.5.1 >/dev/null
           repo_digest="$(docker image inspect n8nio/base:26.5.1 --format '{{range .RepoDigests}}{{println .}}{{end}}' | head -n1)"
-          current="${repo_digest#*@}"
-          printf 'CURRENT_26_5_1_REPODIGEST=%s\nCURRENT_26_5_1_BASE=%s\n' "$repo_digest" "$current"
-          if [ "$current" = "$pinned" ]; then
-            echo 'SAME_NODE_LINE_NEWER_BASE_AVAILABLE=NO'
-          else
-            echo 'SAME_NODE_LINE_NEWER_BASE_AVAILABLE=YES'
-          fi
+          current_digest="${repo_digest#*@}"
+          current="n8nio/base@${current_digest}"
+          printf 'PINNED_26_5_1_BASE=%s\nCURRENT_26_5_1_REPODIGEST=%s\nCURRENT_26_5_1_BASE=%s\n' "$pinned_digest" "$repo_digest" "$current_digest"
+          test "$current_digest" != "$pinned_digest"
+          echo 'SAME_NODE_LINE_NEWER_BASE_AVAILABLE=YES'
+          docker pull "$grype" >/dev/null
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$old" -o json > /tmp/old.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$current" -o json > /tmp/current.json
+          python - <<'PY'
+          import json
+          for label,path in [('OLD','/tmp/old.json'),('CURRENT','/tmp/current.json')]:
+              d=json.load(open(path))
+              c=h=0
+              rows=[]
+              for m in d.get('matches',[]):
+                  v=m.get('vulnerability') or {}; sev=str(v.get('severity','')).upper()
+                  if sev not in {'CRITICAL','HIGH'}: continue
+                  c += sev=='CRITICAL'; h += sev=='HIGH'
+                  a=m.get('artifact') or {}; fix=v.get('fix') or {}
+                  rows.append((sev,v.get('id'),a.get('name'),a.get('version'),fix.get('state'),fix.get('versions')))
+              print(f'{label}_BASE_CRITICAL={c}')
+              print(f'{label}_BASE_HIGH={h}')
+              for r in rows: print(label+'_FINDING='+'|'.join(map(str,r)))
+          PY
