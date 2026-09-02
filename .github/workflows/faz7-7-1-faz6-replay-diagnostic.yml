@@ -1,0 +1,112 @@
+name: faz7-7-1-faz6-replay-diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/faz7-7-1-faz6-replay-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    env:
+      FAZ6_COMMERCE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+      PYTHON_IMAGE: python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91
+      POSTGRES_TAG: postgres:16-bookworm
+    steps:
+      - name: Checkout exact frozen FAZ6 with complete ancestry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "${FAZ6_COMMERCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
+          git cat-file -e df4e3181712e7f426f8f1752628952a620c98f05^{commit}
+          git cat-file -e 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c^{commit}
+
+      - name: Resolve and start PostgreSQL 16 exact amd64 image
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "$POSTGRES_TAG" > /tmp/postgres-manifest.json
+          digest="$(python - <<'PY'
+          import json
+          data=json.load(open('/tmp/postgres-manifest.json'))
+          matches=[m for m in (data.get('manifests') or []) if (m.get('platform') or {}).get('os')=='linux' and (m.get('platform') or {}).get('architecture')=='amd64']
+          if len(matches)!=1:
+              raise SystemExit(f'expected one linux/amd64 postgres manifest, got {len(matches)}')
+          print(matches[0]['digest'])
+          PY
+          )"
+          image="postgres@${digest}"
+          printf 'POSTGRES_AMD64_DIGEST=%s\nPOSTGRES_IMAGE=%s\n' "$digest" "$image" | tee /tmp/postgres.env
+          pg_cid="$(docker run -d --rm \
+            -e POSTGRES_USER=ci \
+            -e POSTGRES_PASSWORD=ci \
+            -e POSTGRES_DB=sitescore_commerce_ci \
+            -p 127.0.0.1:15432:5432 \
+            "$image")"
+          echo "$pg_cid" > /tmp/pg.cid
+          for i in $(seq 1 60); do
+            if docker exec "$pg_cid" pg_isready -U ci -d sitescore_commerce_ci >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$pg_cid" >&2 || true
+          exit 1
+
+      - name: Replay exact frozen Commerce suite
+        run: |
+          set -euo pipefail
+          pg_cid="$(cat /tmp/pg.cid)"
+          trap 'docker logs "$pg_cid" >/tmp/postgres.log 2>&1 || true; docker stop -t 5 "$pg_cid" >/dev/null 2>&1 || true' EXIT
+          set +e
+          output="$(docker run --rm \
+            --add-host=host.docker.internal:host-gateway \
+            -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@host.docker.internal:15432/sitescore_commerce_ci \
+            -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
+              apt-get update >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git >/dev/null
+              rm -rf /var/lib/apt/lists/*
+              python -m venv /tmp/faz6-commerce
+              /tmp/faz6-commerce/bin/pip install \
+                ./sitescore-core \
+                ./sitescore-data \
+                ./sitescore-providers \
+                ./sitescore-spatial \
+                ./sitescore-metrics \
+                ./sitescore-benchmarks \
+                ./sitescore-pipeline \
+                ./sitescore-app \
+                ./sitescore-report \
+                "./sitescore-api[dev]" \
+                "./sitescore-commerce[test]" >/dev/null
+              /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q
+            ' 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output" | tee /tmp/faz6-replay.txt
+          docker logs "$pg_cid" >/tmp/postgres.log 2>&1 || true
+          docker stop -t 5 "$pg_cid" >/dev/null
+          trap - EXIT
+          grep -E '417 passed' /tmp/faz6-replay.txt
+          exit "$rc"
+
+      - name: Upload replay diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-faz6-replay-diagnostic-${{ github.event.pull_request.head.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            /tmp/faz6-replay.txt
+            /tmp/postgres.env
+            /tmp/postgres.log
