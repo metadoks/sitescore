@@ -12,7 +12,7 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 REVIEWER_STATE: DESIGN_DECISION_ISSUED
-IMPLEMENTER_ACTION: RESUME_7_1_WITH_ACTIONABLE_N8N_VULNERABILITY_TRIAGE
+IMPLEMENTER_ACTION: RESUME_7_1_WITH_VENDOR_OPENVEX_RECONCILIATION
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,7 +21,7 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: fe916813dbe7da3e413682275285b4fb7a4a5067
+OBSERVED_HEAD_SHA: fc144059406b31d2f8b6a1d71df7a4d552e8faba
 REVIEWED_HEAD_SHA: NONE
 
 LIVE_MAIN_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
@@ -34,7 +34,7 @@ LIVE_ALLOW_AUTO_MERGE: FALSE
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71-N8N-VULN-001: SECURITY_REOPEN_CONTINUES_UNDER_ACTIONABLE_TRIAGE
+OPS71-N8N-VULN-001: SECURITY_REOPEN_CONTINUES_UNDER_VERIFIED_VENDOR_OPENVEX_RECONCILIATION
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -48,7 +48,7 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 
 # 1. AUTHORITY CONTINUITY
 
-The complete original FAZ 7.1 contract remains authoritative except where later Reviewer addenda explicitly supersede it:
+The original full FAZ 7.1 contract remains authoritative except where later Reviewer addenda explicitly supersede it.
 
 ```text
 original full 7.1 contract coordination commit:
@@ -56,385 +56,240 @@ original full 7.1 contract coordination commit:
 original full 7.1 reviewer.md blob:
   d9acb7edca3a8b125bb557dd230ee62611f98299
 
-n8n security-reopen coordination commit:
+initial n8n security reopen coordination commit:
   54ca116bc3bb8e8ddd90839630231e3b6ba5449b
-n8n security-reopen reviewer.md blob:
+initial n8n security reopen reviewer.md blob:
   245878e51f0e6ea41bbce3318b5e4c16f6d44591
 
-platform-remediation coordination commit:
-  6a79d05f1c7c6279d356b4d2395ce53285eae06b
-platform-remediation reviewer.md blob:
-  7ea1bad7ec0fb847073f084e750150c2a96c1dc9
+actionable-triage decision coordination commit:
+  bb2c72a75eba92f825e0be4d873f030f13e97c46
 ```
 
-All unchanged requirements remain mandatory, especially exact-head evidence, frozen application/business semantics, workflow byte identity, non-root runtime, immutable digests, SBOM/provenance, permanent `faz7 / required-gate`, GitHub governance, no cloud deployment in 7.1, no secrets, and literal user LOCK before merge.
+Nothing here weakens exact-head review/LOCK, workflow-byte immutability, frozen application/business semantics, supply-chain evidence, GitHub governance, or the prohibition on FAZ 7.2/FAZ 8 start.
 
 ---
 
-# 2. INDEPENDENT REVIEWER FINDINGS
+# 2. INDEPENDENT REVIEWER FINDING
 
-Reviewer independently verified:
+Implementer correctly stopped after the first actionable-triage gate failed on official stable n8n 2.37.7.
 
-```text
-PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
-base = main@fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-head = fe916813dbe7da3e413682275285b4fb7a4a5067
-changed files = 20
-main remains unprotected
-merge commits enabled
-squash + rebase still enabled
-```
-
-GitHub-hosted Actions execution is restored. Resume probe run `32567312841`, attempt 2, contains real runner steps and successful enumeration plus ten successful exact-image scan jobs.
-
-Reviewer independently checked representative raw scan logs:
+Exact evidence independently rechecked:
 
 ```text
-2.34.6
-  digest = sha256:dacee4491f8f6078a78cfa3803b2e728e6eec0878ce92df7f0d323def70bbecd
-  CRITICAL = 13
-  HIGH = 62
-  result = REJECTED under prior raw-zero gate
-
-2.36.9
-  digest = sha256:af28db468b622a96fa8078ddad120e461adb1b2c2bc20802c9e6d5c915b3af89
-  CRITICAL = 10
-  HIGH = 36
-  result = REJECTED under prior raw-zero gate
+triage run = 33666579707
+triage job = 100369715633
+source SHA = 7f9d274ac078a078faa756604b359e800cc8282e
+selected version = 2.37.7
+selected linux/amd64 digest = sha256:869500232f49760d6a422d320d3ead3cb28ee93a00e6f67c89eb3d6b81acd6be
+runtime user = node
+runtime version = 2.37.7
+runtime/loadability = PASS
+workflow hashes = unchanged / PASS
+SPDX generation = PASS
+raw Grype generation = PASS
+CISA KEV acquisition = PASS
+upstream release OpenVEX acquisition = PASS
 ```
 
-The scan matrix also included `2.35.3`, `2.35.4`, `2.35.5`, `2.35.6`, `2.35.7`, `2.36.6`, `2.36.7`, and `2.36.8`; none satisfied raw `CRITICAL=0/HIGH=0`.
+Observed first-pass summary:
 
-Current upstream release state was independently rechecked on 2026-09-02. `n8n@2.36.9` is an official non-draft, non-prerelease release. `n8n@2.37.0` and `n8n@2.38.1` are currently marked prerelease and therefore remain ineligible under the stable-only rule.
+```text
+N8N_RAW_CRITICAL = 12
+N8N_RAW_HIGH = 36
+N8N_REMEDIABLE_CRITICAL = 11
+N8N_REMEDIABLE_HIGH = 33
+N8N_CISA_KEV_MATCHES = 0
+N8N_UNDISPOSITIONED_CRITICAL = 1
+N8N_UNDISPOSITIONED_HIGH = 3
+N8N_ACTIONABLE_GATE = FAIL
+```
 
-Therefore the prior `raw CRITICAL=0 / raw HIGH=0` replacement rule is currently unsatisfiable by the official stable upstream line. Continuing to require raw-zero would permanently block the checkpoint without distinguishing remediable vulnerabilities from upstream-unfixed findings.
+The failure itself is valid under the previous contract. However, Reviewer found that the first-pass disposition algorithm evaluated `fixed_versions/fix_state` before applying verified upstream OpenVEX status. Therefore an official vendor `not_affected` statement could not neutralize a scanner package-level false positive even when upstream explicitly attested that the vulnerable code is not in the n8n execution path.
+
+This is a triage-policy ordering gap, not authorization to ignore vulnerabilities.
+
+Upstream n8n explicitly publishes `vex.openvex.json` with releases and documents OpenVEX as its mechanism to distinguish vulnerabilities that actually affect n8n from scanner false positives. The exact 2.37.7 release contains a `vex.openvex.json` asset.
 
 ---
 
-# 3. DESIGN DECISION — ACTIONABLE VULNERABILITY TRIAGE
-
-The prior replacement acceptance criterion:
+# 3. DESIGN DECISION — VERIFIED VENDOR OPENVEX RECONCILIATION
 
 ```text
-raw CRITICAL = 0
-raw HIGH = 0
+DECISION: AUTHORIZE_VERIFIED_VENDOR_OPENVEX_RECONCILIATION
+CUSTOM_N8N_REBUILD: FORBIDDEN
+SCANNER_SUPPRESSION: FORBIDDEN
+BLANKET_CVE_IGNORE: FORBIDDEN
+WORKFLOW_SEMANTIC_CHANGE: FORBIDDEN
+BUSINESS_SEMANTIC_CHANGE: FORBIDDEN
 ```
 
-is superseded for the n8n production-candidate image only by the following stricter evidence-based actionable gate.
+Implementer must re-enumerate the latest official stable upstream `n8nio/n8n` release at execution time. Draft/prerelease/nightly releases remain forbidden.
 
-This is NOT a blanket waiver and is NOT permission to ignore scanner findings.
+For the selected stable release, resolve the exact Linux/AMD64 digest and retain:
 
 ```text
-N8N_RAW_CRITICAL: MUST_BE_RECORDED
-N8N_RAW_HIGH: MUST_BE_RECORDED
-N8N_REMEDIABLE_CRITICAL: MUST_EQUAL_0
-N8N_REMEDIABLE_HIGH: MUST_EQUAL_0
-N8N_CISA_KEV_MATCHES: MUST_EQUAL_0
-N8N_UNDISPOSITIONED_CRITICAL: MUST_EQUAL_0
-N8N_UNDISPOSITIONED_HIGH: MUST_EQUAL_0
-SCANNER_SUPPRESSION: NONE
-BLANKET_IGNORE: NONE
-CUSTOM_PATCHED_N8N_IMAGE: FORBIDDEN
+- upstream release/tag/id/published_at
+- exact linux/amd64 digest
+- runtime architecture/user/version proof
+- runtime/loadability proof
+- raw Grype JSON
+- SPDX JSON SBOM
+- exact upstream release OpenVEX asset metadata + bytes
+- CISA KEV feed used for the decision
+- per-finding reconciliation output
 ```
 
-Definitions:
-
-```text
-REMEDIABLE = scanner/advisory evidence reports a fixed version or otherwise confirms a fix is available for the affected package, while the candidate image still contains the vulnerable version.
-
-UNDISPOSITIONED = a CRITICAL/HIGH finding that has not been individually tied to package, installed version, advisory identity, fix state, and explicit disposition evidence.
-```
-
-Any CRITICAL/HIGH finding with a fix available is a hard blocker. Do not accept an official image merely because upstream has not yet consumed its available fix.
-
-Any CISA Known Exploited Vulnerability match is a hard blocker regardless of fix state.
-
-Unknown fix state is NOT automatically equivalent to `not fixed`; it must remain undispositioned unless independent advisory evidence establishes the state.
-
-Upstream OpenVEX may be used as corroborating evidence only where the statement matches the exact advisory/package/product context. It may not be used as a blanket release-level waiver.
+The official upstream OpenVEX evidence must be cryptographically/source-bound as far as the available upstream release evidence supports. At minimum, the downloaded VEX bytes must hash to the GitHub release asset digest recorded by the exact selected release metadata. If the existing pinned toolchain can verify the upstream OpenVEX image attestation/provenance without introducing an unrelated toolchain change, that verification must also be retained.
 
 ---
 
-# 4. CANDIDATE SELECTION RULE IS UPDATED
+# 4. REQUIRED ADVISORY/ALIAS RECONCILIATION
 
-The previous `lowest stable release that reaches raw-zero` rule is superseded because no such release currently exists.
+The previous exact-string advisory lookup is insufficient by itself. Implementer must normalize vulnerability identity across scanner aliases before applying VEX.
 
-Use the **latest official stable upstream n8nio/n8n release available at the time of final candidate validation**, not beta/rc/nightly/prerelease.
-
-At this decision point the current eligible candidate is:
+For every raw CRITICAL/HIGH Grype match, retain at least:
 
 ```text
-version = 2.36.9
-digest already observed = sha256:af28db468b622a96fa8078ddad120e461adb1b2c2bc20802c9e6d5c915b3af89
-release state = stable / prerelease=false
+scanner advisory id
+all scanner-provided related/alias IDs available in evidence
+package name/type/version
+fix state
+fixed versions
+CISA KEV correlation using CVE identity/aliases
+all applicable upstream VEX statements after alias reconciliation
+VEX product applicability evidence
+final disposition
+rationale
 ```
 
-Before freezing the candidate, re-enumerate official releases. If a newer stable release exists, it becomes the candidate and must be scanned/triaged instead. Do not silently remain on an older stable release.
+Only an upstream VEX statement that is applicable to the selected n8n product/release/image context may affect disposition. A same-CVE statement for an unrelated product identifier is not sufficient.
 
-The selected candidate still must prove:
+Mandatory disposition precedence:
 
 ```text
-official upstream n8nio/n8n only
-exact linux/amd64 digest
-non-root runtime
-runtime load/start proof
-SPDX JSON SBOM
-full raw Grype JSON retained
-per-finding actionable disposition retained
-REMEDIABLE CRITICAL = 0
-REMEDIABLE HIGH = 0
-CISA KEV = 0
-UNDISPOSITIONED CRITICAL/HIGH = 0
-workflow bytes unchanged
-static/runtime compatibility PASS
+1. CISA KEV exact/alias match
+   => BLOCKED_KEV
+
+2. applicable upstream VEX status = affected
+   => BLOCKED_VENDOR_AFFECTED
+
+3. applicable upstream VEX status = under_investigation
+   => BLOCKED_VENDOR_UNDER_INVESTIGATION
+
+4. applicable upstream VEX status = fixed, but Grype still reports selected image/package vulnerable
+   => BLOCKED_VEX_SCANNER_CONFLICT
+
+5. applicable upstream VEX status = not_affected
+   => VEX_NOT_AFFECTED_ALLOWED
+      only when applicability + justification/statement are retained
+      scanner fix availability alone MUST NOT override a verified vendor not_affected statement
+
+6. no applicable vendor VEX statement AND scanner reports a fixed version/fixed state
+   => BLOCKED_REMEDIABLE_UNDISPOSITIONED
+
+7. no applicable vendor VEX statement AND scanner reports not-fixed/wont-fix AND no KEV
+   => UPSTREAM_UNFIXED_NO_KEV_RISK_RECORDED
+      allowed only with explicit advisory/package evidence retained
+
+8. ambiguous alias mapping, conflicting VEX statements, unknown fix state, or insufficient product applicability
+   => BLOCKED_UNDISPOSITIONED
 ```
 
-If any of these gates fail, STOP again with `DESIGN_DECISION_REVIEW_REQUIRED: 1`.
+A VEX `not_affected` allowance is evidence-based vendor disposition, not a local SiteScore waiver. SiteScore must not author its own VEX statement for n8n in FAZ 7.1.
 
 ---
 
-# 5. REQUIRED PER-FINDING EVIDENCE
+# 5. ACCEPTANCE GATE AFTER RECONCILIATION
 
-For every raw CRITICAL or HIGH match in the selected image, retain machine-readable evidence with at least:
+Raw counts remain visible and are never rewritten to zero.
 
-```text
-advisory_id
-severity
-package_name
-package_type/ecosystem
-installed_version
-scanner_namespace/source
-fix_state
-fixed_versions (if any)
-CISA_KEV_match
-upstream_VEX_statement_if_exactly_applicable
-disposition
-rationale/evidence_source
-```
-
-Allowed dispositions are limited to:
+The selected official stable image may pass the n8n security gate only if:
 
 ```text
-BLOCKED_REMEDIABLE
-BLOCKED_KEV
-UPSTREAM_UNFIXED_NO_KEV
-UPSTREAM_VEX_NOT_AFFECTED_EXACT_MATCH
+N8N_CISA_KEV_MATCHES = 0
+N8N_VENDOR_AFFECTED_CRITICAL = 0
+N8N_VENDOR_AFFECTED_HIGH = 0
+N8N_VENDOR_UNDER_INVESTIGATION_CRITICAL = 0
+N8N_VENDOR_UNDER_INVESTIGATION_HIGH = 0
+N8N_VEX_SCANNER_CONFLICT_CRITICAL = 0
+N8N_VEX_SCANNER_CONFLICT_HIGH = 0
+N8N_REMEDIABLE_UNDISPOSITIONED_CRITICAL = 0
+N8N_REMEDIABLE_UNDISPOSITIONED_HIGH = 0
+N8N_UNDISPOSITIONED_CRITICAL = 0
+N8N_UNDISPOSITIONED_HIGH = 0
 ```
 
-Anything else is `UNDISPOSITIONED` and blocks acceptance.
+`VEX_NOT_AFFECTED_ALLOWED` and `UPSTREAM_UNFIXED_NO_KEV_RISK_RECORDED` findings must remain explicitly counted and reviewable; they may not disappear from evidence.
 
-`UPSTREAM_UNFIXED_NO_KEV` is a temporary production-candidate risk disposition, not a claim that the vulnerability is harmless. It must remain visible in the SBOM/security evidence and be carried into FAZ 7 operational monitoring.
+If any blocking counter is nonzero, STOP again with:
+
+```text
+OPS71-N8N-VULN-001: VERIFIED_VENDOR_OPENVEX_GATE_FAILED
+DESIGN_DECISION_REVIEW_REQUIRED: 1
+READY_FOR_REVIEW: NO
+```
+
+Do not proceed to a custom rebuild, package overlay, custom patched n8n image, scanner ignore, or vulnerability waiver.
 
 ---
 
-# 6. CONTAINMENT REQUIREMENTS FOR ANY UNFIXED CRITICAL/HIGH
+# 6. IF THE VERIFIED VEX GATE PASSES
 
-If the selected official stable image contains any accepted `UPSTREAM_UNFIXED_NO_KEV` findings, the existing FAZ 7 topology constraints become mandatory acceptance conditions and may not be weakened later:
+Only if the gate above passes, Implementer is authorized to continue the existing 7.1 implementation on PR #34:
 
 ```text
-n8n admin/editor/rest surface = NON_PUBLIC
-public n8n surface = exact required webhook only
-runtime = non-root
-community/custom node installation = not introduced by SiteScore
-workflow JSON bytes = frozen exact hashes
-n8n remains orchestration-only
-n8n does not become business-state authority
-production persistence = dedicated PostgreSQL
-network exposure = least privilege in FAZ 7.2
+- create/update deploy/containers/n8n-image.lock with exact accepted stable version/digest/evidence identity
+- update only already-authorized stale n8n runtime identity references/tests/docs
+- preserve historical FAZ6 n8n 2.33.4 identity as SUPERSEDED_FOR_SECURITY
+- prove order workflow SHA256 remains 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+- prove recovery workflow SHA256 remains f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+- complete n8n static/runtime/compatibility/SBOM/security validation
+- correct source-boundary CI shallow-fetch/merge-base mechanics without changing frozen-source policy
+- correct FAZ6 Commerce replay environment mechanically until the exact frozen 417 PASS baseline is reproduced
+- complete API/Commerce image, non-root, PDF/font/runtime, SBOM/vulnerability and required-gate evidence
 ```
 
-These are containment controls, not substitutes for patching. A future fixed stable upstream release must replace the accepted unfixed baseline through normal release governance.
+No frozen application code, package metadata, migrations, business/payment/scoring/report semantics, or n8n workflow JSON may change.
 
 ---
 
-# 7. WORKFLOW SEMANTICS REMAIN FROZEN
+# 7. GOVERNANCE REMAINS MANDATORY
 
-Mandatory workflow identities remain:
-
-```text
-order workflow SHA256:
-02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-
-recovery workflow SHA256:
-f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
-```
-
-Still forbidden:
+Current live governance remains noncompliant:
 
 ```text
-automation/n8n/workflows/** changes
-workflow/node semantic substitutions
-webhook path/payload/auth changes
-Commerce automation API changes
-payment/order/recovery behavior changes
-business-state interpretation changes
-custom patched/rebuilt n8n lineage
-scanner severity remapping
-scanner disablement
-blanket CVE ignore lists
+main protected = FALSE
+required checks = NONE
+merge commits = enabled
+squash = enabled
+rebase = enabled
+auto-merge = disabled
 ```
 
----
-
-# 8. AUTHORIZED 7.1 RESUME WORK
-
-Implementer may now resume on the same PR and exact base.
-
-Existing authorized 7.1 paths remain in force. The following work is explicitly authorized without reopening frozen application source:
-
-```text
-1. selected n8n stable identity/digest lock
-2. full Grype JSON + SPDX SBOM + actionable disposition evidence
-3. CISA KEV matching evidence
-4. exact applicable upstream OpenVEX ingestion/correlation if useful
-5. permanent CI enforcement of the actionable n8n gate
-6. source-boundary workflow correction for the diagnosed shallow-fetch/merge-base issue
-7. FAZ6 Commerce replay environment correction so historical frozen tests execute in an equivalent environment
-8. existing container/runtime/PDF/non-root validation completion
-9. permanent exact-head `faz7 / required-gate`
-10. final scope/no-secret/no-cloud proof
-```
-
-CI corrections are limited to workflow/test-environment mechanics. They may not modify frozen application/package behavior merely to make tests pass.
-
-For the FAZ6 replay, installing required frozen repository packages and required test tooling such as `git` in the replay environment is permitted. Altering frozen test assertions or application code is not.
-
----
-
-# 9. GITHUB GOVERNANCE REMAINS A HARD GATE
-
-`OPS71-GOV-001` remains:
-
-```text
-MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-```
-
-Before `READY_FOR_REVIEW` / `READY_TO_LOCK`, live repository state must prove:
+Before `READY_FOR_REVIEW`, the original 7.1 governance contract still requires:
 
 ```text
 main protected = TRUE
-pull request required = TRUE
+PR required = TRUE
 required status check = faz7 / required-gate
-strict/up-to-date check = TRUE
-force pushes blocked
-branch deletion blocked
-merge commits enabled
-squash merge disabled
-rebase merge disabled
-auto-merge disabled
+strict/up-to-date = TRUE
+force push = blocked
+branch deletion = blocked
+bypass/admin bypass disabled where supported
+merge commits = enabled
+squash = disabled
+rebase = disabled
+auto-merge = disabled
 ```
 
-Do not weaken the governance requirement because the connector cannot mutate these settings.
+Manual owner configuration remains explicitly authorized because the connected GitHub toolset exposes no branch-protection/repository-merge-setting mutation action.
 
 ---
 
-# 10. REQUIRED N8N FINAL VALIDATION
+# 8. REQUIRED IMPLEMENTER HANDOFF
 
-The selected candidate must satisfy:
+If the verified vendor OpenVEX gate fails, report exact blocker counters and STOP.
 
-```text
-N8N-SEC-001 official stable identity
-N8N-SEC-002 exact linux/amd64 digest
-N8N-SEC-003 non-root
-N8N-SEC-004 raw CRITICAL count recorded
-N8N-SEC-005 raw HIGH count recorded
-N8N-SEC-006 REMEDIABLE CRITICAL = 0
-N8N-SEC-007 REMEDIABLE HIGH = 0
-N8N-SEC-008 CISA KEV = 0
-N8N-SEC-009 UNDISPOSITIONED CRITICAL/HIGH = 0
-N8N-SEC-010 SPDX JSON SBOM retained
-N8N-SEC-011 full raw Grype JSON retained
-N8N-SEC-012 order workflow hash unchanged
-N8N-SEC-013 recovery workflow hash unchanged
-N8N-SEC-014 n8n static/contract PASS
-N8N-SEC-015 runtime load/start PASS
-N8N-SEC-016 webhook/workflow compatibility smoke PASS
-N8N-SEC-017 no workflow JSON diff
-N8N-SEC-018 no scanner suppression/blanket ignore
-N8N-SEC-019 historical 2.33.4 remains recorded as superseded-for-security
-N8N-SEC-020 containment requirements documented and enforced by later topology contract
-```
+If it passes and all remaining 7.1 gates are completed, update `implementer.md` with `IMPLEMENTER_STATE: READY_FOR_REVIEW` and include exact final PR head, selected n8n version/digest, raw counts, every blocking counter at zero, allowed VEX/unfixed-risk counts, workflow hashes, API 114 PASS, report 24 PASS, Commerce forward 416 PASS + exact one phase-local deselect, FAZ6 frozen replay 417 PASS, image/runtime/SBOM/security results, `faz7 / required-gate` PASS, and live governance state.
 
----
-
-# 11. FULL 7.1 GATES STILL APPLY
-
-Before `READY_FOR_REVIEW`, all original 7.1 gates remain required, including:
-
-```text
-API current suite = 114 PASS
-report current suite = 24 PASS
-Commerce forward-applicable = 416 PASS + exact one phase-local deselect
-FAZ6 frozen Commerce replay = 417 PASS
-dispatcher supervisor tests PASS
-API image build/runtime/non-root/PDF/font PASS
-Commerce image build/runtime/non-root PASS
-API/Commerce/n8n SBOMs PASS
-permanent Actions full-SHA pins PASS
-required-gate green on exact final head
-frozen application source diff = NONE
-n8n workflow JSON diff = NONE
-cloud/IaC mutation = NONE
-production secret committed = NONE
-main governance = PASS
-```
-
-No merge. No FAZ 7.2. No FAZ 8.
-
----
-
-# 12. REQUIRED IMPLEMENTER HANDOFF
-
-When implementation and all evidence are complete, update `implementer.md` and STOP with:
-
-```text
-CURRENT_PHASE: FAZ 7
-CURRENT_CHECKPOINT: 7.1
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-IMPLEMENTER_ACTION: STOP
-USER_LOCK_AUTHORIZED: NO
-
-BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-PR: #34
-HEAD_SHA: <exact final sha>
-
-OPS71-GHA-EXEC-001: RESOLVED
-OPS71-GOV-001: RESOLVED
-OPS71-N8N-VULN-001: RESOLVED_BY_ACTIONABLE_SECURITY_BASELINE
-SELECTED_N8N_VERSION: <latest stable exact>
-SELECTED_N8N_DIGEST: <exact linux/amd64 sha256>
-N8N_RAW_CRITICAL: <count>
-N8N_RAW_HIGH: <count>
-N8N_REMEDIABLE_CRITICAL: 0
-N8N_REMEDIABLE_HIGH: 0
-N8N_CISA_KEV: 0
-N8N_UNDISPOSITIONED_CRITICAL_HIGH: 0
-N8N_SBOM: PASS
-N8N_RAW_GRYPE_EVIDENCE: PASS
-N8N_ACTIONABLE_DISPOSITION_EVIDENCE: PASS
-N8N_ORDER_WORKFLOW_HASH: 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-N8N_RECOVERY_WORKFLOW_HASH: f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
-N8N_STATIC: PASS
-N8N_RUNTIME_COMPATIBILITY: PASS
-
-API_IMAGE_BUILD: PASS
-COMMERCE_IMAGE_BUILD: PASS
-API_IMAGE_NONROOT: PASS
-COMMERCE_IMAGE_NONROOT: PASS
-API_PDF_RENDER_SMOKE: PASS
-FAZ6_COMMERCE_REPLAY: 417 PASS
-REQUIRED_GATE: PASS
-MAIN_BRANCH_PROTECTED: TRUE
-MERGE_GOVERNANCE: PASS
-FROZEN_APPLICATION_SOURCE_DIFF: NONE
-N8N_WORKFLOW_JSON_DIFF: NONE
-
-CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
-NEXT_CHECKPOINT_AUTHORIZED: NO
-START_FAZ8: NO
-PUBLIC_LAUNCH_AUTHORIZED: NO
-```
-
-Reviewer will then independently audit the exact final PR head. Do not merge before Reviewer `READY_TO_LOCK` and literal user `LOCK`.
+Do not merge. Do not start FAZ 7.2. Do not start FAZ 8.
