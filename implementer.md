@@ -54,7 +54,7 @@ APPLICATION_SOURCE_CHANGE: NONE
 BUSINESS_SEMANTICS_CHANGE: NONE
 N8N_WORKFLOW_JSON_CHANGE: NONE
 N8N_APPLICATION_SOURCE_PATCH: NONE
-PERMANENT_FA7_1_SOURCE_CHANGE_FROM_THIS_PROBE: NONE
+PERMANENT_FAZ_7_1_SOURCE_CHANGE_FROM_THIS_PROBE: NONE
 SCANNER_SUPPRESSION: NONE
 BLANKET_CVE_IGNORE: NONE
 SITE_SCORE_AUTHORED_VEX: NONE
@@ -64,28 +64,26 @@ PRODUCTION_SECRET_COMMITTED: NONE
 
 ## 1. Reviewer APK-solver decision executed
 
-Reviewer explicitly authorized replacing the incomplete custom package dependency graph with Alpine APK itself as the sole package-attribution authority.
+Reviewer explicitly authorized Alpine APK itself as the sole package-attribution authority after rejecting the prior incomplete custom dependency graph.
 
-The authorized proof model required three bases constructed from the same exact upstream n8n-base recipe:
+The authorized proof built three bases from the same exact upstream n8n-base recipe:
 
 ```text
 A = reference upstream-equivalent base
-B = hardened base with only top-level openssh + graphicsmagick package lines omitted
-C = solver-evidence base equivalent to A, except final apk-tools removal is deferred only long enough to execute the evidence transaction
+B = hardened base with only top-level openssh + graphicsmagick lines omitted
+C = solver-evidence base equivalent to A, except final apk-tools removal deferred only for evidence
 ```
 
-On C the exact package-manager transaction was required:
+C executed exactly:
 
 ```text
 apk del openssh graphicsmagick
 apk del apk-tools
 ```
 
-Normalized package-name + version inventories were then compared. No custom dependency/provider graph was used for attribution.
+No custom provider/dependency graph was used for attribution.
 
 ## 2. Exact upstream identities revalidated
-
-Execution-time release enumeration confirmed latest official stable remained:
 
 ```text
 n8n version = 2.37.7
@@ -95,55 +93,37 @@ published_at = 2026-09-02T08:41:33Z
 official image = n8nio/n8n@sha256:869500232f49760d6a422d320d3ead3cb28ee93a00e6f67c89eb3d6b81acd6be
 stable source commit = 2a4ca7868dc75edca4c575d6507021e1e6b0ec90
 stable source tree = 40ff00093dbc474f82b4a133eb8ca51a3c76734a
-```
-
-Bound upstream build identities remained:
-
-```text
 master build commit = efd3ec9e260ef9ac7d9cbc134952590bedd33acb
 master n8n Dockerfile blob = f72e1a3f3aae40319e58989e5fc2a71e687a1b59
 master n8n-base Dockerfile blob = 1f2a82aa961a389750d774c88735fb11c5ae7c45
 master build-base-image.yml blob = dd9e3badecd4fc1c5e4a51668824f5f214becaae
 DHI ref = dhi.io/node:26.7.0-alpine3.24-dev@sha256:4b494d89fb26c950ce97865acf45b480dc7a6868fdc2b81c2d66599702eeac3f
 builder = node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
-upstream runtime ref = n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8
+upstream runtime = n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8
 ```
 
-The exact 2.37.7 source already carried:
+The exact 2.37.7 source already carried `ip-address@10 = 10.3.1` and `brace-expansion@5 = 5.0.9`. No local dependency migration was applied. Nodemailer was not changed.
 
-```text
-ip-address@10 = 10.3.1
-brace-expansion@5 = 5.0.9
-```
-
-No local dependency migration was applied. Nodemailer was not changed. Frozen workflow bytes remained exact:
+Frozen workflow hashes remained exact:
 
 ```text
 order-paid = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
 recovery = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 ```
 
-## 3. APK-solver probe execution
+## 3. APK-solver execution
 
 ```text
 workflow = faz7-7-1-n8n-apk-solver-probe
 run = 33690496085
 job = 100447897731
 source branch head = 8fece108dd4993efe00a2ab183b7aaaf1c06f781
-Actions synthetic PR merge SHA = 2734dc0c5ca185b571e8e99ee676575ae91abe45
+Actions synthetic merge SHA = 2734dc0c5ca185b571e8e99ee676575ae91abe45
 ```
 
-Initial gates passed:
+Initial gates passed: hosted execution, latest stable enumeration, exact upstream source/blob binding, frozen workflow hashes, Node 26.7.0/pnpm setup.
 
-```text
-GitHub-hosted execution = PASS
-latest-stable re-enumeration = PASS
-exact upstream source/blob binding = PASS
-frozen workflow hash binding = PASS
-Node 26.7.0 / pnpm build-chain setup = PASS
-```
-
-All three exact base constructions succeeded:
+All three bases built successfully:
 
 ```text
 REFERENCE_BASE_IMAGE_ID = sha256:eb3475154a1aca1ab7ef267e04d84c4658f05027115949c131b8c5e5fb94bbe4
@@ -153,9 +133,7 @@ architecture = amd64
 node = v26.7.0
 ```
 
-Reference and hardened production bases completed the upstream final apk-tools removal. Solver-evidence base intentionally retained apk-tools only for the authorized transaction.
-
-## 4. APK solver attribution reached and inventory equality checks advanced successfully
+## 4. APK attribution/equality assertions advanced without failure
 
 The exact solver transaction executed:
 
@@ -164,27 +142,27 @@ COMMAND=apk del openssh graphicsmagick
 COMMAND=apk del apk-tools
 ```
 
-The verifier advanced past the following mandatory assertions without failure:
+The verifier advanced past these assertions without failure:
 
 ```text
-- hardened contains no package/version absent from reference;
-- solver pre-state, excluding evidence-only apk-tools, equals the exact reference final inventory;
-- solver final inventory equals the omission-built hardened final inventory;
-- reference-minus-hardened package closure equals the APK solver removal closure;
-- both authorized top-level roots openssh and graphicsmagick are absent from the hardened diff/final state.
+- hardened has no package/version absent from reference;
+- solver pre-state excluding evidence-only apk-tools equals reference final inventory;
+- solver final inventory equals omission-built hardened final inventory;
+- reference-minus-hardened equals APK solver removal closure;
+- both authorized roots openssh and graphicsmagick are absent from hardened final.
 ```
 
-Therefore the previous custom-provider-graph blocker is resolved by APK package-manager authority. Implementer does not infer dependency ownership manually; the evidence is the APK transaction plus exact normalized inventory equality.
+Thus the previous custom dependency-attribution blocker is resolved by package-manager-derived evidence.
 
-## 5. Mandatory retained-component criterion FAILED
+## 5. Reviewer-required retained-component criterion FAILED
 
-After the equality assertions, the Reviewer-required retained runtime package check failed on one literal package name:
+The next literal retained-package assertion failed:
 
 ```text
 required retained packages missing: ['libc6-compat']
 ```
 
-The Reviewer-required retained set was:
+Reviewer-required set:
 
 ```text
 tini
@@ -197,11 +175,7 @@ libcrypto3
 libexpat
 ```
 
-The proof therefore does NOT satisfy the complete Reviewer gate even though APK attribution/inventory equality advanced successfully.
-
-Implementer does not reinterpret `gcompat` or any other installed provider as equivalent to the literal `libc6-compat` requirement. Whether the contract means exact package identity, an APK-provided capability, or another acceptable runtime-equivalence proof is now a Reviewer design decision.
-
-Disposition:
+Implementer does not substitute `gcompat` or any other provider for the literal `libc6-compat` requirement without Reviewer authority.
 
 ```text
 REFERENCE_BASE_BUILD: PASS
@@ -224,11 +198,9 @@ N8N_STATIC_TESTS: NOT_REACHED
 ORDER_RECOVERY_RUNTIME_SMOKES: NOT_REACHED
 ```
 
-This execution is neither a hardened-image security PASS nor a hardened-image security FAIL.
+This is neither a hardened-image security PASS nor security FAIL.
 
 ## 6. Evidence artifact
-
-Artifact upload succeeded:
 
 ```text
 artifact name = faz7-n8n-apk-solver-2734dc0c5ca185b571e8e99ee676575ae91abe45
@@ -240,39 +212,21 @@ expires_at = 2026-09-16T22:34:26Z
 source branch head = 8fece108dd4993efe00a2ab183b7aaaf1c06f781
 ```
 
-## 7. Temporary probe cleanup
+## 7. Cleanup and current PR
 
-After evidence preservation, the temporary solver workflow was removed:
-
-```text
-.github/workflows/faz7-7-1-n8n-apk-solver-probe.yml
-```
-
-Cleanup commit / current clean PR head:
+Temporary workflow `.github/workflows/faz7-7-1-n8n-apk-solver-probe.yml` was removed after evidence preservation.
 
 ```text
-9bc557a6d32b62a1a66527ef10ee0358953ec04e
-```
-
-PR #34 returned to the intended permanent scope:
-
-```text
-OPEN
-DRAFT
-MERGEABLE
-UNMERGED
+current clean PR head = 9bc557a6d32b62a1a66527ef10ee0358953ec04e
+PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
 changed files = 20
 additions = 3864
 deletions = 0
 ```
 
-No temporary solver probe remains in the permanent PR diff. The probe did not modify any of the 20 permanent FAZ 7.1 source paths.
+No temporary probe remains in permanent scope and this probe made no permanent FAZ 7.1 source change.
 
 ## 8. Mandatory STOP
-
-Reviewer explicitly required STOP rather than manual interpretation if the full package proof criteria were not met.
-
-Therefore:
 
 ```text
 IMPLEMENTER_STATE: BLOCKED_APK_SOLVER_REQUIRED_RETAINED_COMPONENT_MISSING
@@ -291,4 +245,4 @@ START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
 
-Reviewer must explicitly decide how the `libc6-compat` retained-runtime requirement is to be interpreted/proven for this exact upstream Alpine/DHI base before implementation resumes. Implementer will not substitute `gcompat`, modify the base recipe, weaken the retained-component criterion, or continue into security/runtime promotion without that authority.
+Reviewer must explicitly decide whether the `libc6-compat` requirement is literal package identity or may be satisfied/proven through an APK provider/capability for this exact upstream Alpine/DHI base. Implementer will not weaken or reinterpret that criterion, modify the base recipe, or continue into security/runtime promotion without explicit authority.
