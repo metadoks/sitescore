@@ -15,10 +15,16 @@ jobs:
       UPSTREAM_STABLE_VERSION: '2.37.7'
       UPSTREAM_STABLE_COMMIT: '2a4ca7868dc75edca4c575d6507021e1e6b0ec90'
       UPSTREAM_STABLE_TREE: '40ff00093dbc474f82b4a133eb8ca51a3c76734a'
+      OFFICIAL_IMAGE: 'n8nio/n8n@sha256:869500232f49760d6a422d320d3ead3cb28ee93a00e6f67c89eb3d6b81acd6be'
       UPSTREAM_MASTER_COMMIT: 'efd3ec9e260ef9ac7d9cbc134952590bedd33acb'
       MASTER_DOCKERFILE_BLOB: 'f72e1a3f3aae40319e58989e5fc2a71e687a1b59'
+      MASTER_BASE_DOCKERFILE_BLOB: '1f2a82aa961a389750d774c88735fb11c5ae7c45'
+      MASTER_BASE_WORKFLOW_BLOB: 'dd9e3badecd4fc1c5e4a51668824f5f214becaae'
+      DHI_REF: 'dhi.io/node:26.7.0-alpine3.24-dev@sha256:4b494d89fb26c950ce97865acf45b480dc7a6868fdc2b81c2d66599702eeac3f'
       BUILDER_IMAGE: 'node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019'
-      RUNTIME_IMAGE: 'n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8'
+      UPSTREAM_RUNTIME_IMAGE: 'n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8'
+      REFERENCE_BASE_IMAGE: 'sitescore-n8n-base-reference:26.7.0'
+      HARDENED_BASE_IMAGE: 'sitescore-n8n-base-hardened:26.7.0'
       PROBE_IMAGE: 'sitescore-n8n-hardened:probe'
       OUT: 'deploy/containers/artifacts/n8n-hardened-rebuild-probe'
     steps:
@@ -45,7 +51,7 @@ jobs:
         with:
           node-version: '26.7.0'
 
-      - name: Re-enumerate stable release and bind upstream source/build identities
+      - name: Re-enumerate stable release and bind upstream source identities
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -55,8 +61,12 @@ jobs:
           import json, os, re, urllib.request
           from urllib.parse import urlencode
           token=os.environ['GH_TOKEN']; releases=[]
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-hardened-rebuild'}
           for page in range(1,11):
-              req=urllib.request.Request('https://api.github.com/repos/n8n-io/n8n/releases?'+urlencode({'per_page':100,'page':page}),headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-hardened-rebuild'})
+              req=urllib.request.Request(
+                  'https://api.github.com/repos/n8n-io/n8n/releases?'+urlencode({'per_page':100,'page':page}),
+                  headers=headers)
               with urllib.request.urlopen(req,timeout=30) as r: batch=json.load(r)
               if not batch: break
               for rel in batch:
@@ -66,15 +76,26 @@ jobs:
               if len(batch)<100: break
           version_tuple,rel=max(releases,key=lambda x:x[0]); version='.'.join(map(str,version_tuple))
           expected=os.environ['UPSTREAM_STABLE_VERSION']
-          if version != expected: raise SystemExit(f'new stable release appeared: {version}; stop and revalidate official image before hardened path')
-          ctx={'selected_version':version,'release_tag':rel['tag_name'],'release_id':rel['id'],'published_at':rel.get('published_at'),'stable_source_commit':os.environ['UPSTREAM_STABLE_COMMIT'],'stable_source_tree':os.environ['UPSTREAM_STABLE_TREE'],'master_build_commit':os.environ['UPSTREAM_MASTER_COMMIT'],'builder_image':os.environ['BUILDER_IMAGE'],'runtime_image':os.environ['RUNTIME_IMAGE']}
+          if version != expected:
+              raise SystemExit(f'new official stable {version} exists; stop hardened rerun and validate official image first')
+          ctx={
+              'selected_version':version,'release_tag':rel['tag_name'],'release_id':rel['id'],
+              'published_at':rel.get('published_at'),
+              'stable_source_commit':os.environ['UPSTREAM_STABLE_COMMIT'],
+              'stable_source_tree':os.environ['UPSTREAM_STABLE_TREE'],
+              'official_image':os.environ['OFFICIAL_IMAGE'],
+              'master_build_commit':os.environ['UPSTREAM_MASTER_COMMIT'],
+              'builder_image':os.environ['BUILDER_IMAGE'],
+              'upstream_runtime_image':os.environ['UPSTREAM_RUNTIME_IMAGE'],
+              'dhi_ref':os.environ['DHI_REF'],
+          }
           json.dump(ctx,open(os.environ['OUT']+'/source-context.json','w'),indent=2,sort_keys=True)
           print(json.dumps(ctx,indent=2,sort_keys=True))
           PY
           test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
           test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
 
-      - name: Checkout exact upstream stable source and apply only upstream build metadata
+      - name: Bind exact upstream stable source and master build recipes
         run: |
           set -euo pipefail
           rm -rf /tmp/n8n-src
@@ -84,19 +105,170 @@ jobs:
           test "$(git -C /tmp/n8n-src rev-parse HEAD)" = "$UPSTREAM_STABLE_COMMIT"
           test "$(git -C /tmp/n8n-src rev-parse HEAD^{tree})" = "$UPSTREAM_STABLE_TREE"
           test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:docker/images/n8n/Dockerfile")" = "$MASTER_DOCKERFILE_BLOB"
-          # Exact stable source already carries both upstream security overrides; no SiteScore npm patch is applied.
+          test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:docker/images/n8n-base/Dockerfile")" = "$MASTER_BASE_DOCKERFILE_BLOB"
+          test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:.github/workflows/build-base-image.yml")" = "$MASTER_BASE_WORKFLOW_BLOB"
+
+          git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:docker/images/n8n-base/Dockerfile" > "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
+          git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:.github/workflows/build-base-image.yml" > "$GITHUB_WORKSPACE/$OUT/upstream-build-base-image.yml"
+          grep -F "node_version: '26.7.0'" "$GITHUB_WORKSPACE/$OUT/upstream-build-base-image.yml"
+          grep -F "$DHI_REF" "$GITHUB_WORKSPACE/$OUT/upstream-build-base-image.yml"
+          grep -F 'apk del apk-tools' "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
+          grep -F 'openssh \' "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
+          grep -F 'graphicsmagick \' "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
+
           grep -F 'ip-address@10: 10.3.1' /tmp/n8n-src/pnpm-workspace.yaml
           grep -F 'brace-expansion@5: 5.0.9' /tmp/n8n-src/pnpm-workspace.yaml
           git -C /tmp/n8n-src diff --exit-code
-          cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$OUT/stable-Dockerfile"
+
+          cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$GITHUB_WORKSPACE/$OUT/stable-Dockerfile"
           git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:docker/images/n8n/Dockerfile" > /tmp/n8n-src/docker/images/n8n/Dockerfile
-          cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$OUT/master-Dockerfile-used"
-          git -C /tmp/n8n-src diff -- docker/images/n8n/Dockerfile > "$OUT/build-metadata-delta.patch"
-          changed="$(git -C /tmp/n8n-src diff --name-only)"
-          test "$changed" = 'docker/images/n8n/Dockerfile'
+          cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$GITHUB_WORKSPACE/$OUT/master-Dockerfile-used"
+          git -C /tmp/n8n-src diff -- docker/images/n8n/Dockerfile > "$GITHUB_WORKSPACE/$OUT/build-metadata-delta.patch"
+          test "$(git -C /tmp/n8n-src diff --name-only)" = 'docker/images/n8n/Dockerfile'
           grep -F "$BUILDER_IMAGE" /tmp/n8n-src/docker/images/n8n/Dockerfile
-          grep -F "$RUNTIME_IMAGE" /tmp/n8n-src/docker/images/n8n/Dockerfile
-          printf 'STABLE_SOURCE_COMMIT=%s\nSTABLE_SOURCE_TREE=%s\nMASTER_BUILD_COMMIT=%s\n' "$UPSTREAM_STABLE_COMMIT" "$UPSTREAM_STABLE_TREE" "$UPSTREAM_MASTER_COMMIT" > "$OUT/source-identities.txt"
+          grep -F "$UPSTREAM_RUNTIME_IMAGE" /tmp/n8n-src/docker/images/n8n/Dockerfile
+          cat > "$GITHUB_WORKSPACE/$OUT/source-identities.txt" <<EOF
+          STABLE_SOURCE_COMMIT=$UPSTREAM_STABLE_COMMIT
+          STABLE_SOURCE_TREE=$UPSTREAM_STABLE_TREE
+          MASTER_BUILD_COMMIT=$UPSTREAM_MASTER_COMMIT
+          MASTER_N8N_DOCKERFILE_BLOB=$MASTER_DOCKERFILE_BLOB
+          MASTER_BASE_DOCKERFILE_BLOB=$MASTER_BASE_DOCKERFILE_BLOB
+          MASTER_BASE_WORKFLOW_BLOB=$MASTER_BASE_WORKFLOW_BLOB
+          DHI_REF=$DHI_REF
+          BUILDER_IMAGE=$BUILDER_IMAGE
+          UPSTREAM_RUNTIME_IMAGE=$UPSTREAM_RUNTIME_IMAGE
+          EOF
+
+      - name: Construct reference and hardened runtime bases from exact upstream recipe
+        run: |
+          set -euo pipefail
+          cp "$OUT/upstream-base-Dockerfile" /tmp/Dockerfile.base.reference
+          python - <<'PY'
+          from pathlib import Path
+          import difflib, json, os
+          src=Path(os.environ['OUT']+'/upstream-base-Dockerfile').read_text()
+          hard=src
+          for line in ('        openssh \\\n','        graphicsmagick \\\n'):
+              if hard.count(line) != 1:
+                  raise SystemExit(f'expected exactly one authorized line: {line!r}')
+              hard=hard.replace(line,'')
+          Path('/tmp/Dockerfile.base.hardened').write_text(hard)
+          diff=''.join(difflib.unified_diff(src.splitlines(True),hard.splitlines(True),
+                                            fromfile='upstream-base-Dockerfile',
+                                            tofile='hardened-base-Dockerfile'))
+          Path(os.environ['OUT']+'/base-hardening.patch').write_text(diff)
+          removed=[x for x in src.splitlines() if x not in hard.splitlines()]
+          json.dump({'deliberate_omissions':['openssh','graphicsmagick'],
+                     'removed_source_lines':removed},
+                    open(os.environ['OUT']+'/base-hardening-delta.json','w'),indent=2,sort_keys=True)
+          PY
+          diff -u /tmp/Dockerfile.base.reference /tmp/Dockerfile.base.hardened || true
+          grep -F 'apk del apk-tools' /tmp/Dockerfile.base.hardened
+          ! grep -Fq '        openssh \' /tmp/Dockerfile.base.hardened
+          ! grep -Fq '        graphicsmagick \' /tmp/Dockerfile.base.hardened
+
+          docker build --platform linux/amd64 --no-cache \
+            --build-arg DHI_REF="$DHI_REF" \
+            -f /tmp/Dockerfile.base.reference \
+            -t "$REFERENCE_BASE_IMAGE" /tmp/n8n-src
+          docker build --platform linux/amd64 --no-cache \
+            --build-arg DHI_REF="$DHI_REF" \
+            -f /tmp/Dockerfile.base.hardened \
+            -t "$HARDENED_BASE_IMAGE" /tmp/n8n-src
+
+          for image in "$REFERENCE_BASE_IMAGE" "$HARDENED_BASE_IMAGE"; do
+            test "$(docker image inspect "$image" --format '{{.Architecture}}')" = amd64
+            test "$(docker run --rm --entrypoint sh "$image" -c 'command -v node >/dev/null && node --version')" = 'v26.7.0'
+            ! docker run --rm --entrypoint sh "$image" -c 'command -v apk >/dev/null'
+          done
+
+      - name: Prove complete package diff and reverse-dependency ownership
+        run: |
+          set -euo pipefail
+          extract_db () {
+            local image="$1" raw="$2" tsv="$3" repos="$4"
+            docker run --rm --entrypoint sh "$image" -c 'cat /lib/apk/db/installed' > "$raw"
+            docker run --rm --entrypoint sh "$image" -c 'cat /etc/apk/repositories' > "$repos"
+            python - "$raw" "$tsv" <<'PY'
+          import sys
+          raw=open(sys.argv[1],encoding='utf-8').read()
+          rows=[]
+          for rec in raw.strip().split('\n\n'):
+              fields={}
+              for line in rec.splitlines():
+                  if len(line)>2 and line[1]==':':
+                      fields.setdefault(line[0],[]).append(line[2:])
+              if 'P' in fields and 'V' in fields:
+                  rows.append((fields['P'][0],fields['V'][0]))
+          with open(sys.argv[2],'w',encoding='utf-8') as f:
+              for name,ver in sorted(rows): f.write(f'{name}\t{ver}\n')
+          PY
+          }
+          extract_db "$REFERENCE_BASE_IMAGE" "$OUT/reference-installed.raw" "$OUT/reference-packages.tsv" "$OUT/reference-apk-repositories.txt"
+          extract_db "$HARDENED_BASE_IMAGE" "$OUT/hardened-installed.raw" "$OUT/hardened-packages.tsv" "$OUT/hardened-apk-repositories.txt"
+          cmp "$OUT/reference-apk-repositories.txt" "$OUT/hardened-apk-repositories.txt"
+
+          python - <<'PY'
+          import json, os, re
+          out=os.environ['OUT']
+          def parse_db(path):
+              raw=open(path,encoding='utf-8').read()
+              pkgs={}
+              for rec in raw.strip().split('\n\n'):
+                  fields={}
+                  for line in rec.splitlines():
+                      if len(line)>2 and line[1]==':':
+                          fields.setdefault(line[0],[]).append(line[2:])
+                  if 'P' not in fields or 'V' not in fields: continue
+                  name=fields['P'][0]
+                  deps=[]
+                  for dep_line in fields.get('D',[]): deps.extend(dep_line.split())
+                  pkgs[name]={'version':fields['V'][0],'deps':deps}
+              return pkgs
+          ref=parse_db(out+'/reference-installed.raw'); hard=parse_db(out+'/hardened-installed.raw')
+          removed=set(ref)-set(hard); added=set(hard)-set(ref)
+          if added: raise SystemExit(f'unexpected packages added by omission-only base delta: {sorted(added)}')
+          roots={'openssh','graphicsmagick'}
+          if not roots <= removed:
+              raise SystemExit(f'authorized top-level packages were not both removed: roots={roots} removed={sorted(removed)}')
+
+          names=set(ref)
+          def dep_target(token):
+              if token.startswith(('!','so:','cmd:','pc:')): return None
+              token=token.lstrip('~')
+              m=re.match(r'^([A-Za-z0-9_.+:-]+?)(?:[<>=~].*)?$',token)
+              if not m: return None
+              name=m.group(1)
+              return name if name in names else None
+          edges={name:set(filter(None,(dep_target(t) for t in meta['deps']))) for name,meta in ref.items()}
+          reverse={name:set() for name in names}
+          for parent,deps in edges.items():
+              for dep in deps: reverse.setdefault(dep,set()).add(parent)
+          reachable=set(); stack=list(roots)
+          while stack:
+              cur=stack.pop()
+              if cur in reachable: continue
+              reachable.add(cur); stack.extend(edges.get(cur,set()))
+          orphaned=removed-reachable
+          if orphaned: raise SystemExit(f'removed packages not attributable to omitted roots: {sorted(orphaned)}')
+          bad={}
+          for pkg in removed:
+              retained_rdeps=sorted(reverse.get(pkg,set())-removed)
+              if retained_rdeps: bad[pkg]=retained_rdeps
+          if bad: raise SystemExit(f'removed package still required by retained package(s): {bad}')
+
+          required={'tini','tzdata','ca-certificates','libc6-compat','librdkafka','libssl3','libcrypto3','libexpat'}
+          missing=required-set(hard)
+          if missing: raise SystemExit(f'required retained runtime package(s) missing: {sorted(missing)}')
+          if 'apk-tools' in hard: raise SystemExit('final hardened base still contains apk-tools')
+          if 'openssh' in hard or 'graphicsmagick' in hard: raise SystemExit('authorized omitted capability remains installed')
+          result={'removed':{p:ref[p]['version'] for p in sorted(removed)},'added':{},
+                  'authorized_roots':sorted(roots),'removed_reachable_from_authorized_roots':True,
+                  'retained_reverse_dependency_violations':{},
+                  'required_retained_versions':{p:hard[p]['version'] for p in sorted(required)}}
+          json.dump(result,open(out+'/package-diff.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
 
       - name: Build exact stable n8n production closure with Node 26.7.0
         working-directory: /tmp/n8n-src
@@ -112,87 +284,113 @@ jobs:
           test -d compiled
           grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
           grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
+          grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
 
-      - name: Build upstream-faithful Node 26.7.0 candidate
+      - name: Build corrected upstream-faithful hardened n8n image
         working-directory: /tmp/n8n-src
         run: |
           set -euo pipefail
-          docker buildx build --platform linux/amd64 --load \
+          docker build --platform linux/amd64 \
+            --build-arg BUILDER_IMAGE="$BUILDER_IMAGE" \
+            --build-arg RUNTIME_IMAGE="$HARDENED_BASE_IMAGE" \
             --build-arg N8N_VERSION="$UPSTREAM_STABLE_VERSION" \
             --build-arg N8N_RELEASE_TYPE=stable \
             -f docker/images/n8n/Dockerfile \
-            -t sitescore-n8n-rebuilt:probe .
-          test "$(docker image inspect sitescore-n8n-rebuilt:probe --format '{{.Architecture}}')" = amd64
-          docker run --rm --entrypoint sh sitescore-n8n-rebuilt:probe -c 'apk info -vv | sort' > "$GITHUB_WORKSPACE/$OUT/packages-before-removal.txt"
+            -t sitescore-n8n-hardened-core:probe .
 
-      - name: Remove only Reviewer-authorized unused OS capabilities
-        run: |
-          set -euo pipefail
-          cat > /tmp/Dockerfile.harden <<'EOF'
-          FROM sitescore-n8n-rebuilt:probe
-          USER root
-          RUN set -eux; \
-              pkgs="$(apk info | grep -E '^(openssh($|-)|graphicsmagick($|-)|tiff($|-))' || true)"; \
-              printf 'authorized_removal_candidates=%s\n' "$pkgs"; \
-              if [ -n "$pkgs" ]; then apk del --no-network $pkgs; fi; \
-              rm -rf /var/cache/apk/* /tmp/*
+          cat > /tmp/Dockerfile.n8n-contract <<'EOF'
+          FROM sitescore-n8n-hardened-core:probe
           ENV NODES_EXCLUDE='["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.emailSend"]'
-          USER node
           EOF
-          docker build --network=none -f /tmp/Dockerfile.harden -t "$PROBE_IMAGE" /tmp
-          docker run --rm --entrypoint sh "$PROBE_IMAGE" -c 'apk info -vv | sort' > "$OUT/packages-after-removal.txt"
-          comm -23 "$OUT/packages-before-removal.txt" "$OUT/packages-after-removal.txt" > "$OUT/packages-removed.txt" || true
-          echo 'REMOVED_PACKAGES:'; cat "$OUT/packages-removed.txt"
-          if grep -Ev '(^openssh|^graphicsmagick|^tiff)' "$OUT/packages-removed.txt" | grep -q .; then
-            echo 'unexpected package removed outside authorized families' >&2; exit 1
-          fi
-          for required in libssl3 libcrypto3 libexpat; do grep -q "^${required}-" "$OUT/packages-after-removal.txt" || { echo "required runtime package missing: $required" >&2; exit 1; }; done
+          docker build --network=none --platform linux/amd64 -f /tmp/Dockerfile.n8n-contract -t "$PROBE_IMAGE" /tmp
+          test "$(docker image inspect "$PROBE_IMAGE" --format '{{.Architecture}}')" = amd64
+          image_id="$(docker image inspect "$PROBE_IMAGE" --format '{{.Id}}')"
+          printf '%s\n' "$image_id" > "$GITHUB_WORKSPACE/$OUT/final-image-id.txt"
+          docker image inspect "$PROBE_IMAGE" > "$GITHUB_WORKSPACE/$OUT/final-image-inspect.json"
 
-      - name: Prove non-root runtime identity and frozen workflow import
+      - name: Prove non-root runtime startup and frozen workflow import
         run: |
           set -euo pipefail
           test "$(docker image inspect "$PROBE_IMAGE" --format '{{.Architecture}}')" = amd64
-          user="$(docker image inspect "$PROBE_IMAGE" --format '{{.Config.User}}')"; test -n "$user" && test "$user" != root && test "$user" != 0
-          version="$(docker run --rm "$PROBE_IMAGE" n8n --version | tr -d '\r' | tail -n1)"; test "$version" = "$UPSTREAM_STABLE_VERSION"
-          image_id="$(docker image inspect "$PROBE_IMAGE" --format '{{.Id}}')"
-          printf 'ARCH=amd64\nUSER=%s\nVERSION=%s\nLOCAL_IMAGE_ID=%s\n' "$user" "$version" "$image_id" | tee "$OUT/runtime-identity.txt"
+          user="$(docker image inspect "$PROBE_IMAGE" --format '{{.Config.User}}')"
+          test -n "$user" && test "$user" != root && test "$user" != 0
+          version="$(docker run --rm "$PROBE_IMAGE" n8n --version | tr -d '\r' | tail -n1)"
+          test "$version" = "$UPSTREAM_STABLE_VERSION"
+          python - <<'PY'
+          import json,os,subprocess
+          out=os.environ['OUT']
+          user=subprocess.check_output(['docker','image','inspect',os.environ['PROBE_IMAGE'],'--format','{{.Config.User}}'],text=True).strip()
+          d={'architecture':'amd64','user':user,'version':os.environ['UPSTREAM_STABLE_VERSION'],
+             'image_id':open(out+'/final-image-id.txt').read().strip()}
+          json.dump(d,open(out+'/runtime-identity.json','w'),indent=2,sort_keys=True)
+          PY
+
+          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev \
+            -e N8N_USER_FOLDER=/tmp/n8n \
+            -e N8N_ENCRYPTION_KEY=ci-only-hardened-probe-encryption-key-000000000000 \
+            -e N8N_DIAGNOSTICS_ENABLED=false \
+            -e N8N_PERSONALIZATION_ENABLED=false \
+            -p 127.0.0.1:15678:5678 "$PROBE_IMAGE")"
+          trap 'docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
+          curl -fsS http://127.0.0.1:15678/healthz >/dev/null
+          docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true
+          docker stop -t 5 "$cid" >/dev/null
+          trap - EXIT
+
           vol="sitescore-hardened-import-${GITHUB_RUN_ID}"
           docker volume create "$vol" >/dev/null
           trap 'docker volume rm -f "$vol" >/dev/null 2>&1 || true' EXIT
           key='ci-only-hardened-probe-encryption-key-000000000000'
-          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" "$PROBE_IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
-          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" "$PROBE_IMAGE" import:workflow --input=/workflows/sitescore-recovery-schedule-v1.json
+          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false \
+            -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" \
+            "$PROBE_IMAGE" import:workflow --input=/workflows/sitescore-order-paid-v1.json
+          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false \
+            -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" \
+            "$PROBE_IMAGE" import:workflow --input=/workflows/sitescore-recovery-schedule-v1.json
           docker volume rm -f "$vol" >/dev/null
           trap - EXIT
+          printf 'ORDER_SHA256=%s\nRECOVERY_SHA256=%s\n' \
+            "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" \
+            "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" \
+            > "$OUT/workflow-hashes.txt"
 
       - name: Generate pinned SPDX and raw Grype evidence
         run: |
           set -euo pipefail
           syft="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
           grype="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          docker pull --platform linux/amd64 "$OFFICIAL_IMAGE" >/dev/null
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft" "$PROBE_IMAGE" -o spdx-json > "$OUT/n8n.spdx.json"
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$PROBE_IMAGE" -o json > "$OUT/n8n.grype.json"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$OFFICIAL_IMAGE" -o json > "$OUT/official-2.37.7.grype.json"
 
       - name: Bind exact upstream OpenVEX and CISA KEV then reconcile
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o "$OUT/cisa-kev.json"
+          curl --fail --location --silent --show-error \
+            https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
+            -o "$OUT/cisa-kev.json"
           python - <<'PY'
           import hashlib,json,os,urllib.request
           out=os.environ['OUT']; ctx=json.load(open(out+'/source-context.json')); token=os.environ['GH_TOKEN']
-          req=urllib.request.Request(f'https://api.github.com/repos/n8n-io/n8n/releases/{ctx["release_id"]}/assets',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-hardened-rebuild'})
+          req=urllib.request.Request(
+              f'https://api.github.com/repos/n8n-io/n8n/releases/{ctx["release_id"]}/assets',
+              headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json',
+                       'X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-hardened-rebuild'})
           with urllib.request.urlopen(req,timeout=30) as r: assets=json.load(r)
           asset=next((a for a in assets if a.get('name')=='vex.openvex.json'),None)
           if not asset: raise SystemExit('exact stable release OpenVEX asset missing')
           json.dump(asset,open(out+'/openvex-asset-metadata.json','w'),indent=2,sort_keys=True)
           urllib.request.urlretrieve(asset['browser_download_url'],out+'/upstream.openvex.json')
-          computed='sha256:'+hashlib.sha256(open(out+'/upstream.openvex.json','rb').read()).hexdigest(); recorded=asset.get('digest')
-          verified=bool(recorded and recorded==computed)
-          json.dump({'asset_id':asset.get('id'),'metadata_digest':recorded,'computed_digest':computed,'verified':verified},open(out+'/openvex-asset-verification.json','w'),indent=2,sort_keys=True)
+          computed='sha256:'+hashlib.sha256(open(out+'/upstream.openvex.json','rb').read()).hexdigest()
+          recorded=asset.get('digest'); verified=bool(recorded and recorded==computed)
+          json.dump({'asset_id':asset.get('id'),'metadata_digest':recorded,'computed_digest':computed,'verified':verified},
+                    open(out+'/openvex-asset-verification.json','w'),indent=2,sort_keys=True)
           if not verified: raise SystemExit('OpenVEX asset digest verification failed')
-          ctx['selected_digest']=json.load(open(out+'/runtime-identity.txt'.replace('.txt','.json')))['x'] if False else 'local-probe-image-id-recorded-separately'
+          ctx['selected_digest']=open(out+'/final-image-id.txt').read().strip()
           json.dump(ctx,open(out+'/release-context.json','w'),indent=2,sort_keys=True)
           print('OPENVEX_ASSET_SHA256_VERIFIED=TRUE')
           PY
@@ -205,36 +403,61 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json,os
-          out=os.environ['OUT']; g=json.load(open(out+'/n8n.grype.json')); r=json.load(open(out+'/n8n.vendor-openvex-reconciliation.json'))
-          findings=[]
-          for row in r:
-              if row['severity'] in {'CRITICAL','HIGH'}: findings.append(row)
-          critical=[x for x in findings if x['severity']=='CRITICAL']
-          high=[x for x in findings if x['severity']=='HIGH']
+          out=os.environ['OUT']
+          rows=json.load(open(out+'/n8n.vendor-openvex-reconciliation.json'))
+          official=json.load(open(out+'/official-2.37.7.grype.json'))
+          blocked=[r for r in rows if r['severity'] in {'CRITICAL','HIGH'} and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']
+          critical=[r for r in blocked if r['severity']=='CRITICAL']
+          high=[r for r in blocked if r['severity']=='HIGH']
+          kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
           nodemailer=[]; other=[]
-          for x in high:
-              ids=set(x.get('scanner_alias_ids') or [])|{str(x.get('scanner_advisory_id') or '')}
-              if x.get('package_name')=='nodemailer' and x.get('installed_version')=='8.0.10' and 'GHSA-P6GQ-J5CR-W38F' in {i.upper() for i in ids}:
-                  nodemailer.append(x)
-              else: other.append(x)
-          summary={'RAW_CRITICAL':len(critical),'RAW_HIGH':len(high),'OTHER_HIGH':len(other),'NODEMAILER_EXCEPTION_CANDIDATES':len(nodemailer),'PRELIMINARY_HARDENED_SECURITY_PASS':len(critical)==0 and len(other)==0 and len(nodemailer)<=1}
+          for r in high:
+              ids={str(x).upper() for x in (r.get('scanner_alias_ids') or [])}
+              ids.add(str(r.get('scanner_advisory_id') or '').upper())
+              if r.get('package_name')=='nodemailer' and r.get('installed_version')=='8.0.10' and 'GHSA-P6GQ-J5CR-W38F' in ids:
+                  nodemailer.append(r)
+              else: other.append(r)
+
+          official_high=set()
+          for m in official.get('matches',[]):
+              v=m.get('vulnerability') or {}; a=m.get('artifact') or {}
+              if str(v.get('severity') or '').upper()=='HIGH':
+                  official_high.add((str(v.get('id')),str(a.get('name'))))
+          new_high=[r for r in high if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
+          ip=[r for r in high if r.get('package_name')=='ip-address']
+          brace=[r for r in high if r.get('package_name')=='brace-expansion']
+          os_high=[r for r in high if r.get('package_type')=='apk']
+          summary={
+              'RAW_CRITICAL':sum(1 for r in rows if r['severity']=='CRITICAL'),
+              'RAW_HIGH':sum(1 for r in rows if r['severity']=='HIGH'),
+              'BLOCKING_CRITICAL':len(critical),'BLOCKING_HIGH':len(high),'CISA_KEV':len(kev),
+              'OS_HIGH_BLOCKING':len(os_high),'IP_ADDRESS_HIGH_BLOCKING':len(ip),
+              'BRACE_EXPANSION_HIGH_BLOCKING':len(brace),'NEW_HIGH_INTRODUCED':len(new_high),
+              'OTHER_HIGH':len(other),'NODEMAILER_EXCEPTION_CANDIDATES':len(nodemailer),
+          }
+          summary['PRELIMINARY_HARDENED_SECURITY_PASS']=(
+              summary['BLOCKING_CRITICAL']==0 and summary['CISA_KEV']==0 and
+              summary['OS_HIGH_BLOCKING']==0 and summary['IP_ADDRESS_HIGH_BLOCKING']==0 and
+              summary['BRACE_EXPANSION_HIGH_BLOCKING']==0 and summary['NEW_HIGH_INTRODUCED']==0 and
+              summary['OTHER_HIGH']==0 and summary['NODEMAILER_EXCEPTION_CANDIDATES']<=1)
           json.dump(summary,open(out+'/hardened-security-summary.json','w'),indent=2,sort_keys=True)
+          json.dump(new_high,open(out+'/new-high-findings.json','w'),indent=2,sort_keys=True)
           print(json.dumps(summary,indent=2,sort_keys=True))
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('prelim='+('pass' if summary['PRELIMINARY_HARDENED_SECURITY_PASS'] else 'fail')+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('prelim='+('pass' if summary['PRELIMINARY_HARDENED_SECURITY_PASS'] else 'fail')+'\n')
           PY
 
-      - name: Prove single nodemailer reachability exception controls
+      - name: Prove nodemailer reachability containment and runtime surface
         if: steps.security.outputs.prelim == 'pass'
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json,os,re
-          out=os.environ['OUT']; s=json.load(open(out+'/hardened-security-summary.json'))
-          assert s['RAW_CRITICAL']==0 and s['OTHER_HIGH']==0
-          PY
           test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
           test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
           ! grep -R -F 'n8n-nodes-base.emailSend' automation/n8n/workflows/*.json
+          ! grep -R -F 'n8n-nodes-base.code' automation/n8n/workflows/*.json
+          ! grep -R -F 'n8n-nodes-base.executeCommand' automation/n8n/workflows/*.json
+          ! grep -R -F 'n8n-nodes-base.readWriteFile' automation/n8n/workflows/*.json
+
           envs="$(docker image inspect "$PROBE_IMAGE" --format '{{json .Config.Env}}')"
           echo "$envs" > "$OUT/image-env.json"
           grep -F 'n8n-nodes-base.emailSend' "$OUT/image-env.json"
@@ -242,11 +465,19 @@ jobs:
           grep -F 'n8n-nodes-base.localFileTrigger' "$OUT/image-env.json"
           ! grep -Eiq 'SMTP|N8N_EMAIL_MODE|N8N_SMTP' automation/n8n/runtime/docker-compose.yml
           grep -F '127.0.0.1:5678:5678' automation/n8n/runtime/docker-compose.yml
-          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n8n -e N8N_ENCRYPTION_KEY=ci-only-hardened-probe-encryption-key-000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -p 127.0.0.1:15678:5678 "$PROBE_IMAGE")"
+
+          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev \
+            -e N8N_USER_FOLDER=/tmp/n8n \
+            -e N8N_ENCRYPTION_KEY=ci-only-hardened-probe-encryption-key-000000000000 \
+            -e N8N_DIAGNOSTICS_ENABLED=false \
+            -e N8N_PERSONALIZATION_ENABLED=false \
+            -p 127.0.0.1:15679:5678 "$PROBE_IMAGE")"
           trap 'docker logs "$cid" > "$OUT/reachability-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
-          for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
-          curl -fsS http://127.0.0.1:15678/healthz >/dev/null
-          code="$(curl -sS -o "$OUT/node-types.json" -w '%{http_code}' http://127.0.0.1:15678/types/nodes.json || true)"
+          for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15679/healthz >/dev/null 2>&1 && break; sleep .5; done
+          curl -fsS http://127.0.0.1:15679/healthz >/dev/null
+          docker inspect "$cid" > "$OUT/reachability-container-inspect.json"
+          ! docker inspect "$cid" --format '{{json .Config.Env}}' | grep -Eiq 'SMTP|N8N_EMAIL_MODE|N8N_SMTP'
+          code="$(curl -sS -o "$OUT/node-types.json" -w '%{http_code}' http://127.0.0.1:15679/types/nodes.json || true)"
           echo "NODE_TYPES_HTTP=$code"
           test "$code" = 200
           ! grep -Fq 'n8n-nodes-base.emailSend' "$OUT/node-types.json"
@@ -254,14 +485,54 @@ jobs:
           docker logs "$cid" > "$OUT/reachability-runtime.log" 2>&1 || true
           docker stop -t 5 "$cid" >/dev/null
           trap - EXIT
+
+          cat > "$OUT/nodemailer-risk-record-probe.md" <<'EOF'
+          # Probe risk record — nodemailer residual
+          Advisory: GHSA-p6gq-j5cr-w38f
+          Package/runtime candidate: nodemailer 8.0.10 in n8n 2.37.7
+          Exploit preconditions controlled by SiteScore: no Send Email node in frozen workflows; emailSend excluded via NODES_EXCLUDE; no SMTP runtime configuration; n8n bound non-public; no Code/Execute Command/Read-Write File node used by frozen workflows.
+          Review owner: SiteScore FAZ 7 Reviewer.
+          Automatic expiry/re-review: upstream stable adopts fixed nodemailer; upstream master adopts a safe fixed path; SiteScore adds email-capable n8n workflow/node; SMTP is configured for n8n; advisory enters CISA KEV; n8n exposure model changes; or FAZ 7 final production-readiness audit, whichever occurs first.
+          Status: PROBE EVIDENCE ONLY. If the candidate is promoted after Reviewer approval, this record must be made permanent in the FAZ 7.1 documentation.
+          EOF
           printf '%s\n' 'NODEMAILER_REACHABILITY_CONTROLS=PASS' > "$OUT/nodemailer-reachability.txt"
 
-      - name: Run frozen n8n static contracts when security permits
+      - name: Run frozen n8n static contracts
         if: steps.security.outputs.prelim == 'pass'
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-input pytest==8.4.2
           python -m pytest -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py | tee "$OUT/static-tests.txt"
+
+      - name: Run order-paid and recovery compatibility smokes on candidate
+        if: steps.security.outputs.prelim == 'pass'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import os,re,difflib
+          out=Path(os.environ['OUT'])
+          paths=[Path('automation/n8n/tests/runtime_smoke.sh'),Path('automation/n8n/tests/recovery_schedule_runtime_smoke.sh'),Path('automation/n8n/tests/recovery_replay_runtime_smoke.sh')]
+          for p in paths:
+              text=p.read_text()
+              patched=text.replace('IMAGE="n8nio/n8n:2.33.4"','IMAGE="sitescore-n8n-hardened:probe"')
+              patched=patched.replace('docker pull "$IMAGE" >/dev/null\n','')
+              patched=patched.replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.7"')
+              patched=re.sub(r'DIGEST="\$\(docker image inspect "\$IMAGE" --format \'\{\{index \.RepoDigests 0\}\}\'\)"\ncase "\$DIGEST" in .*?esac\n',
+                             'DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"\ntest -n "$DIGEST"\n',
+                             patched,count=1,flags=re.S)
+              q=p.with_name('.probe-'+p.name); q.write_text(patched); q.chmod(0o755)
+              (out/(p.name+'.probe.patch')).write_text(''.join(difflib.unified_diff(text.splitlines(True),patched.splitlines(True),fromfile=str(p),tofile=str(q))))
+          PY
+          trap 'rm -f automation/n8n/tests/.probe-runtime_smoke.sh automation/n8n/tests/.probe-recovery_schedule_runtime_smoke.sh automation/n8n/tests/.probe-recovery_replay_runtime_smoke.sh' EXIT
+          bash automation/n8n/tests/.probe-runtime_smoke.sh | tee "$OUT/order-paid-runtime-smoke.txt"
+          bash automation/n8n/tests/.probe-recovery_schedule_runtime_smoke.sh | tee "$OUT/recovery-schedule-runtime-smoke.txt"
+          bash automation/n8n/tests/.probe-recovery_replay_runtime_smoke.sh | tee "$OUT/recovery-replay-runtime-smoke.txt"
+          rm -f automation/n8n/tests/.probe-runtime_smoke.sh automation/n8n/tests/.probe-recovery_schedule_runtime_smoke.sh automation/n8n/tests/.probe-recovery_replay_runtime_smoke.sh
+          trap - EXIT
+          git diff --exit-code
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
 
       - name: Final probe decision
         if: always()
@@ -275,7 +546,11 @@ jobs:
           fi
           test -f "$OUT/nodemailer-reachability.txt"
           grep -F 'NODEMAILER_REACHABILITY_CONTROLS=PASS' "$OUT/nodemailer-reachability.txt"
-          echo 'HARDENED_REBUILD_SECURITY_AND_REACHABILITY_GATE=PASS' | tee "$OUT/final-gate.txt"
+          test -f "$OUT/static-tests.txt"
+          test -f "$OUT/order-paid-runtime-smoke.txt"
+          test -f "$OUT/recovery-schedule-runtime-smoke.txt"
+          test -f "$OUT/recovery-replay-runtime-smoke.txt"
+          echo 'HARDENED_REBUILD_SECURITY_RUNTIME_WORKFLOW_GATE=PASS' | tee "$OUT/final-gate.txt"
 
       - name: Upload hardened rebuild probe evidence
         if: always()
