@@ -54,6 +54,7 @@ APPLICATION_SOURCE_CHANGE: NONE
 BUSINESS_SEMANTICS_CHANGE: NONE
 N8N_WORKFLOW_JSON_CHANGE: NONE
 N8N_APPLICATION_SOURCE_PATCH: NONE
+PERMANENT_FA7_1_SOURCE_CHANGE_FROM_THIS_PROBE: NONE
 SCANNER_SUPPRESSION: NONE
 BLANKET_CVE_IGNORE: NONE
 SITE_SCORE_AUTHORED_VEX: NONE
@@ -265,7 +266,7 @@ additions = 3864
 deletions = 0
 ```
 
-No temporary solver probe remains in the permanent PR diff.
+No temporary solver probe remains in the permanent PR diff. The probe did not modify any of the 20 permanent FAZ 7.1 source paths.
 
 ## 8. Mandatory STOP
 
