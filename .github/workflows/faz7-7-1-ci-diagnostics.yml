@@ -1,0 +1,74 @@
+name: faz7-7-1-ci-diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FAZ6_COMMERCE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+  PYTHON_IMAGE: python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91
+
+jobs:
+  current-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Build exact current test images
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --load --target test --build-arg "SOURCE_REVISION=${GITHUB_SHA}" --build-arg "SOURCE_VERSION=sha-${GITHUB_SHA}" -f deploy/containers/api/Dockerfile -t sitescore-api:test .
+          docker buildx build --platform linux/amd64 --load --target test --build-arg "SOURCE_REVISION=${GITHUB_SHA}" --build-arg "SOURCE_VERSION=sha-${GITHUB_SHA}" -f deploy/containers/commerce/Dockerfile -t sitescore-commerce:test .
+      - name: Run current suites with preserved output
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/diag
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests 2>&1 | tee /tmp/diag/api.txt
+          api_rc=${PIPESTATUS[0]}
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests 2>&1 | tee /tmp/diag/report.txt
+          report_rc=${PIPESTATUS[0]}
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only 2>&1 | tee /tmp/diag/commerce.txt
+          commerce_rc=${PIPESTATUS[0]}
+          set -e
+          printf 'API_RC=%s\nREPORT_RC=%s\nCOMMERCE_RC=%s\n' "$api_rc" "$report_rc" "$commerce_rc"
+          test "$api_rc" -eq 0
+          grep -E '114 passed' /tmp/diag/api.txt
+          test "$report_rc" -eq 0
+          grep -E '24 passed' /tmp/diag/report.txt
+          test "$commerce_rc" -eq 0
+          grep -E '416 passed' /tmp/diag/commerce.txt
+
+  faz6-replay:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+          fetch-depth: 0
+      - name: Start PostgreSQL 16 diagnostic service
+        run: |
+          set -euo pipefail
+          docker pull postgres:16
+          docker image inspect postgres:16 --format '{{index .RepoDigests 0}}' | tee /tmp/postgres-image-digest.txt
+          docker run -d --name faz6-postgres --health-cmd='pg_isready -U ci -d ci' --health-interval=2s --health-timeout=2s --health-retries=30 -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ci -p 127.0.0.1:5432:5432 postgres:16
+          for _ in $(seq 1 60); do docker exec faz6-postgres pg_isready -U ci -d ci && exit 0; sleep 1; done
+          exit 1
+      - name: Replay exact frozen suite with full local package chain
+        run: |
+          set -euo pipefail
+          set +e
+          docker run --rm --network host -e SITESCORE_COMMERCE_DATABASE_URL='postgresql+psycopg://ci:ci@127.0.0.1:5432/ci' -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
+            apt-get update >/dev/null
+            apt-get install -y --no-install-recommends git >/dev/null
+            python -m venv /tmp/faz6-commerce
+            /tmp/faz6-commerce/bin/pip install ./sitescore-core ./sitescore-data ./sitescore-providers ./sitescore-spatial ./sitescore-metrics ./sitescore-benchmarks ./sitescore-pipeline ./sitescore-app ./sitescore-report ./sitescore-api "./sitescore-commerce[test]" >/dev/null
+            /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q
+          ' 2>&1 | tee /tmp/faz6-replay.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "FAZ6_REPLAY_RC=$rc"
+          test "$rc" -eq 0
+          grep -E '417 passed' /tmp/faz6-replay.txt
