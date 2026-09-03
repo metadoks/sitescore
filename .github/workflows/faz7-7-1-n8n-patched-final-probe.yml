@@ -156,19 +156,32 @@ jobs:
           expected=[{'package':'libcrypto3','before':'3.5.7-r1','after':'3.5.8-r0'},{'package':'libexpat','before':'2.8.3-r1','after':'2.8.4-r0'},{'package':'libssl3','before':'3.5.7-r1','after':'3.5.8-r0'}]
           if changes != expected: raise SystemExit(f'unexpected APK version delta: {changes}')
           if open(out+'/repositories.before').read()!=open(out+'/repositories.after').read(): raise SystemExit('repository config changed during pin transaction')
-          if open(out+'/world.before').read()!=open(out+'/world.after').read(): raise SystemExit('apk world changed during security pin transaction')
+          before_world={x.strip() for x in open(out+'/world.before') if x.strip()}
+          after_world={x.strip() for x in open(out+'/world.after') if x.strip()}
+          removed=sorted(before_world-after_world); added=sorted(after_world-before_world)
+          expected_removed=sorted({
+              'libcrypto3><Q1U7lylpTkDql8zqLVx0CGjyz27ko=',
+              'libexpat><Q1iKeTX2sGE4ri2YFOmGbYnPc0LfM=',
+              'libssl3><Q1D+dDwotWSgFk8Db36y7gmNRZA/E=',
+          })
+          expected_added=sorted({'libcrypto3=3.5.8-r0','libexpat=2.8.4-r0','libssl3=3.5.8-r0'})
+          if removed!=expected_removed or added!=expected_added:
+              raise SystemExit(f'unexpected APK world delta: removed={removed} added={added}')
           for p,v in {'libcrypto3':'3.5.8-r0','libssl3':'3.5.8-r0','libexpat':'2.8.4-r0'}.items():
               if final.get(p,{}).get('V',[None])[0]!=v: raise SystemExit(f'final exact pin missing: {p}')
           for forbidden in ('apk-tools','openssh','graphicsmagick'):
               if forbidden in final: raise SystemExit(f'forbidden final package: {forbidden}')
           world={x.strip() for x in open(out+'/final-world.txt') if x.strip()}
           if 'libc6-compat' not in world: raise SystemExit('libc6-compat capability requirement missing')
-          g=final.get('gcompat');
+          for pin in expected_added:
+              if pin not in world: raise SystemExit(f'final apk world exact pin missing: {pin}')
+          g=final.get('gcompat')
           if not g or g.get('V',[''])[0]!='1.1.0-r4' or 'libc6-compat=1.1.0-r4' not in ' '.join(g.get('p',[])): raise SystemExit('gcompat provider proof failed')
           for req in ('tini','tzdata','ca-certificates','librdkafka'):
               if req not in final: raise SystemExit(f'required runtime package missing: {req}')
-          json.dump({'intentional_version_changes':changes,'repositories_unchanged':True,'world_unchanged_during_pin':True,'libc6_provider':'gcompat==1.1.0-r4','final_forbidden_absent':['apk-tools','openssh','graphicsmagick']},open(out+'/package-delta.json','w'),indent=2,sort_keys=True)
-          print(json.dumps(changes,indent=2))
+          record={'intentional_version_changes':changes,'repositories_unchanged':True,'world_delta':{'removed':removed,'added':added},'world_delta_matches_exact_authorized_pins':True,'libc6_provider':'gcompat==1.1.0-r4','final_forbidden_absent':['apk-tools','openssh','graphicsmagick']}
+          json.dump(record,open(out+'/package-delta.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(record,indent=2,sort_keys=True))
           PY
           echo 'pass=pass' >> "$GITHUB_OUTPUT"
 
