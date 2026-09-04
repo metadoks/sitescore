@@ -16,6 +16,7 @@ env:
   FAZ6_COMMERCE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
   PYTHON_IMAGE: python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91
   POSTGRES_IMAGE: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+  VALKEY_IMAGE: valkey/valkey:8.1.10-alpine3.24@sha256:95726b32393eb4214e972149b1d8b1fc7c04ee4d67aae6b65a83ed475f17b7c5
 
 jobs:
   source-boundary:
@@ -148,7 +149,7 @@ jobs:
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
           for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
-            git fetch --depth=1 origin "$sha"
+            git fetch --no-tags origin "$sha"
           done
 
       - name: Build linux amd64 runtime and test images
@@ -195,12 +196,19 @@ jobs:
           pg_cid="$(docker run -d --rm --name faz7-regression-postgres \
             -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \
             -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
-          trap 'docker rm -f "$pg_cid" >/dev/null 2>&1 || true' EXIT
+          valkey_cid="$(docker run -d --rm --name faz7-regression-valkey \
+            -p 127.0.0.1:6379:6379 "$VALKEY_IMAGE")"
+          trap 'docker rm -f "$pg_cid" "$valkey_cid" >/dev/null 2>&1 || true' EXIT
           for _ in $(seq 1 60); do
             if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
             sleep 1
           done
           docker exec "$pg_cid" pg_isready -U ci -d postgres
+          for _ in $(seq 1 60); do
+            if [ "$(docker exec "$valkey_cid" valkey-cli ping 2>/dev/null || true)" = PONG ]; then break; fi
+            sleep 1
+          done
+          test "$(docker exec "$valkey_cid" valkey-cli ping)" = PONG
           docker exec "$pg_cid" createdb -U ci api_ci
           docker exec "$pg_cid" createdb -U ci commerce_ci
           api_db='postgresql+psycopg://ci:ci@127.0.0.1:5432/api_ci'
@@ -212,7 +220,9 @@ jobs:
 
           set +e
           docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \
-            -e SITESCORE_DATABASE_URL="$api_db" sitescore-api:test \
+            -e SITESCORE_DATABASE_URL="$api_db" \
+            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 \
+            sitescore-api:test \
             python -m pytest -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
           api_rc=$?
           set -e
@@ -261,7 +271,7 @@ jobs:
           cat /tmp/commerce-tests.txt
           test "$commerce_rc" -eq 0
           grep -E '416 passed' /tmp/commerce-tests.txt
-          docker rm -f "$pg_cid" >/dev/null
+          docker rm -f "$pg_cid" "$valkey_cid" >/dev/null
           trap - EXIT
 
       - name: Prove API web worker beat commands and PDF font runtime
@@ -403,7 +413,7 @@ jobs:
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
           for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
-            git fetch --depth=1 origin "$sha"
+            git fetch --no-tags origin "$sha"
           done
 
       - name: Replay frozen FAZ6 Commerce 417-pass baseline
