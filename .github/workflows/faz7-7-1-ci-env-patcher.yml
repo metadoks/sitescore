@@ -1,0 +1,122 @@
+name: faz7-7-1-ci-env-patcher
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Emit CI environment-corrected workflow blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, json, os, urllib.request
+
+          p = Path('.github/workflows/faz7-container-ci.yml')
+          s = p.read_text()
+
+          old = '  POSTGRES_IMAGE: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94\n'
+          new = old + '  VALKEY_IMAGE: valkey/valkey:8.1.10-alpine3.24@sha256:95726b32393eb4214e972149b1d8b1fc7c04ee4d67aae6b65a83ed475f17b7c5\n'
+          if old not in s:
+              raise SystemExit('POSTGRES_IMAGE anchor missing')
+          s = s.replace(old, new, 1)
+
+          count = s.count('git fetch --depth=1 origin "$sha"')
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 shallow provenance fetches, got {count}')
+          s = s.replace('git fetch --depth=1 origin "$sha"', 'git fetch --no-tags origin "$sha"')
+
+          old = '''          pg_cid="$(docker run -d --rm --name faz7-regression-postgres \\
+            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \\
+            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
+          trap 'docker rm -f "$pg_cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 60); do
+            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$pg_cid" pg_isready -U ci -d postgres
+'''
+          new = '''          pg_cid="$(docker run -d --rm --name faz7-regression-postgres \\
+            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \\
+            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
+          valkey_cid="$(docker run -d --rm --name faz7-regression-valkey \\
+            -p 127.0.0.1:6379:6379 "$VALKEY_IMAGE")"
+          trap 'docker rm -f "$pg_cid" "$valkey_cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 60); do
+            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$pg_cid" pg_isready -U ci -d postgres
+          for _ in $(seq 1 60); do
+            if [ "$(docker exec "$valkey_cid" valkey-cli ping 2>/dev/null || true)" = PONG ]; then break; fi
+            sleep 1
+          done
+          test "$(docker exec "$valkey_cid" valkey-cli ping)" = PONG
+'''
+          if old not in s:
+              raise SystemExit('regression service block missing')
+          s = s.replace(old, new, 1)
+
+          old = '''          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \\
+            -e SITESCORE_DATABASE_URL="$api_db" sitescore-api:test \\
+            python -m pytest -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+'''
+          new = '''          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \\
+            -e SITESCORE_DATABASE_URL="$api_db" \\
+            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 \\
+            sitescore-api:test \\
+            python -m pytest -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+'''
+          if old not in s:
+              raise SystemExit('API pytest block missing')
+          s = s.replace(old, new, 1)
+
+          old = '''          docker rm -f "$pg_cid" >/dev/null
+          trap - EXIT
+
+      - name: Prove API web worker beat commands and PDF font runtime
+'''
+          new = '''          docker rm -f "$pg_cid" "$valkey_cid" >/dev/null
+          trap - EXIT
+
+      - name: Prove API web worker beat commands and PDF font runtime
+'''
+          if old not in s:
+              raise SystemExit('regression cleanup block missing')
+          s = s.replace(old, new, 1)
+
+          data = s.encode()
+          p.write_bytes(data)
+          payload = json.dumps({'content': base64.b64encode(data).decode(), 'encoding': 'base64'}).encode()
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/git/blobs',
+              data=payload,
+              method='POST',
+              headers={
+                  'Authorization': f'Bearer {os.environ["GH_TOKEN"]}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'sitescore-faz7-ci-env-patch',
+              },
+          )
+          with urllib.request.urlopen(req, timeout=30) as response:
+              result = json.load(response)
+          print('PATCHED_BLOB_SHA=' + result['sha'])
+          print('PATCHED_WORKFLOW_SHA256=' + hashlib.sha256(data).hexdigest())
+          PY
