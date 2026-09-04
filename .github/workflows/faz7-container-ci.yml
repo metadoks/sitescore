@@ -223,7 +223,7 @@ jobs:
             -e SITESCORE_DATABASE_URL="$api_db" \
             -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 \
             sitescore-api:test \
-            python -m pytest -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
           api_rc=$?
           set -e
           cat /tmp/api-tests.txt
@@ -232,7 +232,7 @@ jobs:
 
           set +e
           docker run --rm -v "$PWD:/testsrc:ro" -w /testsrc sitescore-api:test \
-            python -m pytest -q -p no:cacheprovider /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
           report_rc=$?
           set -e
           cat /tmp/report-tests.txt
@@ -263,7 +263,7 @@ jobs:
             -e PYTHONPATH=/testsrc/sitescore-commerce/src \
             -e SITESCORE_COMMERCE_DATABASE_URL="$commerce_db" \
             sitescore-commerce:test-integration \
-            python -m pytest -q -p no:cacheprovider /testsrc/sitescore-commerce/tests \
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-commerce/tests \
               --deselect /testsrc/sitescore-commerce/tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only \
             > /tmp/commerce-tests.txt 2>&1
           commerce_rc=$?
@@ -303,7 +303,7 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
             celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
           set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -o addopts='' -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
           pdf_rc=$?
           set -e
           cat /tmp/pdf-test.txt
@@ -445,7 +445,7 @@ jobs:
                 ./sitescore-core ./sitescore-data ./sitescore-providers ./sitescore-spatial \
                 ./sitescore-metrics ./sitescore-benchmarks ./sitescore-pipeline ./sitescore-app \
                 ./sitescore-report ./sitescore-api "./sitescore-commerce[test]" >/dev/null
-              /tmp/faz6-commerce/bin/python -m pytest -q -p no:cacheprovider sitescore-commerce/tests
+              /tmp/faz6-commerce/bin/python -m pytest -o addopts='' -q -p no:cacheprovider sitescore-commerce/tests
             ' > /tmp/faz6-replay.txt 2>&1
           replay_rc=$?
           set -e

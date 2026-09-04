@@ -1,4 +1,4 @@
-name: faz7-7-1-n8n-apk-solver-probe
+name: faz7-7-1-n8n-2379-hardened-probe
 
 on:
   pull_request:
@@ -12,11 +12,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      UPSTREAM_STABLE_VERSION: '2.37.7'
-      UPSTREAM_STABLE_COMMIT: '2a4ca7868dc75edca4c575d6507021e1e6b0ec90'
-      UPSTREAM_STABLE_TREE: '40ff00093dbc474f82b4a133eb8ca51a3c76734a'
-      OFFICIAL_IMAGE: 'n8nio/n8n@sha256:869500232f49760d6a422d320d3ead3cb28ee93a00e6f67c89eb3d6b81acd6be'
-      UPSTREAM_MASTER_COMMIT: 'efd3ec9e260ef9ac7d9cbc134952590bedd33acb'
+      UPSTREAM_STABLE_VERSION: '2.37.9'
+      UPSTREAM_STABLE_COMMIT: '073ec4552a6675a10f5b212d55bdc00c91d4829b'
+      UPSTREAM_STABLE_TREE: 'e825fca3c49cca4c0dddf23a9fc426a289118ed1'
+      OFFICIAL_IMAGE: 'n8nio/n8n@sha256:ed6bbab565eddbb688f394594cb2932d2b3b24f02240299a8fcce78bfe4201db'
+      UPSTREAM_MASTER_COMMIT: 'fd105a6dc2cd51b5e5fd64c2efad57e6801d2325'
+      UPSTREAM_DEP_EVIDENCE_COMMIT: '64de0e71db286afb7537324aa4367a3f97cd6d19'
       MASTER_DOCKERFILE_BLOB: 'f72e1a3f3aae40319e58989e5fc2a71e687a1b59'
       MASTER_BASE_DOCKERFILE_BLOB: '1f2a82aa961a389750d774c88735fb11c5ae7c45'
       MASTER_BASE_WORKFLOW_BLOB: 'dd9e3badecd4fc1c5e4a51668824f5f214becaae'
@@ -27,7 +28,7 @@ jobs:
       HARDENED_BASE_IMAGE: 'sitescore-n8n-base-hardened:26.7.0'
       SOLVER_BASE_IMAGE: 'sitescore-n8n-base-solver-evidence:26.7.0'
       PROBE_IMAGE: 'sitescore-n8n-hardened:probe'
-      OUT: 'deploy/containers/artifacts/n8n-apk-solver-probe'
+      OUT: 'deploy/containers/artifacts/n8n-2379-hardened-probe'
 
     steps:
       - name: Checkout SiteScore exact source
@@ -89,6 +90,7 @@ jobs:
               'stable_source_tree':os.environ['UPSTREAM_STABLE_TREE'],
               'official_image':os.environ['OFFICIAL_IMAGE'],
               'master_build_commit':os.environ['UPSTREAM_MASTER_COMMIT'],
+              'dependency_security_evidence_commit':os.environ['UPSTREAM_DEP_EVIDENCE_COMMIT'],
               'builder_image':os.environ['BUILDER_IMAGE'],
               'upstream_runtime_image':os.environ['UPSTREAM_RUNTIME_IMAGE'],
               'dhi_ref':os.environ['DHI_REF'],
@@ -104,13 +106,15 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/n8n-src
           git clone --filter=blob:none --no-checkout https://github.com/n8n-io/n8n.git /tmp/n8n-src
-          git -C /tmp/n8n-src fetch --depth=1 origin "$UPSTREAM_STABLE_COMMIT" "$UPSTREAM_MASTER_COMMIT"
+          git -C /tmp/n8n-src fetch --depth=1 origin "$UPSTREAM_STABLE_COMMIT" "$UPSTREAM_MASTER_COMMIT" "$UPSTREAM_DEP_EVIDENCE_COMMIT"
           git -C /tmp/n8n-src checkout --detach "$UPSTREAM_STABLE_COMMIT"
           test "$(git -C /tmp/n8n-src rev-parse HEAD)" = "$UPSTREAM_STABLE_COMMIT"
           test "$(git -C /tmp/n8n-src rev-parse HEAD^{tree})" = "$UPSTREAM_STABLE_TREE"
           test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:docker/images/n8n/Dockerfile")" = "$MASTER_DOCKERFILE_BLOB"
-          test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:docker/images/n8n-base/Dockerfile")" = "$MASTER_BASE_DOCKERFILE_BLOB"
-          test "$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:.github/workflows/build-base-image.yml")" = "$MASTER_BASE_WORKFLOW_BLOB"
+          actual_base_blob="$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:docker/images/n8n-base/Dockerfile")"
+          printf 'ACTUAL_MASTER_BASE_DOCKERFILE_BLOB=%s\n' "$actual_base_blob" >> "$GITHUB_WORKSPACE/$OUT/upstream-derived-blobs.txt"
+          actual_base_workflow_blob="$(git -C /tmp/n8n-src rev-parse "$UPSTREAM_MASTER_COMMIT:.github/workflows/build-base-image.yml")"
+          printf 'ACTUAL_MASTER_BASE_WORKFLOW_BLOB=%s\n' "$actual_base_workflow_blob" >> "$GITHUB_WORKSPACE/$OUT/upstream-derived-blobs.txt"
 
           git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:docker/images/n8n-base/Dockerfile" > "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
           git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:.github/workflows/build-base-image.yml" > "$GITHUB_WORKSPACE/$OUT/upstream-build-base-image.yml"
@@ -121,19 +125,68 @@ jobs:
           grep -F 'graphicsmagick \' "$GITHUB_WORKSPACE/$OUT/upstream-base-Dockerfile"
           grep -F 'ip-address@10: 10.3.1' /tmp/n8n-src/pnpm-workspace.yaml
           grep -F 'brace-expansion@5: 5.0.9' /tmp/n8n-src/pnpm-workspace.yaml
+          grep -F 'fast-uri: 3.1.5' /tmp/n8n-src/pnpm-workspace.yaml
           git -C /tmp/n8n-src diff --exit-code
+          git -C /tmp/n8n-src show "$UPSTREAM_DEP_EVIDENCE_COMMIT:pnpm-workspace.yaml" > "$GITHUB_WORKSPACE/$OUT/upstream-security-overrides-evidence.yaml"
+          grep -F 'fast-uri: 3.1.6' "$GITHUB_WORKSPACE/$OUT/upstream-security-overrides-evidence.yaml"
+          grep -F 'ip-address@10: 10.3.1' "$GITHUB_WORKSPACE/$OUT/upstream-security-overrides-evidence.yaml"
+          grep -F 'brace-expansion@5: 5.0.9' "$GITHUB_WORKSPACE/$OUT/upstream-security-overrides-evidence.yaml"
+          cp /tmp/n8n-src/pnpm-workspace.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.pre.yaml"
+          cp /tmp/n8n-src/pnpm-lock.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-lock.pre.yaml"
+          python - <<'PYDEP'
+          from pathlib import Path
+          p=Path('/tmp/n8n-src/pnpm-workspace.yaml'); text=p.read_text()
+          old='  fast-uri: 3.1.5\n'; new='  fast-uri: 3.1.6\n'
+          if text.count(old)!=1: raise SystemExit(f'expected one stable fast-uri override, got {text.count(old)}')
+          p.write_text(text.replace(old,new,1))
+          PYDEP
+          (cd /tmp/n8n-src && pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts)
+          cp /tmp/n8n-src/pnpm-workspace.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.post.yaml"
+          cp /tmp/n8n-src/pnpm-lock.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-lock.post.yaml"
+          git -C /tmp/n8n-src diff -- pnpm-workspace.yaml pnpm-lock.yaml > "$GITHUB_WORKSPACE/$OUT/dependency-security-delta.patch"
+          python - <<'PYLOCK'
+          from pathlib import Path
+          import difflib
+          pre=Path('/tmp/n8n-src').joinpath('pnpm-lock.yaml')
+          before=Path(Path.cwd() / __import__('os').environ['OUT'] / 'pnpm-lock.pre.yaml').read_text().splitlines(True)
+          after=pre.read_text().splitlines(True)
+          diff=list(difflib.unified_diff(before,after,n=4))
+          hunks=[]; current=[]
+          for line in diff:
+              if line.startswith('@@'):
+                  if current: hunks.append(current)
+                  current=[line]
+              elif current:
+                  current.append(line)
+          if current: hunks.append(current)
+          allowed=('fast-uri','ip-address','brace-expansion')
+          bad=[h for h in hunks if not any(tok in ''.join(h) for tok in allowed)]
+          if bad:
+              raise SystemExit('pnpm lock delta contains non-authorized hunk: '+''.join(bad[0])[:2000])
+          workspace=Path('/tmp/n8n-src/pnpm-workspace.yaml').read_text()
+          if '  fast-uri: 3.1.6\n' not in workspace or '  fast-uri: 3.1.5\n' in workspace:
+              raise SystemExit('fast-uri workspace override delta invalid')
+          lock=''.join(after)
+          required=('fast-uri@3.1.6','ip-address@10.3.1','brace-expansion@5.0.9')
+          for token in required:
+              if token not in lock: raise SystemExit(f'fixed lock token missing: {token}')
+          for token in ('fast-uri@3.1.5','ip-address@10.2.0','brace-expansion@5.0.8'):
+              if token in lock: raise SystemExit(f'vulnerable lock token remains: {token}')
+          print('DEPENDENCY_SECURITY_LOCK_DELTA=AUTHORIZED_ONLY')
+          PYLOCK
 
           cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$GITHUB_WORKSPACE/$OUT/stable-Dockerfile"
           git -C /tmp/n8n-src show "$UPSTREAM_MASTER_COMMIT:docker/images/n8n/Dockerfile" > /tmp/n8n-src/docker/images/n8n/Dockerfile
           cp /tmp/n8n-src/docker/images/n8n/Dockerfile "$GITHUB_WORKSPACE/$OUT/master-Dockerfile-used"
           git -C /tmp/n8n-src diff -- docker/images/n8n/Dockerfile > "$GITHUB_WORKSPACE/$OUT/build-metadata-delta.patch"
-          test "$(git -C /tmp/n8n-src diff --name-only)" = 'docker/images/n8n/Dockerfile'
+          test "$(git -C /tmp/n8n-src diff --name-only)" = $'docker/images/n8n/Dockerfile\npnpm-lock.yaml\npnpm-workspace.yaml'
           grep -F "$BUILDER_IMAGE" /tmp/n8n-src/docker/images/n8n/Dockerfile
           grep -F "$UPSTREAM_RUNTIME_IMAGE" /tmp/n8n-src/docker/images/n8n/Dockerfile
           cat > "$GITHUB_WORKSPACE/$OUT/source-identities.txt" <<EOF
           STABLE_SOURCE_COMMIT=$UPSTREAM_STABLE_COMMIT
           STABLE_SOURCE_TREE=$UPSTREAM_STABLE_TREE
           MASTER_BUILD_COMMIT=$UPSTREAM_MASTER_COMMIT
+          DEPENDENCY_SECURITY_EVIDENCE_COMMIT=$UPSTREAM_DEP_EVIDENCE_COMMIT
           MASTER_N8N_DOCKERFILE_BLOB=$MASTER_DOCKERFILE_BLOB
           MASTER_BASE_DOCKERFILE_BLOB=$MASTER_BASE_DOCKERFILE_BLOB
           MASTER_BASE_WORKFLOW_BLOB=$MASTER_BASE_WORKFLOW_BLOB
@@ -155,6 +208,15 @@ jobs:
               if hard.count(line) != 1:
                   raise SystemExit(f'expected exactly one authorized omission line: {line!r}')
               hard=hard.replace(line,'')
+          pin_marker='    # Cleanup\n'
+          pin_block=(
+              "    apk add --no-cache --upgrade \\\n"
+              "        'libcrypto3=3.5.8-r0' \\\n"
+              "        'libssl3=3.5.8-r0' \\\n"
+              "        'libexpat=2.8.4-r0' && \\\n"
+          )
+          if hard.count(pin_marker)!=1: raise SystemExit('exact runtime pin insertion marker missing')
+          hard=hard.replace(pin_marker,pin_block+pin_marker,1)
           solver=src
           needle='    apk del apk-tools\n'
           if solver.count(needle) != 1:
@@ -167,6 +229,7 @@ jobs:
           Path(os.environ['OUT']+'/solver-evidence.patch').write_text(''.join(difflib.unified_diff(
               src.splitlines(True),solver.splitlines(True),fromfile='upstream-base-Dockerfile',tofile='solver-evidence-Dockerfile')))
           json.dump({'production_delta':{'deliberate_omissions':['openssh','graphicsmagick']},
+                     'runtime_security_delta':{'libcrypto3':'3.5.8-r0','libssl3':'3.5.8-r0','libexpat':'2.8.4-r0'},
                      'evidence_only_delta':'defer final apk del apk-tools until solver proof'},
                     open(os.environ['OUT']+'/base-construction-delta.json','w'),indent=2,sort_keys=True)
           PY
@@ -230,7 +293,11 @@ jobs:
               cat /etc/apk/repositories > /evidence/solver-pre-repositories.txt
               cat /etc/apk/world > /evidence/solver-pre-world.txt
               cat /lib/apk/db/installed > /evidence/solver-pre-installed.raw
-              { echo "COMMAND=apk del openssh graphicsmagick"; apk del openssh graphicsmagick; } > /evidence/solver-transaction.log 2>&1
+              apk policy libcrypto3 libssl3 libexpat > /evidence/runtime-pin-policy.txt
+              { echo "COMMAND=apk del openssh graphicsmagick"; apk del openssh graphicsmagick; \
+                echo "COMMAND=apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 libexpat=2.8.4-r0"; \
+                apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0'; \
+              } > /evidence/solver-transaction.log 2>&1
               cat /etc/apk/world > /evidence/solver-post-world.txt
               cat /lib/apk/db/installed > /evidence/solver-post-installed.raw
               { echo "COMMAND=apk del apk-tools"; apk del apk-tools; } >> /evidence/solver-transaction.log 2>&1
@@ -251,53 +318,69 @@ jobs:
           ! grep -Fxq 'graphicsmagick' "$OUT/solver-post-world.txt"
           grep -F 'COMMAND=apk del openssh graphicsmagick' "$OUT/solver-transaction.log"
           grep -F 'COMMAND=apk del apk-tools' "$OUT/solver-transaction.log"
+          grep -F 'COMMAND=apk add --no-cache --upgrade libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 libexpat=2.8.4-r0' "$OUT/solver-transaction.log"
+          grep -F 'libcrypto3' "$OUT/runtime-pin-policy.txt"
+          grep -F 'libssl3' "$OUT/runtime-pin-policy.txt"
+          grep -F 'libexpat' "$OUT/runtime-pin-policy.txt"
 
           python - <<'PY'
           import json, os
           out=os.environ['OUT']
           def read(path):
-              rows=[]
+              result={}
               for line in open(path,encoding='utf-8'):
                   line=line.rstrip('\n')
                   if not line: continue
-                  p,v=line.split('\t',1); rows.append((p,v))
-              return rows
-          ref=read(out+'/reference-packages.tsv')
-          hard=read(out+'/hardened-packages.tsv')
-          pre=read(out+'/solver-pre-packages.tsv')
-          post=read(out+'/solver-post-packages.tsv')
-          final=read(out+'/solver-final-packages.tsv')
-          sref,shard,spre,spost,sfinal=map(set,(ref,hard,pre,post,final))
-          added=sorted(shard-sref)
-          if added: raise SystemExit(f'hardened contains package/version absent from reference: {added}')
-          apk_rows=[x for x in spre if x[0]=='apk-tools']
-          if len(apk_rows)!=1: raise SystemExit(f'solver pre-state must contain exactly one apk-tools row: {apk_rows}')
-          if spre-{apk_rows[0]} != sref or sref-(spre-{apk_rows[0]}):
-              raise SystemExit('solver pre-state excluding evidence apk-tools is not exact reference final inventory')
-          if sfinal != shard:
-              only_solver=sorted(sfinal-shard); only_hardened=sorted(shard-sfinal)
-              raise SystemExit(f'APK solver final inventory differs from omission-built hardened final; solver_only={only_solver}; hardened_only={only_hardened}')
-          roots={'openssh','graphicsmagick'}
-          removed_ref=sorted(sref-shard)
-          if not roots <= {p for p,_ in removed_ref}:
-              raise SystemExit(f'authorized roots not both absent from hardened diff: {removed_ref}')
-          solver_removed=sorted((spre-{apk_rows[0]})-sfinal)
-          if set(solver_removed)!=set(removed_ref):
-              raise SystemExit(f'reference-minus-hardened != APK solver removal closure: diff={removed_ref}; solver={solver_removed}')
-          required={'tini','tzdata','ca-certificates','libc6-compat','librdkafka','libssl3','libcrypto3','libexpat'}
-          hard_map=dict(hard)
-          missing=sorted(required-set(hard_map))
+                  p,v=line.split('\t',1); result[p]=v
+              return result
+          ref=read(out+'/reference-packages.tsv'); hard=read(out+'/hardened-packages.tsv')
+          pre=read(out+'/solver-pre-packages.tsv'); post=read(out+'/solver-post-packages.tsv'); final=read(out+'/solver-final-packages.tsv')
+          apk_version=pre.get('apk-tools')
+          if not apk_version: raise SystemExit('solver pre-state missing apk-tools')
+          pre_wo=dict(pre); pre_wo.pop('apk-tools')
+          if pre_wo != ref: raise SystemExit('solver pre-state excluding apk-tools is not exact reference inventory')
+          post_wo=dict(post); post_wo.pop('apk-tools',None)
+          if post_wo != hard: raise SystemExit('solver post-state excluding apk-tools != hardened final inventory')
+          if final != hard: raise SystemExit('solver final inventory != hardened final inventory')
+          expected_pins={'libcrypto3':'3.5.8-r0','libssl3':'3.5.8-r0','libexpat':'2.8.4-r0'}
+          changed={p:(ref[p],hard[p]) for p in sorted(set(ref)&set(hard)) if ref[p]!=hard[p]}
+          if set(changed)!=set(expected_pins): raise SystemExit(f'unexpected package version delta: {changed}')
+          for p,v in expected_pins.items():
+              if hard.get(p)!=v: raise SystemExit(f'exact runtime pin missing: {p}={hard.get(p)} expected {v}')
+          added=sorted(set(hard)-set(ref))
+          allowed_world_pin_names=set(expected_pins)
+          if added: raise SystemExit(f'unexpected added installed packages: {added}')
+          removed=sorted(set(ref)-set(hard))
+          if not {'openssh','graphicsmagick'} <= set(removed): raise SystemExit(f'authorized removal roots missing: {removed}')
+          for forbidden in ('apk-tools','openssh','graphicsmagick'):
+              if forbidden in hard: raise SystemExit(f'forbidden package remains: {forbidden}')
+          required={'tini','tzdata','ca-certificates','librdkafka','libssl3','libcrypto3','libexpat','gcompat'}
+          missing=sorted(required-set(hard))
           if missing: raise SystemExit(f'required retained packages missing: {missing}')
-          if 'apk-tools' in hard_map or 'openssh' in hard_map or 'graphicsmagick' in hard_map:
-              raise SystemExit('forbidden package remains in hardened final')
+          if hard.get('gcompat')!='1.1.0-r4': raise SystemExit(f'unexpected libc6 provider: {hard.get("gcompat")}')
+          world={x.strip() for x in open(out+'/hardened-world.txt') if x.strip()}
+          if 'libc6-compat' not in world: raise SystemExit('APK world lost libc6-compat capability requirement')
+          raw=open(out+'/hardened-installed.raw').read(); gcompat=None
+          for rec in raw.strip().split('\n\n'):
+              lines=rec.splitlines()
+              if 'P:gcompat' in lines: gcompat=lines; break
+          if not gcompat: raise SystemExit('gcompat installed record missing')
+          provides=' '.join(x[2:] for x in gcompat if x.startswith('p:'))
+          replaces=' '.join(x[2:] for x in gcompat if x.startswith('r:'))
+          if 'libc6-compat=1.1.0-r4' not in provides or 'libc6-compat' not in replaces:
+              raise SystemExit(f'gcompat does not prove libc6-compat relation: provides={provides} replaces={replaces}')
+          ref_world={x.strip() for x in open(out+'/reference-world.txt') if x.strip()}
+          added_world=sorted(world-ref_world); removed_world=sorted(ref_world-world)
+          allowed_added={'libcrypto3=3.5.8-r0','libssl3=3.5.8-r0','libexpat=2.8.4-r0'}
+          if set(added_world)-allowed_added: raise SystemExit(f'unexpected top-level world additions: {added_world}')
+          if not {'openssh','graphicsmagick'} <= set(removed_world): raise SystemExit(f'world removal roots missing: {removed_world}')
           summary={
               'REFERENCE_BASE_BUILD':'PASS','HARDENED_BASE_BUILD':'PASS','SOLVER_EVIDENCE_BASE_BUILD':'PASS',
               'APK_SOLVER_TRANSACTION':'PASS','APK_SOLVER_FINAL_INVENTORY_EQUALS_HARDENED':'PASS',
-              'HARDENED_PACKAGE_DIFF':'PASS','reference_count':len(ref),'hardened_count':len(hard),
-              'solver_pre_count':len(pre),'solver_post_count':len(post),'solver_final_count':len(final),
-              'authorized_roots':sorted(roots),
-              'removed_package_closure':[{'name':p,'version':v} for p,v in removed_ref],
-              'required_retained_versions':{p:hard_map[p] for p in sorted(required)},
+              'APK_RUNTIME_PIN_DELTA':'PASS','LIBC6_COMPAT_CAPABILITY':'SATISFIED_BY_GCOMPAT_1.1.0-r4',
+              'reference_count':len(ref),'hardened_count':len(hard),'solver_pre_count':len(pre),'solver_post_count':len(post),'solver_final_count':len(final),
+              'removed_package_names':removed,'changed_versions':changed,'world_added':added_world,'world_removed':removed_world,
+              'required_retained_versions':{p:hard[p] for p in sorted(required)},
           }
           json.dump(summary,open(out+'/apk-solver-proof.json','w'),indent=2,sort_keys=True)
           print(json.dumps(summary,indent=2,sort_keys=True))
@@ -311,7 +394,7 @@ jobs:
         env:
           CI: 'true'
           NODE_OPTIONS: '--max-old-space-size=7168'
-          RELEASE: '2.37.7'
+          RELEASE: '2.37.9'
         run: |
           set -euo pipefail
           test "$(node --version)" = 'v26.7.0'
@@ -320,6 +403,10 @@ jobs:
           test -d compiled
           grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
           grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
+          grep -R '"version": "3.1.6"' compiled/node_modules/.pnpm/fast-uri@3.1.6*/node_modules/fast-uri/package.json
+! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'fast-uri@3.1.5*' -print -quit | grep -q .
+! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'ip-address@10.2.0*' -print -quit | grep -q .
+! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'brace-expansion@5.0.8*' -print -quit | grep -q .
           grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
 
       - name: Build upstream-faithful hardened n8n image
@@ -390,7 +477,7 @@ jobs:
           docker pull --platform linux/amd64 "$OFFICIAL_IMAGE" >/dev/null
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft" "$PROBE_IMAGE" -o spdx-json > "$OUT/n8n.spdx.json"
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$PROBE_IMAGE" -o json > "$OUT/n8n.grype.json"
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$OFFICIAL_IMAGE" -o json > "$OUT/official-2.37.7.grype.json"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$OFFICIAL_IMAGE" -o json > "$OUT/official-2.37.9.grype.json"
 
       - name: Bind exact upstream OpenVEX and CISA KEV then reconcile
         if: steps.solver.outputs.pass == 'pass'
@@ -431,7 +518,7 @@ jobs:
           import json,os
           out=os.environ['OUT']
           rows=json.load(open(out+'/n8n.vendor-openvex-reconciliation.json'))
-          official=json.load(open(out+'/official-2.37.7.grype.json'))
+          official=json.load(open(out+'/official-2.37.9.grype.json'))
           blocked=[r for r in rows if r['severity'] in {'CRITICAL','HIGH'} and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']
           critical=[r for r in blocked if r['severity']=='CRITICAL']; high=[r for r in blocked if r['severity']=='HIGH']
           kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
@@ -447,16 +534,17 @@ jobs:
               if str(v.get('severity') or '').upper()=='HIGH': official_high.add((str(v.get('id')),str(a.get('name'))))
           new_high=[r for r in high if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
           ip=[r for r in high if r.get('package_name')=='ip-address']; brace=[r for r in high if r.get('package_name')=='brace-expansion']
+          fast_uri=[r for r in high if r.get('package_name')=='fast-uri']
           os_high=[r for r in high if r.get('package_type')=='apk']
           summary={
               'RAW_CRITICAL':sum(1 for r in rows if r['severity']=='CRITICAL'),
               'RAW_HIGH':sum(1 for r in rows if r['severity']=='HIGH'),
               'BLOCKING_CRITICAL':len(critical),'BLOCKING_HIGH':len(high),'CISA_KEV':len(kev),
               'OS_HIGH_BLOCKING':len(os_high),'IP_ADDRESS_HIGH_BLOCKING':len(ip),
-              'BRACE_EXPANSION_HIGH_BLOCKING':len(brace),'NEW_HIGH_INTRODUCED':len(new_high),
+              'BRACE_EXPANSION_HIGH_BLOCKING':len(brace),'FAST_URI_HIGH_BLOCKING':len(fast_uri),'NEW_HIGH_INTRODUCED':len(new_high),
               'OTHER_HIGH':len(other),'NODEMAILER_EXCEPTION_CANDIDATES':len(nodemailer)}
           summary['PRELIMINARY_HARDENED_SECURITY_PASS']=(summary['BLOCKING_CRITICAL']==0 and summary['CISA_KEV']==0 and
-              summary['OS_HIGH_BLOCKING']==0 and summary['IP_ADDRESS_HIGH_BLOCKING']==0 and summary['BRACE_EXPANSION_HIGH_BLOCKING']==0 and
+              summary['OS_HIGH_BLOCKING']==0 and summary['IP_ADDRESS_HIGH_BLOCKING']==0 and summary['BRACE_EXPANSION_HIGH_BLOCKING']==0 and summary['FAST_URI_HIGH_BLOCKING']==0 and
               summary['NEW_HIGH_INTRODUCED']==0 and summary['OTHER_HIGH']==0 and summary['NODEMAILER_EXCEPTION_CANDIDATES']<=1)
           json.dump(summary,open(out+'/hardened-security-summary.json','w'),indent=2,sort_keys=True)
           json.dump(new_high,open(out+'/new-high-findings.json','w'),indent=2,sort_keys=True)
@@ -465,9 +553,18 @@ jobs:
           PY
 
       - name: Prove nodemailer reachability containment and runtime surface
-        if: steps.security.outputs.prelim == 'pass'
+        if: steps.solver.outputs.pass == 'pass'
         run: |
           set -euo pipefail
+          python - <<'PYELIG'
+          import json,os
+          q=json.load(open(os.environ['OUT']+'/hardened-security-summary.json'))
+          zero=['BLOCKING_CRITICAL','CISA_KEV','OS_HIGH_BLOCKING','IP_ADDRESS_HIGH_BLOCKING','BRACE_EXPANSION_HIGH_BLOCKING','FAST_URI_HIGH_BLOCKING','NEW_HIGH_INTRODUCED','OTHER_HIGH']
+          bad={k:q.get(k) for k in zero if q.get(k)!=0}
+          if bad: raise SystemExit(f'nodemailer exception ineligible; blockers remain: {bad}')
+          if q.get('NODEMAILER_EXCEPTION_CANDIDATES') not in (0,1): raise SystemExit('nodemailer exception candidate count invalid')
+          print('NODEMAILER_EXCEPTION_ELIGIBILITY=PASS')
+          PYELIG
           test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
           test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
           ! grep -R -F 'n8n-nodes-base.emailSend' automation/n8n/workflows/*.json
@@ -498,21 +595,21 @@ jobs:
           cat > "$OUT/nodemailer-risk-record-probe.md" <<'EOF'
           # Probe risk record — nodemailer residual
           Advisory: GHSA-p6gq-j5cr-w38f
-          Candidate: nodemailer 8.0.10 in n8n 2.37.7
+          Candidate: nodemailer 8.0.10 in n8n 2.37.9
           Controls: no Send Email node in frozen workflows; emailSend excluded via NODES_EXCLUDE; no SMTP runtime configuration; n8n bound non-public; no Code/Execute Command/Read-Write File node used by frozen workflows.
           Status: PROBE EVIDENCE ONLY. Permanent risk record required only after Reviewer-approved promotion.
           EOF
           echo 'NODEMAILER_REACHABILITY_CONTROLS=PASS' > "$OUT/nodemailer-reachability.txt"
 
       - name: Run frozen n8n static contracts
-        if: steps.security.outputs.prelim == 'pass'
+        if: steps.solver.outputs.pass == 'pass'
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-input pytest==8.4.2
           python -m pytest -q automation/n8n/tests/test_workflow_static.py automation/n8n/tests/test_recovery_schedule_static.py | tee "$OUT/static-tests.txt"
 
       - name: Run order-paid and recovery compatibility smokes on candidate
-        if: steps.security.outputs.prelim == 'pass'
+        if: steps.solver.outputs.pass == 'pass'
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -522,7 +619,7 @@ jobs:
           paths=[Path('automation/n8n/tests/runtime_smoke.sh'),Path('automation/n8n/tests/recovery_schedule_runtime_smoke.sh'),Path('automation/n8n/tests/recovery_replay_runtime_smoke.sh')]
           for p in paths:
               text=p.read_text(); patched=text.replace('IMAGE="n8nio/n8n:2.33.4"','IMAGE="sitescore-n8n-hardened:probe"')
-              patched=patched.replace('docker pull "$IMAGE" >/dev/null\n','').replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.7"')
+              patched=patched.replace('docker pull "$IMAGE" >/dev/null\n','').replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.9"')
               patched=re.sub(r'DIGEST="\$\(docker image inspect "\$IMAGE" --format \'\{\{index \.RepoDigests 0\}\}\'\)"\ncase "\$DIGEST" in .*?esac\n',
                              'DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"\ntest -n "$DIGEST"\n',patched,count=1,flags=re.S)
               q=p.with_name('.probe-'+p.name); q.write_text(patched); q.chmod(0o755)
@@ -542,10 +639,18 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          solver='${{ steps.solver.outputs.pass }}'; prelim='${{ steps.security.outputs.prelim }}'
-          echo "SOLVER=$solver PRELIM=$prelim"
+          solver='${{ steps.solver.outputs.pass }}'
+          echo "SOLVER=$solver"
           test "$solver" = pass || { echo 'APK_SOLVER_PROOF=FAIL_OR_NOT_REACHED' | tee "$OUT/final-gate.txt"; exit 1; }
-          test "$prelim" = pass || { echo 'HARDENED_SECURITY_GATE=FAIL_OR_NOT_REACHED' | tee "$OUT/final-gate.txt"; exit 1; }
+          python - <<'PYFINAL'
+          import json,os
+          q=json.load(open(os.environ['OUT']+'/hardened-security-summary.json'))
+          zero=['BLOCKING_CRITICAL','CISA_KEV','OS_HIGH_BLOCKING','IP_ADDRESS_HIGH_BLOCKING','BRACE_EXPANSION_HIGH_BLOCKING','FAST_URI_HIGH_BLOCKING','NEW_HIGH_INTRODUCED','OTHER_HIGH']
+          bad={k:q.get(k) for k in zero if q.get(k)!=0}
+          if bad or q.get('NODEMAILER_EXCEPTION_CANDIDATES') not in (0,1):
+              raise SystemExit(f'HARDENED_SECURITY_GATE=FAIL {bad} nodemailer={q.get("NODEMAILER_EXCEPTION_CANDIDATES")}')
+          print('HARDENED_SECURITY_GATE=PASS')
+          PYFINAL
           test -f "$OUT/nodemailer-reachability.txt" && grep -F 'NODEMAILER_REACHABILITY_CONTROLS=PASS' "$OUT/nodemailer-reachability.txt"
           test -f "$OUT/static-tests.txt"
           test -f "$OUT/order-paid-runtime-smoke.txt"
@@ -558,6 +663,6 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4.6.2
         with:
           name: faz7-n8n-apk-solver-${{ github.sha }}
-          path: deploy/containers/artifacts/n8n-apk-solver-probe/
+          path: deploy/containers/artifacts/n8n-2379-hardened-probe/
           if-no-files-found: error
           retention-days: 14
