@@ -1,0 +1,54 @@
+name: faz7-7-1-n8n-2379-probe-yaml-fixer
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Repair and validate generated probe blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, json, os, urllib.request
+          p=Path('.github/workflows/faz7-7-1-n8n-2379-hardened-probe.yml')
+          s=p.read_text()
+          bad=[
+              "! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'fast-uri@3.1.5*' -print -quit | grep -q .",
+              "! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'ip-address@10.2.0*' -print -quit | grep -q .",
+              "! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'brace-expansion@5.0.8*' -print -quit | grep -q .",
+          ]
+          for line in bad:
+              needle='\n'+line+'\n'
+              if s.count(needle)!=1: raise SystemExit(f'expected one malformed line: {line}')
+              s=s.replace(needle,'\n          '+line+'\n',1)
+          p.write_text(s)
+          PY
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/faz7-7-1-n8n-2379-hardened-probe.yml", aliases: true); puts "YAML_SYNTAX=PASS"'
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, json, os, urllib.request
+          data=Path('.github/workflows/faz7-7-1-n8n-2379-hardened-probe.yml').read_bytes()
+          payload=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode()
+          req=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/git/blobs',data=payload,method='POST',
+              headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json','User-Agent':'sitescore-faz7-probe-yaml-fix'})
+          with urllib.request.urlopen(req,timeout=30) as r: result=json.load(r)
+          print('FIXED_PROBE_BLOB_SHA='+result['sha'])
+          print('FIXED_PROBE_SHA256='+hashlib.sha256(data).hexdigest())
+          PY
