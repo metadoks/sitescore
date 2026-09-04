@@ -29,10 +29,10 @@ jobs:
           set -euo pipefail
           git init .
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git fetch --no-tags origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-          git fetch --depth=1 origin "${BASE_SHA}"
+          git fetch --no-tags origin "${BASE_SHA}"
 
       - name: Enforce frozen source and authorized path boundary
         run: |
@@ -188,16 +188,28 @@ jobs:
       - name: Run exact current API report and Commerce applicable regressions
         run: |
           set -euo pipefail
-          api_output="$(docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests)"
-          printf '%s\n' "$api_output"
-          grep -E '114 passed' <<<"$api_output"
-          report_output="$(docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests)"
-          printf '%s\n' "$report_output"
-          grep -E '24 passed' <<<"$report_output"
-          commerce_output="$(docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests \
-            --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only)"
-          printf '%s\n' "$commerce_output"
-          grep -E '416 passed' <<<"$commerce_output"
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+          api_rc=$?
+          set -e
+          cat /tmp/api-tests.txt
+          test "$api_rc" -eq 0
+          grep -E '114 passed' /tmp/api-tests.txt
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
+          report_rc=$?
+          set -e
+          cat /tmp/report-tests.txt
+          test "$report_rc" -eq 0
+          grep -E '24 passed' /tmp/report-tests.txt
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests \
+            --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only > /tmp/commerce-tests.txt 2>&1
+          commerce_rc=$?
+          set -e
+          cat /tmp/commerce-tests.txt
+          test "$commerce_rc" -eq 0
+          grep -E '416 passed' /tmp/commerce-tests.txt
 
       - name: Prove API web worker beat commands and PDF font runtime
         run: |
@@ -227,9 +239,13 @@ jobs:
             celery -A sitescore_api.tasks:celery_app worker --help >/dev/null
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
             celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
-          pdf_output="$(docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py)"
-          printf '%s\n' "$pdf_output"
-          grep -E 'passed' <<<"$pdf_output"
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
+          pdf_rc=$?
+          set -e
+          cat /tmp/pdf-test.txt
+          test "$pdf_rc" -eq 0
+          grep -E 'passed' /tmp/pdf-test.txt
 
       - name: Prove Commerce web socket and dispatcher supervisor runtime
         run: |
@@ -337,13 +353,17 @@ jobs:
       - name: Replay frozen FAZ6 Commerce 417-pass baseline
         run: |
           set -euo pipefail
-          output="$(docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
+          set +e
+          docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
             python -m venv /tmp/faz6-commerce
             /tmp/faz6-commerce/bin/pip install "./sitescore-commerce[test]" >/dev/null
             /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q
-          ')"
-          printf '%s\n' "$output"
-          grep -E '417 passed' <<<"$output"
+          ' > /tmp/faz6-replay.txt 2>&1
+          replay_rc=$?
+          set -e
+          cat /tmp/faz6-replay.txt
+          test "$replay_rc" -eq 0
+          grep -E '417 passed' /tmp/faz6-replay.txt
 
   n8n-validation:
     runs-on: ubuntu-24.04
