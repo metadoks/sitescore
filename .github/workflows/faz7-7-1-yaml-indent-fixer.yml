@@ -1,0 +1,63 @@
+name: faz7-7-1-yaml-indent-fixer
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Emit indentation-corrected permanent workflow blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, json, os, urllib.request
+          p=Path('.github/workflows/faz7-container-ci.yml')
+          lines=p.read_text().splitlines()
+          def find(exact,start=0):
+              for i in range(start,len(lines)):
+                  if lines[i]==exact:
+                      return i
+              raise SystemExit('anchor not found: '+exact)
+          def indent_body(run_index,end_index):
+              for i in range(run_index+1,end_index):
+                  if lines[i] and not lines[i].startswith('          '):
+                      lines[i]='          '+lines[i]
+          r=find('      - name: Run exact current API report and Commerce applicable regressions')
+          rrun=find('        run: |',r)
+          rend=find('      - name: Prove API web worker beat commands and PDF font runtime',rrun)
+          indent_body(rrun,rend)
+          f=find('  faz6-commerce-replay:')
+          checkout=find('      - name: Checkout exact frozen FAZ6 Commerce base and provenance objects',f)
+          replay=find('      - name: Replay frozen FAZ6 Commerce 417-pass baseline',checkout)
+          n8n=find('  n8n-validation:',replay)
+          for i in range(checkout,replay):
+              if lines[i].startswith('GH_TOKEN:'):
+                  lines[i]='          '+lines[i]
+          crun=find('        run: |',checkout)
+          indent_body(crun,replay)
+          rrun2=find('        run: |',replay)
+          indent_body(rrun2,n8n)
+          data=('\n'.join(lines)+'\n').encode()
+          p.write_bytes(data)
+          payload=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode()
+          req=urllib.request.Request(f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/git/blobs',data=payload,method='POST',headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json','User-Agent':'sitescore-faz7-yaml-fix'})
+          with urllib.request.urlopen(req,timeout=30) as response:
+              result=json.load(response)
+          print('PATCHED_BLOB_SHA='+result['sha'])
+          print('PATCHED_WORKFLOW_SHA256='+hashlib.sha256(data).hexdigest())
+          PY
