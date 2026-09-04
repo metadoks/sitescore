@@ -1,0 +1,28 @@
+name: faz7-7-1-n8n-2379-constructor-executor
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  construct:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Extract and run constructor Python safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          python -c "from pathlib import Path; p=Path('.github/workflows/faz7-7-1-n8n-2379-constructor.yml'); lines=p.read_text().splitlines(); start=lines.index(\"          python - <<'PY'\")+1; end=max(i for i,x in enumerate(lines) if x=='          PY'); out=[]; triple=False; [(out.append((x if triple else (x[10:] if x.startswith('          ') else x))), setattr(__import__('builtins'),'_dummy',None)) for x in []]; i=start; exec(\"while i < end:\\n x=lines[i]\\n if triple:\\n  out.append(x)\\n  if x == \\\"'''\\\": triple=False\\n else:\\n  y=x[10:] if x.startswith('          ') else x\\n  out.append(y)\\n  if \\\"= r'''\\\" in y: triple=True\\n i+=1\"); Path('/tmp/n8n-2379-constructor.py').write_text('\\n'.join(out)+'\\n')"
+          python -m py_compile /tmp/n8n-2379-constructor.py
+          python /tmp/n8n-2379-constructor.py
