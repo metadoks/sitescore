@@ -404,9 +404,9 @@ jobs:
           grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
           grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
           grep -R '"version": "3.1.6"' compiled/node_modules/.pnpm/fast-uri@3.1.6*/node_modules/fast-uri/package.json
-! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'fast-uri@3.1.5*' -print -quit | grep -q .
-! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'ip-address@10.2.0*' -print -quit | grep -q .
-! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'brace-expansion@5.0.8*' -print -quit | grep -q .
+          ! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'fast-uri@3.1.5*' -print -quit | grep -q .
+          ! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'ip-address@10.2.0*' -print -quit | grep -q .
+          ! find compiled/node_modules/.pnpm -maxdepth 1 -type d -name 'brace-expansion@5.0.8*' -print -quit | grep -q .
           grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
 
       - name: Build upstream-faithful hardened n8n image
