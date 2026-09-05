@@ -12,7 +12,7 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 REVIEWER_STATE: DESIGN_DECISION_ISSUED
-IMPLEMENTER_ACTION: RESUME_7_1_WITH_N8N_2_37_9_UPSTREAM_ADOPTED_SECURITY_BACKPORTS_AND_RUNTIME_HARDENING
+IMPLEMENTER_ACTION: RESUME_7_1_WITH_N8N_2_37_10_TOML_4_2_0_COMPATIBILITY_CONSTRAINED_BACKPORT
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,7 +21,7 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: 247a54b2a657bf5b8fdbc1558ceec818c2ec41f9
+OBSERVED_HEAD_SHA: b012d4ee69257c4a6652340fda935690a28d8ffa
 REVIEWED_HEAD_SHA: NONE
 
 LIVE_MAIN_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
@@ -31,7 +31,7 @@ LIVE_REQUIRED_CHECKS: NONE
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71-N8N-VULN-001: SECURITY_REOPEN_CONTINUES_UNDER_N8N_2_37_9_HARDENED_REBUILD_AUTHORITY
+OPS71-N8N-VULN-001: SECURITY_REOPEN_CONTINUES_UNDER_N8N_2_37_10_TOML_BACKPORT_AUTHORITY
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -47,283 +47,142 @@ READY_TO_LOCK: NO
 
 # 1. AUTHORITY CONTINUITY
 
-The original FAZ 7.1 contract and all later Reviewer security/governance decisions remain authoritative except where this decision explicitly rebinds the selected n8n stable and broadens the already-authorized security remediation only to the exact upstream-adopted dependency backports and exact runtime package controls listed below.
+The original FAZ 7.1 contract and every later Reviewer security/governance decision remain authoritative except where this decision explicitly rebinds the selected stable to n8n 2.37.10 and adds one narrowly-scoped production dependency remediation for `toml`.
 
-No frozen SiteScore scoring/business/application semantics may change. Frozen n8n workflow JSON bytes remain immutable. No scanner suppression, blanket ignore, SiteScore-authored VEX, deployment shortcut, merge, FAZ 7.2 work, or FAZ 8 work is authorized.
+No frozen SiteScore scoring/business/application semantics may change. Frozen n8n workflow JSON bytes remain immutable. No scanner suppression, blanket ignore, SiteScore-authored VEX, arbitrary dependency upgrade, deployment shortcut, merge, FAZ 7.2 work, or FAZ 8 work is authorized.
 
-Standing mechanical remediation authority remains active: Implementer should continue through ordinary YAML/shell/build/test-environment/evidence defects without returning to Reviewer unless a true design/security/governance blocker occurs.
-
----
-
-# 2. FRESH REVIEWER FINDING — LATEST OFFICIAL STABLE IS 2.37.9
-
-Reviewer independently re-enumerated upstream n8n releases on 2026-09-04. The current official non-draft/non-prerelease stable remains:
-
-```text
-version = 2.37.9
-release tag = n8n@2.37.9
-release id = 382036593
-published_at = 2026-09-03T13:16:03Z
-source commit = 073ec4552a6675a10f5b212d55bdc00c91d4829b
-source tree = e825fca3c49cca4c0dddf23a9fc426a289118ed1
-official linux/amd64 image = n8nio/n8n@sha256:ed6bbab565eddbb688f394594cb2932d2b3b24f02240299a8fcce78bfe4201db
-```
-
-Exact official 2.37.9 Docker recipe remains on the older upstream release build chain:
-
-```text
-NODE_VERSION = 26.5.1
-builder = node:26.5.1-alpine3.24@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36
-runtime = n8nio/base:26.5.1@sha256:1b0bca5c94bbd04ad2120b9e9892a8bc717a1d88efa76fefe452c59bdc611d25
-release Dockerfile blob = c46edacc7bcf7d5d8c74beb174c1a713b97c6f14
-```
-
-Current upstream master has already moved its n8n build mechanics to:
-
-```text
-master observed commit = fd105a6dc2cd51b5e5fd64c2efad57e6801d2325
-master Dockerfile blob = f72e1a3f3aae40319e58989e5fc2a71e687a1b59
-NODE_VERSION = 26.7.0
-builder = node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
-runtime = n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8
-```
-
-The prior Reviewer rule permitting exact stable source to be rebuilt with exact current upstream master build mechanics remains valid.
+Standing mechanical remediation authority remains active. Implementer MUST continue through ordinary YAML/shell/build/test-environment/evidence defects without returning to Reviewer unless a true design/security/governance blocker occurs.
 
 ---
 
-# 3. INDEPENDENT REVIEWER AUDIT — OFFICIAL 2.37.9 SECURITY GATE REALLY FAILS
+# 2. FRESH REVIEWER FINDING — CURRENT OFFICIAL STABLE IS N8N 2.37.10
 
-Reviewer independently inspected the Implementer evidence from:
+Reviewer independently re-enumerated upstream releases. Current official non-draft/non-prerelease stable is:
 
 ```text
-workflow = faz7-7-1-n8n-latest-official-probe
-run = 33795008277
-job = 100780473708
-artifact id = 9909036938
-artifact sha256 = 3a504c9bee16b79be01a40cd1b21adb2bab322c9c58c8dc94cf30cf85aa07d42
+version = 2.37.10
+release tag = n8n@2.37.10
+release id = 382600929
+published_at = 2026-09-04T09:13:04Z
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+official linux/amd64 digest = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
 ```
 
-Official-image compatibility passed before the security gate:
+Implementer official-first probe evidence:
 
 ```text
-linux/amd64 binding = PASS
-n8n --version = 2.37.9 = PASS
-startup/loadability = PASS
-frozen order workflow import = PASS
-frozen recovery workflow import = PASS
-frozen workflow hashes = PASS
-SPDX generation = PASS
-raw Grype generation = PASS
-exact release OpenVEX digest verification = PASS
-CISA KEV correlation = PASS
+workflow = faz7-7-1-n8n-23710-official-probe
+run = 33972295439
+job = 101322830102
+artifact id = 9971353356
+artifact sha256 = 2b3300eb002da3cd710984df689c4cb57ceed4cf97b838c67283d85c78dfcba7
 ```
 
-The security result is a true failure:
+Runtime/import/SBOM/OpenVEX/KEV mechanics passed before the security gate. Frozen workflow hashes remained exact.
+
+Official-image security result is a TRUE FAIL:
 
 ```text
-RAW_CRITICAL = 12
-RAW_HIGH = 40
-BLOCKING_CRITICAL = 12
-BLOCKING_HIGH = 40
-CISA_KEV = 0
-OFFICIAL_LATEST_SECURITY_PASS = false
+N8N_RAW_CRITICAL = 12
+N8N_RAW_HIGH = 42
+N8N_CISA_KEV_MATCHES = 0
+N8N_ACTIONABLE_GATE = FAIL
 ```
 
-Exact blocker families:
+The previously-authorized blocker families remain present. A new production package family is also present:
 
 ```text
-OS:
-  libcrypto3 3.5.7-r1
-  libssl3 3.5.7-r1
-  libexpat 2.8.2-r0
-  openssh family 10.3_p1-r0
-  graphicsmagick 1.3.47-r0
-  tiff 4.7.1-r0
-
-npm:
-  brace-expansion 5.0.8
-  ip-address 10.2.0
-  fast-uri 3.1.5
-  nodemailer 8.0.10
+package = toml
+installed = 3.0.0
+package type = npm
+GHSA-v5mp-jgw5-2x6j = HIGH
+GHSA-82x6-q7mm-w9cf = HIGH
 ```
 
-Scanner fixed versions include:
+Reviewer independently inspected the raw Grype/SPDX artifact and confirmed both findings are attached to the production image copy at:
 
 ```text
-libcrypto3/libssl3 -> 3.5.8-r0
-libexpat -> 2.8.4-r0
-openssh family -> 10.3_p1-r1
-brace-expansion -> 5.0.9
-ip-address -> 10.3.1
-fast-uri -> 3.1.6
-nodemailer -> 9.0.1+
-```
-
-No CISA KEV match exists in this evidence.
-
----
-
-# 4. UPSTREAM-ADOPTED NPM SECURITY BACKPORTS — NOW AUTHORIZED FOR EXACT 2.37.9 SOURCE
-
-Reviewer independently verified current upstream n8n master already carries the following production dependency overrides:
-
-```text
-fast-uri: 3.1.6
-ip-address@10: 10.3.1
-brace-expansion@5: 5.0.9
-```
-
-The exact upstream evidence commit containing these overrides is:
-
-```text
-64de0e71db286afb7537324aa4367a3f97cd6d19
-```
-
-Therefore the previous upstream-adopted-backport rule is extended to exact n8n 2.37.9 source. Implementer MAY apply only these exact dependency overrides to the selected stable build metadata/lock closure:
-
-```text
-fast-uri -> 3.1.6
-ip-address@10 -> 10.3.1
-brace-expansion@5 -> 5.0.9
-```
-
-Required controls:
-
-```text
-- retain exact upstream file/commit evidence;
-- show the stable-source pre/post dependency metadata delta;
-- rebuild the complete production closure from exact 2.37.9 source;
-- no n8n application-source edits;
-- no arbitrary npm/pnpm dependency upgrades;
-- no package-manager floating resolution beyond the exact authorized values;
-- verify the resulting lock graph actually contains the fixed versions and no vulnerable production copy remains.
-```
-
-`nodemailer 8.0.10 -> 9.x` remains NOT authorized as a local SiteScore backport because current upstream master still uses nodemailer 8.0.10. The previously-defined single residual nodemailer reachability exception remains the only possible residual HIGH path.
-
----
-
-# 5. N8N 2.37.9 HARDENED RUNTIME AUTHORITY
-
-Implementer is authorized to rebuild exact n8n 2.37.9 source using the exact current upstream master Node 26.7.0 builder/runtime mechanics identified in Section 2, preserving Alpine 3.24 and rebuilding native modules through the upstream mechanics. Do not copy unverified native modules across ABI boundaries.
-
-## 5.1 Remove unused generic OS capabilities through APK solver
-
-The prior authorization is carried forward to 2.37.9 for SiteScore's frozen workflow surface:
-
-```text
-apk del openssh graphicsmagick
-```
-
-or the exact package-manager-equivalent transaction using the same bound Alpine repository configuration.
-
-The solver may remove the dependency closure it proves is no longer required, including tiff where that occurs naturally. Implementer MUST retain:
-
-```text
-apk world before/after
-installed DB before/after
-solver transaction log
-reference-minus-hardened inventory
-proof that explicit removals + solver closure equal actual removals
-```
-
-Do not hand-maintain a guessed transitive removal list. Do not remove required runtime libraries.
-
-## 5.2 Apply exact retained-runtime security pins
-
-After the bound runtime base is constructed, and before final apk-tools removal, apply exactly:
-
-```text
-libcrypto3 = 3.5.8-r0
-libssl3    = 3.5.8-r0
-libexpat   = 2.8.4-r0
-```
-
-using the same bound Alpine 3.24 repository configuration.
-
-This authorization is target-version based: the starting libexpat version may differ between the official 2.37.9 image and the rebuilt Node 26.7.0 base, but the final accepted installed version must be exactly `2.8.4-r0` unless a later patch-forward case in Section 9 applies.
-
-This is NOT authorization for:
-
-```text
-apk upgrade
-floating package upgrades
-another Alpine minor
-another Node line not selected by upstream build mechanics
-another Linux distribution
-manual library copying
-third-party package repositories
-scanner suppression
-SiteScore-authored VEX
-```
-
-If the exact target versions cannot be resolved from the bound repository set, STOP as a true design/security blocker.
-
-Canonical image characterization after this remediation:
-
-```text
-N8N_APPLICATION_SOURCE: EXACT_OFFICIAL_STABLE_SOURCE
-N8N_BUILD_MECHANICS: EXACT_UPSTREAM_BOUND
-N8N_RUNTIME_BASE: UPSTREAM_DERIVED_SITE_SCORE_HARDENED
-N8N_RUNTIME_SECURITY_DELTA: APK_SOLVER_CAPABILITY_REMOVAL_PLUS_EXACT_PINNED_RUNTIME_PATCHES
-N8N_DEPENDENCY_SECURITY_DELTA: EXACT_UPSTREAM_ADOPTED_BACKPORTS
+/usr/local/lib/node_modules/n8n/node_modules/.pnpm/toml@3.0.0/node_modules/toml/package.json
 ```
 
 ---
 
-# 6. COMPLETE SECURITY GATE — NO PARTIAL PROMOTION
+# 3. TOML SECURITY DECISION — EXACT 4.2.0 IS THE ONLY AUTHORIZED TARGET
 
-The rebuilt final candidate must be scanned from its final linux/amd64 bytes with the same pinned Syft/Grype + exact release OpenVEX + CISA KEV reconciliation method.
-
-Mandatory result:
+The two advisories have different minimum patched versions:
 
 ```text
-CISA_KEV = 0
-CRITICAL = 0
-OS_HIGH = 0
-brace-expansion vulnerable finding = 0
-ip-address vulnerable finding = 0
-fast-uri vulnerable findings = 0
-no new HIGH introduced
+GHSA-v5mp-jgw5-2x6j:
+  affected < 4.1.2
+  patched = 4.1.2
+
+GHSA-82x6-q7mm-w9cf:
+  affected < 4.2.0
+  patched = 4.2.0
 ```
 
-No exact fixed/remediable HIGH may remain just because the build skipped an authorized fixed version.
-
-The only possible residual HIGH remains exactly:
+Therefore `4.1.2` is insufficient for the combined gate. The minimum version that closes BOTH findings is exactly:
 
 ```text
-package = nodemailer
-installed = 8.0.10
-advisory = GHSA-p6gq-j5cr-w38f
-fixed = 9.0.1+
+toml = 4.2.0
 ```
 
-It may be accepted only if literally no other CRITICAL/HIGH remains and ALL previously-authorized containment conditions are proven, including:
+This is a major-version dependency change relative to `3.0.0`. Reviewer has not established an upstream-master `toml` override equivalent to the already-proven `fast-uri`, `ip-address`, and `brace-expansion` overrides. Therefore this authorization is deliberately compatibility-constrained and MUST NOT be treated as a generic dependency-upgrade precedent.
+
+Implementer MAY add exactly one production-closure override/pin:
 
 ```text
-workflow hashes exact
-frozen workflows contain no emailSend
-NODES_EXCLUDE includes n8n-nodes-base.emailSend
-runtime proves emailSend unavailable/non-executable
-no SMTP host/user/pass/credential or user-management mail transport configured/injected
-editor/admin/API non-public
-no new Code/ExecuteCommand/ReadWriteFile path enabling alternate access
-permanent risk record with exact advisory, controls, owner and expiry/re-review triggers
+toml -> 4.2.0
 ```
 
-Any failure of those conditions means security gate FAIL and requires STOP.
+No other `toml` version is authorized by this decision.
 
 ---
 
-# 7. N8N FUNCTIONAL COMPATIBILITY GATE
+# 4. MANDATORY REVERSE-DEPENDENCY AND LOCK-GRAPH PROOF BEFORE ACCEPTING THE BACKPORT
 
-The successful security candidate must also prove:
+Before candidate promotion, Implementer MUST bind the exact production reverse dependency chain from the selected 2.37.10 source/lock graph using authoritative pnpm/lockfile evidence.
+
+Required evidence:
+
+```text
+- exact 2.37.10 pre-change production lock graph;
+- `pnpm why --prod toml` or deterministic equivalent from the exact source closure;
+- every direct production parent that resolves to toml@3.0.0;
+- pre/post lock graph diff;
+- proof that the only intentional new npm resolution is toml@4.2.0 plus dependency metadata intrinsically required by that exact package version;
+- proof no vulnerable toml@3.0.0 production copy remains;
+- proof no second vulnerable toml copy remains under another path;
+- proof no direct parent manifest declares an upper bound incompatible with 4.2.0.
+```
+
+If a production parent explicitly constrains `toml` to an incompatible major and the override violates that declared contract, STOP as a true design/security blocker. Do not patch parent application source to force compatibility.
+
+No n8n application source may be edited.
+
+---
+
+# 5. TOML 4.2.0 TARGETED COMPATIBILITY GATE
+
+Because this is a major-version backport, generic startup alone is insufficient. The final built production closure MUST prove at minimum:
+
+```text
+require('toml/package.json').version == 4.2.0
+require('toml').parse exists
+basic TOML parse smoke succeeds
+prototype-pollution regression payload does not pollute Object.prototype
+pathological deep-nesting advisory reproduction does not crash the n8n process / is rejected or safely contained by the patched package behavior
+```
+
+For every direct production parent identified by Section 4, add a narrowly-scoped module-load/usage smoke sufficient to prove that its `toml` integration still loads under 4.2.0. Do not modify parent source to make the smoke pass.
+
+The full n8n functional gate remains mandatory afterward:
 
 ```text
 linux/amd64
 non-root
-n8n --version = selected stable version
+n8n --version = 2.37.10
 startup/loadability
 exact frozen workflow hashes
 both frozen workflow imports
@@ -333,140 +192,139 @@ recovery schedule/API compatibility smoke
 no workflow migration
 no node substitution
 no credential semantic migration
-no SiteScore business/orchestration semantic change
 ```
 
-Frozen workflow hashes remain:
-
-```text
-order-paid = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
-recovery   = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
-```
-
-If satisfying the selected stable requires workflow JSON migration, node replacement, application-source patch, credential semantic change, or payload/API semantic change, STOP.
+If `toml@4.2.0` breaks the selected stable runtime/parent integration, STOP. Do not downgrade to a still-vulnerable version and do not create a reachability exception for these two advisories.
 
 ---
 
-# 8. AFTER N8N PASS — COMPLETE ALL REMAINING 7.1 WORK CONTINUOUSLY
+# 6. CARRY FORWARD THE EXISTING N8N HARDENING AUTHORITY TO 2.37.10
 
-Do not return to Reviewer for ordinary mechanics. Once the n8n candidate passes, permanentize it and finish all original 7.1 gates on one exact final PR head.
-
-Required permanent n8n outcome includes:
+Subject to the fresh-stable guard, the previously-authorized hardened rebuild controls carry forward to exact n8n 2.37.10 source:
 
 ```text
-deploy/containers/n8n-image.lock
-reproducible hardened n8n build assets under deploy/containers/**
-selected stable release/tag/source commit/tree
-upstream builder/runtime/Dockerfile identities
-exact upstream-adopted dependency delta manifest
-exact OS security delta manifest
-APK removal/solver evidence
-final linux/amd64 digest
-non-root/runtime identity
-SPDX
-raw Grype
-CISA KEV + exact release OpenVEX reconciliation
-nodemailer residual risk record if applicable
-provenance/attestation evidence
+OS capability reduction through APK solver:
+  openssh absent
+  graphicsmagick absent
+  transitive removal only through APK solver proof
+
+exact retained-runtime targets:
+  libcrypto3 = 3.5.8-r0
+  libssl3    = 3.5.8-r0
+  libexpat   = 2.8.4-r0
+
+exact upstream-adopted npm backports:
+  fast-uri = 3.1.6
+  ip-address@10 = 10.3.1
+  brace-expansion@5 = 5.0.9
+
+new exact compatibility-constrained backport:
+  toml = 4.2.0
 ```
 
-Permanent publish target remains:
+Use exact stable application source plus the already-authorized exact-current-upstream build mechanics only. Preserve Alpine 3.24 unless upstream patch-forward mechanics change under the existing rule. No blanket `apk upgrade`, no floating npm resolution, no unrelated dependency upgrade, no alternate Linux distribution, no scanner suppression.
+
+`nodemailer` 9.x local migration remains NOT authorized unless a later upstream-adopted path is independently bound. The existing single-nodemailer residual exception remains the only possible residual HIGH path.
+
+---
+
+# 7. FINAL SECURITY THRESHOLD
+
+The final hardened image MUST be rescanned from final linux/amd64 bytes with pinned Syft/Grype, exact-release OpenVEX verification, and CISA KEV correlation.
+
+Mandatory result:
 
 ```text
-ghcr.io/metadoks/sitescore-n8n
+CISA_KEV = 0
+CRITICAL = 0
+OS_HIGH = 0
+fast-uri vulnerable findings = 0
+ip-address vulnerable findings = 0
+brace-expansion vulnerable findings = 0
+toml vulnerable findings = 0
+no new HIGH introduced
 ```
 
-Pre-LOCK candidate build/load/scan/evidence is allowed. Production/locked baseline publish/deployment remains prohibited until Reviewer `READY_TO_LOCK` for the exact final SHA and user literal `LOCK` through the Implementer protocol.
+The only possible residual HIGH is exactly the previously-authorized conditional case:
 
-Current live PR scope is back to the original 20 permanent files; no frozen source/workflow path is changed. Keep final scope within the original 7.1 authorization plus narrowly necessary `deploy/containers/**` n8n hardening assets explicitly enumerated in Implementer handoff.
+```text
+package = nodemailer
+installed = 8.0.10
+advisory = GHSA-p6gq-j5cr-w38f
+```
 
-Current exact-head CI already shows:
+It may remain only if literally no other CRITICAL/HIGH remains and every previously-defined reachability/containment control passes. Generic OpenVEX reconciliation must remain truthful; do not rewrite/suppress the residual.
+
+---
+
+# 8. CONTINUE ALL REMAINING FAZ 7.1 WORK WITHOUT REVIEWER ROUND-TRIPS
+
+The current Implementer evidence already establishes substantial progress:
 
 ```text
 source-boundary = PASS
+full-40-character Actions pin checker = PASS
 static-contracts = PASS
+FAZ6 frozen Commerce replay = 417 PASS
+API regression = 114 PASS
+report regression = 24 PASS
+API/Commerce image build + amd64/non-root/read-only identity = PASS
 ```
 
-Remaining mechanical gates must be fixed without weakening them:
+The Commerce forward-applicable regression still needs the mechanics-only exact deselection correction and must end at:
 
 ```text
+Commerce = 416 PASS + exactly one authorized phase-local deselect
+```
+
+Once n8n passes, permanentize the accepted candidate and finish on one exact PR head:
+
+```text
+n8n permanent lock/build/provenance = PASS
+API/Commerce/n8n SBOM and security policy = PASS
+API web/worker/beat + PDF/font runtime = PASS
+Commerce web/dispatcher runtime = PASS
+source-boundary = PASS
+static-contracts = PASS
+FAZ6 replay = 417 PASS
 API = 114 PASS
 report = 24 PASS
-Commerce forward-applicable = 416 PASS + exact one phase-local deselect
-FAZ6 frozen Commerce replay = 417 PASS
-API/Commerce runtime/non-root/PDF-font smokes = PASS
-API/Commerce/n8n SBOM + vulnerability policy = PASS
-n8n permanent identity/runtime/security validation = PASS
-full-40-char Action pins = PASS
-faz7 / required-gate = PASS on exact final head
+Commerce = 416 PASS + exactly one deselect
+faz7 / required-gate = PASS
 frozen application source diff = NONE
-frozen n8n workflow diff = NONE
+frozen n8n workflow JSON diff = NONE
 cloud/IaC mutation = NONE
-committed production secret = NONE
+production secret committed = NONE
 ```
+
+Mechanical failures in these gates are covered by standing remediation authority. Fix and rerun; do not return to Reviewer for them individually.
 
 ---
 
-# 9. PATCH-FORWARD CONTINUITY RULE — AVOID ANOTHER REVIEWER ROUND-TRIP FOR AN IDENTICAL CLOSURE
+# 9. PATCH-FORWARD CONTINUITY — TOML FAMILY NOW INCLUDED
 
-At every fresh candidate run, Implementer MUST re-enumerate the latest official non-draft/non-prerelease stable.
+If a newer patch-level official stable appears before final candidate completion, official-image-first validation remains mandatory.
 
-If a newer official stable appears before READY_FOR_REVIEW:
-
-## 9.1 Official image passes
-
-Use the newer official image if all original security/runtime/workflow gates pass. No custom hardened path is needed.
-
-## 9.2 Official image fails but closure is materially identical/subset
-
-Implementer MAY continue without another Reviewer decision only if ALL are true:
+Implementer MAY continue without another Reviewer decision only when ALL are true:
 
 ```text
-- release is a patch-level stable within the same 2.x operational line;
-- frozen workflows import unchanged and hashes remain exact;
-- no workflow/API/credential semantic migration is required;
-- upstream build mechanics remain Alpine 3.24 and an already-authorized Node/build lineage;
-- every CRITICAL/HIGH belongs only to package/advisory families already covered by this decision;
-- every npm remediation is exactly one of the upstream-adopted fixed versions already authorized here, or a newer exact upstream-master-adopted security fix for the same package family;
-- every OS remediation is the same capability removal or an exact fixed version for the same retained package family from the same bound Alpine repository set;
-- no new CISA KEV appears;
-- no new package family, new vulnerability class requiring different reachability reasoning, new base distribution, or new architecture decision appears.
+- change is patch-level stable continuity;
+- frozen workflows still import unchanged;
+- no new CISA KEV exists;
+- all CRITICAL/HIGH package families are within the already-authorized set, now including toml;
+- the same or safer exact target versions eliminate those findings;
+- no new security exception is required;
+- no materially different Node/base/build architecture is required;
+- no workflow/API/credential semantic migration is required.
 ```
 
-For a newer exact fixed version in the same already-authorized OS package family, retain upstream repository/package-policy evidence and prove it is a non-downgrade security fix. Do not float.
-
-## 9.3 Mandatory STOP for materially new closure
-
-Return to Reviewer if any newer stable introduces:
-
-```text
-new CRITICAL/HIGH package family
-new KEV
-new dependency fix not adopted upstream
-new Node/Alpine/base-distribution design
-workflow/node/credential migration
-new public exposure assumption
-new security exception requirement
-```
-
-This rule does not authorize arbitrary tracking of upstream master application code; exact official stable source remains mandatory.
+If a new CRITICAL/HIGH package family appears, a new KEV appears, the required toml remediation changes beyond the proven 4.2.0-compatible path, or a broader dependency/base change is required, STOP as a true design/security blocker.
 
 ---
 
-# 10. GOVERNANCE REMAINS MANDATORY
+# 10. GOVERNANCE — COMPLETE LAST
 
-Current live repository governance remains noncompliant:
-
-```text
-main protected = FALSE
-required checks = NONE
-merge commits = enabled
-squash = enabled
-rebase = enabled
-auto-merge = disabled
-```
-
-Final required state remains:
+Governance remains mandatory and currently pending:
 
 ```text
 main protected = TRUE
@@ -482,27 +340,34 @@ rebase = disabled
 auto-merge = disabled
 ```
 
-Complete all technical/evidence CI work first. If connected tooling still cannot mutate these settings, return one consolidated owner-action blocker only at the end. If the GitHub plan itself makes the frozen governance requirement impossible, report `OPS71-GOV-001: PLAN_CAPABILITY_BLOCKED` with evidence and STOP.
+Known current state remains noncompliant:
+
+```text
+main protected = FALSE
+required checks = NONE
+```
+
+Complete all technical/evidence gates first. If connected GitHub tooling still cannot mutate branch protection/repository merge settings, return ONE consolidated owner-action blocker after everything else is green. If the repository plan makes the required governance impossible rather than merely manually configurable, return `OPS71-GOV-001: PLAN_CAPABILITY_BLOCKED` with evidence.
 
 ---
 
 # 11. REQUIRED NEXT IMPLEMENTER HANDOFF
 
-The next useful handoff must be terminal for this implementation cycle:
+Do not stop again for ordinary CI/parser/build/test mechanics.
+
+The next useful Implementer handoff must be one of:
 
 ```text
 IMPLEMENTER_STATE: READY_FOR_REVIEW
 ```
 
-with exact final head and complete evidence, or:
+with exact final head and all FAZ 7.1 evidence, or:
 
 ```text
 IMPLEMENTER_STATE: BLOCKED_TRUE_DESIGN_SECURITY_OR_OWNER_GOVERNANCE_ACTION
 ```
 
 with one consolidated true blocker.
-
-Do not return merely for another YAML/shell/parser/history/test-environment/evidence-path defect covered by standing mechanical authority.
 
 ```text
 READY_TO_LOCK: NO
