@@ -1,0 +1,220 @@
+name: faz7-7-1-n8n-23710-toml-closure-probe
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: read
+
+env:
+  N8N_VERSION: '2.37.10'
+  N8N_COMMIT: '5542b8b6419cb6925cca8f11b270c9bfbe09d85e'
+  N8N_TREE: '8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0'
+  TOML_TARGET: '4.2.0'
+  OUT: 'deploy/containers/artifacts/n8n-23710-toml-closure'
+
+jobs:
+  closure-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout SiteScore exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+          version: 11.22.0
+
+      - name: Setup Node 26.7.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.7.0'
+
+      - name: Re-enumerate official stable and bind frozen SiteScore bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          python - <<'PY'
+          import json, os, re, urllib.request
+          from urllib.parse import urlencode
+          h={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-toml-closure'}
+          rels=[]
+          for page in range(1,11):
+              req=urllib.request.Request('https://api.github.com/repos/n8n-io/n8n/releases?'+urlencode({'per_page':100,'page':page}),headers=h)
+              with urllib.request.urlopen(req,timeout=30) as r: batch=json.load(r)
+              if not batch: break
+              for rel in batch:
+                  if rel.get('draft') or rel.get('prerelease'): continue
+                  m=re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)',str(rel.get('tag_name','')))
+                  if m and int(m.group(1))==2: rels.append((tuple(map(int,m.groups())),rel))
+              if len(batch)<100: break
+          version_tuple, rel=max(rels,key=lambda x:x[0]); version='.'.join(map(str,version_tuple))
+          print(json.dumps({'latest_stable_2x':version,'release_id':rel['id'],'published_at':rel.get('published_at')},indent=2))
+          if version != os.environ['N8N_VERSION']:
+              raise SystemExit(f'official-first continuity requires revalidation: latest={version}')
+          PY
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
+
+      - name: Checkout exact n8n 2.37.10 source and capture pre-change closure
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/n8n-src
+          git clone --filter=blob:none --no-checkout https://github.com/n8n-io/n8n.git /tmp/n8n-src
+          git -C /tmp/n8n-src fetch --depth=1 origin "$N8N_COMMIT"
+          git -C /tmp/n8n-src checkout --detach "$N8N_COMMIT"
+          test "$(git -C /tmp/n8n-src rev-parse HEAD)" = "$N8N_COMMIT"
+          test "$(git -C /tmp/n8n-src rev-parse HEAD^{tree})" = "$N8N_TREE"
+          cp /tmp/n8n-src/pnpm-lock.yaml "$OUT/pnpm-lock.before.yaml"
+          cp /tmp/n8n-src/pnpm-workspace.yaml "$OUT/pnpm-workspace.before.yaml"
+          sha256sum /tmp/n8n-src/pnpm-lock.yaml /tmp/n8n-src/pnpm-workspace.yaml | tee "$OUT/prechange-sha256.txt"
+          git -C /tmp/n8n-src grep -n -E '(^|["'"'"'])toml(["'"'"']|:)' -- ':(glob)**/package.json' 'pnpm-workspace.yaml' > "$OUT/source-toml-references.txt" || true
+
+      - name: Materialize exact frozen lock graph
+        working-directory: /tmp/n8n-src
+        env:
+          CI: 'true'
+          NODE_OPTIONS: '--max-old-space-size=7168'
+        run: |
+          set -euo pipefail
+          test "$(pnpm --version)" = '11.22.0'
+          pnpm install --frozen-lockfile --ignore-scripts
+          set +e
+          pnpm why --prod --recursive toml --json > "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-toml.before.json" 2> "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-toml.before.stderr"
+          why_rc=$?
+          set -e
+          test "$why_rc" -eq 0
+          find node_modules/.pnpm -maxdepth 1 -type d -name 'toml@*' -printf '%f\n' | sort | tee "$GITHUB_WORKSPACE/$OUT/toml-store.before.txt"
+          grep -F 'toml@3.0.0' "$GITHUB_WORKSPACE/$OUT/toml-store.before.txt"
+
+      - name: Prove every direct production parent accepts toml 4.2.0
+        working-directory: /tmp/n8n-src
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$GITHUB_WORKSPACE/$OUT/direct-parent-compatibility.json"
+          const fs=require('fs'); const path=require('path'); const semver=require('semver');
+          const whyPath=path.join(process.env.GITHUB_WORKSPACE,process.env.OUT,'pnpm-why-prod-toml.before.json');
+          const whyText=fs.readFileSync(whyPath,'utf8');
+          const root='node_modules/.pnpm'; const rows=[];
+          function walk(dir, depth=0){
+            if(depth>5) return;
+            let ents=[]; try{ ents=fs.readdirSync(dir,{withFileTypes:true}); }catch{return;}
+            for(const e of ents){
+              const p=path.join(dir,e.name);
+              if(e.isDirectory()) walk(p,depth+1);
+              else if(e.name==='package.json'){
+                try{
+                  const j=JSON.parse(fs.readFileSync(p,'utf8'));
+                  for(const field of ['dependencies','optionalDependencies','peerDependencies']){
+                    const range=j[field]?.toml;
+                    if(!range) continue;
+                    const mentioned=whyText.includes(`\"name\":\"${j.name}\"`) || whyText.includes(`\"name\": \"${j.name}\"`) || whyText.includes(j.name);
+                    rows.push({parent:j.name,version:j.version,field,range,manifest:p,appears_in_prod_why:mentioned,accepts_4_2_0:semver.satisfies(process.env.TOML_TARGET,range,{includePrerelease:true})});
+                  }
+                }catch{}
+              }
+            }
+          }
+          walk(root);
+          const unique=[...new Map(rows.map(r=>[`${r.parent}@${r.version}|${r.field}|${r.range}`,r])).values()];
+          const prod=unique.filter(r=>r.appears_in_prod_why);
+          console.log(JSON.stringify({target:process.env.TOML_TARGET,all_direct_parent_manifests:unique,production_direct_parents:prod},null,2));
+          if(!prod.length){ console.error('no direct production toml parent established'); process.exit(41); }
+          const incompatible=prod.filter(r=>!r.accepts_4_2_0);
+          if(incompatible.length){ console.error('INCOMPATIBLE_PRODUCTION_PARENT='+JSON.stringify(incompatible)); process.exit(42); }
+          NODE
+
+      - name: Apply exact workspace override and prove lock delta
+        working-directory: /tmp/n8n-src
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('pnpm-workspace.yaml'); s=p.read_text()
+          if '\n  toml:' in s or s.startswith('toml:'):
+              raise SystemExit('pre-existing toml override unexpectedly present')
+          marker='\noverrides:\n'
+          if marker not in s: raise SystemExit('overrides section missing')
+          s=s.replace(marker,marker+'  toml: 4.2.0\n',1)
+          p.write_text(s)
+          PY
+          pnpm install --lockfile-only --ignore-scripts
+          cp pnpm-lock.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-lock.after.yaml"
+          cp pnpm-workspace.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.after.yaml"
+          git diff --no-index -- "$GITHUB_WORKSPACE/$OUT/pnpm-lock.before.yaml" pnpm-lock.yaml > "$GITHUB_WORKSPACE/$OUT/pnpm-lock.diff" || test $? -eq 1
+          git diff --no-index -- "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.before.yaml" pnpm-workspace.yaml > "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.diff" || test $? -eq 1
+          grep -F 'toml: 4.2.0' pnpm-workspace.yaml
+          ! grep -E '(^|[ /])toml@3\.0\.0([(:/]|$)' pnpm-lock.yaml
+          grep -E '(^|[ /])toml@4\.2\.0([(:/]|$)' pnpm-lock.yaml
+          pnpm install --ignore-scripts
+          pnpm why --prod --recursive toml --json > "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-toml.after.json"
+          find node_modules/.pnpm -maxdepth 1 -type d -name 'toml@*' -printf '%f\n' | sort | tee "$GITHUB_WORKSPACE/$OUT/toml-store.after.txt"
+          grep -F 'toml@4.2.0' "$GITHUB_WORKSPACE/$OUT/toml-store.after.txt"
+          ! grep -F 'toml@3.0.0' "$GITHUB_WORKSPACE/$OUT/toml-store.after.txt"
+
+      - name: Run targeted toml 4.2.0 compatibility and advisory smokes
+        working-directory: /tmp/n8n-src
+        run: |
+          set -euo pipefail
+          toml_dir="$(find node_modules/.pnpm -maxdepth 1 -type d -name 'toml@4.2.0' -print -quit)/node_modules/toml"
+          test -d "$toml_dir"
+          TOML_DIR="$PWD/$toml_dir" node <<'NODE' | tee "$GITHUB_WORKSPACE/$OUT/toml-compatibility-smoke.txt"
+          const path=require('path'); const {spawnSync}=require('child_process');
+          const dir=process.env.TOML_DIR; const pkg=require(path.join(dir,'package.json')); const toml=require(dir);
+          if(pkg.version!=='4.2.0') throw new Error('wrong toml version '+pkg.version);
+          if(typeof toml.parse!=='function') throw new Error('toml.parse missing');
+          const basic=toml.parse('title="SiteScore"\n[db]\nport=5432\n');
+          if(basic.title!=='SiteScore'||basic.db.port!==5432) throw new Error('basic parse failed');
+          delete Object.prototype.polluted;
+          const pollution='[a.b]\ny = 1\n[a.b.y.__proto__.__proto__]\npolluted = "yes"\n';
+          try{ toml.parse(pollution); }catch(e){}
+          if(({}).polluted!==undefined || Object.prototype.polluted!==undefined) throw new Error('prototype pollution reproduced');
+          const child=spawnSync(process.execPath,['-e',`
+            const toml=require(${JSON.stringify(dir)});
+            let x='1'; for(let i=0;i<3000;i++) x='['+x+']';
+            try { toml.parse('a='+x); console.log('DEEP_PARSE_RETURNED'); process.exit(0); }
+            catch(e) { console.log('DEEP_PARSE_REJECTED:'+e.name+':'+String(e.message).slice(0,120)); process.exit(e instanceof RangeError ? 43 : 0); }
+          `],{encoding:'utf8',timeout:15000});
+          process.stdout.write(child.stdout||''); process.stderr.write(child.stderr||'');
+          if(child.signal) throw new Error('deep nesting child terminated by signal '+child.signal);
+          if(child.status!==0) throw new Error('deep nesting unsafe status '+child.status);
+          console.log('TOML_VERSION=4.2.0');
+          console.log('TOML_PARSE_API=PASS');
+          console.log('BASIC_PARSE=PASS');
+          console.log('PROTOTYPE_POLLUTION_REGRESSION=PASS');
+          console.log('DEEP_NESTING_CONTAINMENT=PASS');
+          NODE
+
+      - name: Prove direct parent module loadability under toml 4.2.0
+        working-directory: /tmp/n8n-src
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$GITHUB_WORKSPACE/$OUT/direct-parent-load-smoke.json"
+          const fs=require('fs'); const path=require('path');
+          const proof=JSON.parse(fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE,process.env.OUT,'direct-parent-compatibility.json'),'utf8'));
+          const out=[];
+          for(const p of proof.production_direct_parents){
+            const manifest=p.manifest; const dir=path.dirname(manifest); let loaded=false, error=null;
+            try{ require(dir); loaded=true; }catch(e){ error=String(e&&e.message||e).slice(0,300); }
+            out.push({parent:p.parent,version:p.version,range:p.range,loaded,error});
+            if(!loaded) process.exitCode=44;
+          }
+          console.log(JSON.stringify(out,null,2));
+          NODE
+
+      - name: Upload exact closure evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-n8n-23710-toml-closure-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: deploy/containers/artifacts/n8n-23710-toml-closure/
