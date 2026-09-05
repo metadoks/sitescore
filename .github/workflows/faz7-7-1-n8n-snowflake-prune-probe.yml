@@ -36,9 +36,15 @@ jobs:
           docker system prune -af || true
           df -h /
 
-      - name: Setup pnpm and Node
+      - name: Setup exact Node 26.5.1
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.5.1'
+
+      - name: Setup pnpm
         run: |
           set -euo pipefail
+          test "$(node --version)" = 'v26.5.1'
           corepack enable
           corepack prepare pnpm@11.22.0 --activate
           test "$(pnpm --version)" = '11.22.0'
@@ -89,9 +95,29 @@ jobs:
           cp /tmp/n8n-src/.github/workflows/build-base-image.yml "$OUT/upstream-build-base-image.yml"
           grep -F 'node:26.5.1-alpine3.24@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36' /tmp/n8n-src/docker/images/n8n/Dockerfile
           grep -F "$DHI_REF" /tmp/n8n-src/.github/workflows/build-base-image.yml
-          grep -F 'fast-uri: 3.1.6' /tmp/n8n-src/pnpm-workspace.yaml
+          grep -F 'fast-uri: 3.1.5' /tmp/n8n-src/pnpm-workspace.yaml
           grep -F 'ip-address@10: 10.3.1' /tmp/n8n-src/pnpm-workspace.yaml
           grep -F 'brace-expansion@5: 5.0.9' /tmp/n8n-src/pnpm-workspace.yaml
+
+      - name: Apply exact upstream-adopted fast-uri 3.1.6 backport
+        working-directory: /tmp/n8n-src
+        env:
+          UPSTREAM_FAST_URI_REF: '33eb5c196e0ce3a2c71525929a4ef861cb94b168'
+        run: |
+          set -euo pipefail
+          cp pnpm-workspace.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.stable.yaml"
+          cp pnpm-lock.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-lock.stable.yaml"
+          curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${UPSTREAM_FAST_URI_REF}/pnpm-workspace.yaml" -o "$GITHUB_WORKSPACE/$OUT/upstream-fast-uri-adoption.yaml"
+          grep -F 'fast-uri: 3.1.6' "$GITHUB_WORKSPACE/$OUT/upstream-fast-uri-adoption.yaml"
+          python -c "from pathlib import Path; p=Path('pnpm-workspace.yaml'); s=p.read_text(); assert s.count('fast-uri: 3.1.5') == 1; assert 'fast-uri: 3.1.6' not in s; p.write_text(s.replace('fast-uri: 3.1.5','fast-uri: 3.1.6',1))"
+          pnpm install --lockfile-only --ignore-scripts
+          cp pnpm-workspace.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-workspace.backported.yaml"
+          cp pnpm-lock.yaml "$GITHUB_WORKSPACE/$OUT/pnpm-lock.backported.yaml"
+          git diff -- pnpm-workspace.yaml pnpm-lock.yaml > "$GITHUB_WORKSPACE/$OUT/fast-uri-backport.diff"
+          git diff --check -- pnpm-workspace.yaml pnpm-lock.yaml
+          grep -F 'fast-uri: 3.1.6' pnpm-workspace.yaml
+          ! grep -F 'fast-uri@3.1.5' pnpm-lock.yaml
+          grep -F 'fast-uri@3.1.6' pnpm-lock.yaml
 
       - name: Materialize production graph evidence
         working-directory: /tmp/n8n-src
@@ -150,31 +176,39 @@ jobs:
           snow=bykey.get(('snowflake-sdk','2.1.0'),[]); toml=bykey.get(('toml','3.0.0'),[])
           if len(snow)!=1 or len(toml)!=1: raise SystemExit(f'exact target multiplicity failed: snow={len(snow)} toml={len(toml)}')
           targets={Path(snow[0]['dir']).resolve():'snowflake-sdk@2.1.0',Path(toml[0]['dir']).resolve():'toml@3.0.0'}
-          parent_map={v:[] for v in targets.values()}; links=[]
+          why_snow=json.load(open(out/'pnpm-why-prod-snowflake-sdk.json'))
+          why_toml=json.load(open(out/'pnpm-why-prod-toml.json'))
+          if len(why_snow)!=1 or why_snow[0].get('name')!='snowflake-sdk' or why_snow[0].get('version')!='2.1.0':
+              raise SystemExit(f'unexpected snowflake pnpm why root: {why_snow}')
+          snow_deps=why_snow[0].get('dependents') or []
+          snow_parent_ids=sorted(f"{d.get('name')}@{d.get('version')}" for d in snow_deps)
+          if snow_parent_ids != ['n8n-nodes-base@2.37.4']:
+              raise SystemExit(f'unexpected snowflake production parents: {snow_parent_ids}')
+          if len(why_toml)!=1 or why_toml[0].get('name')!='toml' or why_toml[0].get('version')!='3.0.0':
+              raise SystemExit(f'unexpected toml pnpm why root: {why_toml}')
+          toml_deps=why_toml[0].get('dependents') or []
+          toml_parent_ids=sorted(f"{d.get('name')}@{d.get('version')}" for d in toml_deps)
+          if toml_parent_ids != ['snowflake-sdk@2.1.0']:
+              raise SystemExit(f'unexpected toml production parents: {toml_parent_ids}')
+          nested=toml_deps[0].get('dependents') or []
+          nested_ids=sorted(f"{d.get('name')}@{d.get('version')}" for d in nested)
+          if nested_ids != ['n8n-nodes-base@2.37.4']:
+              raise SystemExit(f'unexpected transitive Snowflake chain: {nested_ids}')
+          links=[]
           for base,dirs,files in os.walk(root,followlinks=False):
               for name in list(dirs)+list(files):
                   p=Path(base)/name
                   if not p.is_symlink(): continue
                   try: target=p.resolve(strict=True)
                   except FileNotFoundError: continue
-                  if target not in targets: continue
-                  parent='ROOT'
-                  q=Path(base).resolve()
-                  while q != root.resolve() and root.resolve() in q.parents:
-                      mf=q/'package.json'
-                      if mf.exists():
-                          try:
-                              j=json.loads(mf.read_text()); parent=f"{j.get('name')}@{j.get('version')}"; break
-                          except Exception: pass
-                      q=q.parent
-                  parent_map[targets[target]].append(parent); links.append({'link':str(p),'target':str(target),'package':targets[target],'parent':parent})
-          for k in parent_map: parent_map[k]=sorted(set(parent_map[k]))
-          graph={'parents':parent_map,'links':links,'authorized_removed_packages':['snowflake-sdk@2.1.0','toml@3.0.0']}
+                  if target in targets:
+                      links.append({'link':str(p),'target':str(target),'package':targets[target]})
+          linked_packages=sorted(set(r['package'] for r in links))
+          if linked_packages != ['snowflake-sdk@2.1.0','toml@3.0.0']:
+              raise SystemExit(f'target filesystem links incomplete: {linked_packages}')
+          parent_map={'snowflake-sdk@2.1.0':snow_parent_ids,'toml@3.0.0':toml_parent_ids}
+          graph={'parents':parent_map,'transitive_chain':{'toml@3.0.0':['snowflake-sdk@2.1.0','n8n-nodes-base@2.37.4']},'pnpm_why_snowflake':why_snow,'pnpm_why_toml':why_toml,'filesystem_links':links,'authorized_removed_packages':['snowflake-sdk@2.1.0','toml@3.0.0'],'shared_parent_analysis':{'snowflake_sdk_external_parents':[],'toml_external_parents':[]}}
           json.dump(graph,open(out/'parent-map.json','w'),indent=2,sort_keys=True); print(json.dumps(graph,indent=2,sort_keys=True))
-          snow_parents=[x for x in parent_map['snowflake-sdk@2.1.0'] if x!='ROOT']
-          toml_parents=[x for x in parent_map['toml@3.0.0'] if x!='ROOT']
-          if snow_parents != ['n8n-nodes-base@2.37.4']: raise SystemExit(f'unexpected snowflake parents: {snow_parents}')
-          if toml_parents != ['snowflake-sdk@2.1.0']: raise SystemExit(f'unexpected toml parents: {toml_parents}')
           for row in links:
               p=Path(row['link'])
               if p.is_symlink(): p.unlink()
