@@ -1,0 +1,165 @@
+name: faz7-7-1-n8n-23710-official-probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  N8N_VERSION: '2.37.10'
+  N8N_TAG: 'n8n@2.37.10'
+  N8N_SOURCE_COMMIT: '5542b8b6419cb6925cca8f11b270c9bfbe09d85e'
+  N8N_SOURCE_TREE: '8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0'
+  N8N_RELEASE_ID: '382600929'
+  N8N_VEX_SHA256: 'sha256:a2b6a9444b21027742cf4b120f3b6e22d745c9d3a025d766635b6e2304ed41d7'
+  IMAGE_TAG: 'n8nio/n8n:2.37.10'
+  OUT: 'deploy/containers/artifacts/n8n-23710-official-probe'
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact SiteScore source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Re-enumerate latest stable and bind source identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          python - <<'PY'
+          import json, os, re, urllib.request
+          from urllib.parse import urlencode
+          headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-official-probe'}
+          rels=[]
+          for page in range(1,11):
+              req=urllib.request.Request('https://api.github.com/repos/n8n-io/n8n/releases?'+urlencode({'per_page':100,'page':page}),headers=headers)
+              with urllib.request.urlopen(req,timeout=30) as r: batch=json.load(r)
+              if not batch: break
+              for rel in batch:
+                  if rel.get('draft') or rel.get('prerelease'): continue
+                  m=re.fullmatch(r'n8n@(\d+)\.(\d+)\.(\d+)',str(rel.get('tag_name','')))
+                  if m and int(m.group(1))==2: rels.append((tuple(map(int,m.groups())),rel))
+              if len(batch)<100: break
+          version,rel=max(rels,key=lambda x:x[0]); version='.'.join(map(str,version))
+          if version!=os.environ['N8N_VERSION']: raise SystemExit(f'new official stable {version} exists; patch-forward again')
+          if str(rel['id'])!=os.environ['N8N_RELEASE_ID']: raise SystemExit('release id mismatch')
+          ctx={'selected_version':version,'release_id':rel['id'],'release_tag':rel['tag_name'],'published_at':rel.get('published_at'),'stable_source_commit':os.environ['N8N_SOURCE_COMMIT'],'stable_source_tree':os.environ['N8N_SOURCE_TREE']}
+          json.dump(ctx,open(os.environ['OUT']+'/source-context.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(ctx,indent=2,sort_keys=True))
+          PY
+          rm -rf /tmp/n8n-src && git init /tmp/n8n-src
+          git -C /tmp/n8n-src remote add origin https://github.com/n8n-io/n8n.git
+          git -C /tmp/n8n-src fetch --depth=1 origin "$N8N_SOURCE_COMMIT"
+          git -C /tmp/n8n-src checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/n8n-src rev-parse HEAD)" = "$N8N_SOURCE_COMMIT"
+          test "$(git -C /tmp/n8n-src rev-parse HEAD^{tree})" = "$N8N_SOURCE_TREE"
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = '02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1'
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = 'f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c'
+
+      - name: Resolve official amd64 digest and prove runtime
+        id: runtime
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$IMAGE_TAG"
+          digest="$(docker image inspect "$IMAGE_TAG" --format '{{index .RepoDigests 0}}')"
+          case "$digest" in n8nio/n8n@sha256:*) ;; *) echo "bad repo digest: $digest" >&2; exit 1;; esac
+          arch="$(docker image inspect "$IMAGE_TAG" --format '{{.Architecture}}')"
+          user="$(docker image inspect "$IMAGE_TAG" --format '{{.Config.User}}')"
+          version="$(docker run --rm "$IMAGE_TAG" n8n --version | tr -d '\r' | tail -n1)"
+          test "$arch" = amd64
+          test -n "$user" && test "$user" != root && test "$user" != 0
+          test "$version" = "$N8N_VERSION"
+          printf 'IMAGE=%s\nDIGEST=%s\nARCH=%s\nUSER=%s\nVERSION=%s\n' "$IMAGE_TAG" "$digest" "$arch" "$user" "$version" | tee "$OUT/runtime-identity.txt"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n8n -e N8N_ENCRYPTION_KEY=ci-only-official-probe-key-00000000000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -p 127.0.0.1:15678:5678 "$IMAGE_TAG")"
+          trap 'docker logs "$cid" > "$OUT/startup.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
+          curl -fsS http://127.0.0.1:15678/healthz >/dev/null
+          docker logs "$cid" > "$OUT/startup.log" 2>&1 || true
+          docker stop -t 5 "$cid" >/dev/null; trap - EXIT
+          vol="sitescore-official-import-${GITHUB_RUN_ID}"; docker volume create "$vol" >/dev/null
+          trap 'docker volume rm -f "$vol" >/dev/null 2>&1 || true' EXIT
+          key='ci-only-official-probe-key-00000000000000000000'
+          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" "$IMAGE_TAG" import:workflow --input=/workflows/sitescore-order-paid-v1.json
+          docker run --rm -e N8N_ENCRYPTION_KEY="$key" -e N8N_DIAGNOSTICS_ENABLED=false -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" "$IMAGE_TAG" import:workflow --input=/workflows/sitescore-recovery-schedule-v1.json
+          docker volume rm -f "$vol" >/dev/null; trap - EXIT
+          echo 'OFFICIAL_RUNTIME_IMPORT=PASS' | tee "$OUT/runtime-import.txt"
+
+      - name: Generate pinned SBOM and raw Grype evidence
+        run: |
+          set -euo pipefail
+          syft="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          grype="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft" "$IMAGE_TAG" -o spdx-json > "$OUT/n8n.spdx.json"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$IMAGE_TAG" -o json > "$OUT/n8n.grype.json"
+
+      - name: Verify exact release OpenVEX and CISA KEV then reconcile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_DIGEST: ${{ steps.runtime.outputs.digest }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o "$OUT/cisa-kev.json"
+          python - <<'PY'
+          import hashlib,json,os,urllib.request
+          out=os.environ['OUT']; token=os.environ['GH_TOKEN']; rid=os.environ['N8N_RELEASE_ID']
+          req=urllib.request.Request(f'https://api.github.com/repos/n8n-io/n8n/releases/{rid}/assets',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-official-probe'})
+          with urllib.request.urlopen(req,timeout=30) as r: assets=json.load(r)
+          asset=next((a for a in assets if a.get('name')=='vex.openvex.json'),None)
+          if not asset: raise SystemExit('release OpenVEX missing')
+          urllib.request.urlretrieve(asset['browser_download_url'],out+'/upstream.openvex.json')
+          computed='sha256:'+hashlib.sha256(open(out+'/upstream.openvex.json','rb').read()).hexdigest(); recorded=asset.get('digest')
+          if recorded!=computed or computed!=os.environ['N8N_VEX_SHA256']: raise SystemExit(f'OpenVEX digest mismatch recorded={recorded} computed={computed}')
+          json.dump({'asset_id':asset['id'],'metadata_digest':recorded,'computed_digest':computed,'verified':True},open(out+'/openvex-asset-verification.json','w'),indent=2,sort_keys=True)
+          ctx=json.load(open(out+'/source-context.json')); ctx['selected_digest']=os.environ['SELECTED_DIGEST']; json.dump(ctx,open(out+'/release-context.json','w'),indent=2,sort_keys=True)
+          PY
+          git show d008f7b9689a936afd09ac55397c82647477b644:deploy/containers/n8n_openvex_reconcile.py > /tmp/n8n_openvex_reconcile.py
+          python /tmp/n8n_openvex_reconcile.py "$OUT"
+
+      - name: Classify official security closure
+        id: security
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import collections,json,os
+          out=os.environ['OUT']; rows=json.load(open(out+'/n8n.vendor-openvex-reconciliation.json'))
+          blocked=[r for r in rows if r.get('severity') in {'CRITICAL','HIGH'} and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']
+          kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
+          families=collections.Counter((str(r.get('package_type')),str(r.get('package_name'))) for r in blocked)
+          findings=[]
+          for r in blocked:
+              findings.append({'id':r.get('scanner_advisory_id'),'severity':r.get('severity'),'package':r.get('package_name'),'package_type':r.get('package_type'),'installed':r.get('installed_version'),'fix_versions':r.get('fix_versions')})
+          summary={'BLOCKING_CRITICAL':sum(r.get('severity')=='CRITICAL' for r in blocked),'BLOCKING_HIGH':sum(r.get('severity')=='HIGH' for r in blocked),'CISA_KEV':len(kev),'BLOCKER_FAMILIES':[{'package_type':k[0],'package':k[1],'count':v} for k,v in sorted(families.items())],'BLOCKERS':findings}
+          summary['OFFICIAL_SECURITY_PASS']=summary['BLOCKING_CRITICAL']==0 and summary['BLOCKING_HIGH']==0 and summary['CISA_KEV']==0
+          json.dump(summary,open(out+'/official-security-summary.json','w'),indent=2,sort_keys=True); print(json.dumps(summary,indent=2,sort_keys=True))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('pass='+('pass' if summary['OFFICIAL_SECURITY_PASS'] else 'fail')+'\n')
+          PY
+
+      - name: Final official-image decision
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "$OUT/runtime-import.txt"
+          test -f "$OUT/official-security-summary.json"
+          if [ '${{ steps.security.outputs.pass }}' = pass ]; then
+            echo 'OFFICIAL_N8N_2_37_10_GATE=PASS' | tee "$OUT/final-gate.txt"
+          else
+            echo 'OFFICIAL_N8N_2_37_10_GATE=FAIL_SECURITY' | tee "$OUT/final-gate.txt"
+            exit 42
+          fi
+
+      - name: Upload official-image evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-n8n-23710-official-${{ github.event.pull_request.head.sha || github.sha }}
+          path: deploy/containers/artifacts/n8n-23710-official-probe/
+          if-no-files-found: error
+          retention-days: 14
