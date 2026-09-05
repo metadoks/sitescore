@@ -1,0 +1,148 @@
+name: faz7-7-1-prune-patcher
+
+on:
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Build corrected pruning probe blob
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init repo
+          cd repo
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml')
+          s=p.read_text()
+
+          old="""      - name: Setup pnpm and Node
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@11.22.0 --activate
+          test \"$(pnpm --version)\" = '11.22.0'
+"""
+          new="""      - name: Setup exact Node 26.5.1
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.5.1'
+
+      - name: Setup pnpm
+        run: |
+          set -euo pipefail
+          test \"$(node --version)\" = 'v26.5.1'
+          corepack enable
+          corepack prepare pnpm@11.22.0 --activate
+          test \"$(pnpm --version)\" = '11.22.0'
+"""
+          if old not in s: raise SystemExit('setup block missing')
+          s=s.replace(old,new,1)
+
+          old="          grep -F 'fast-uri: 3.1.6' /tmp/n8n-src/pnpm-workspace.yaml\n"
+          new="          grep -F 'fast-uri: 3.1.5' /tmp/n8n-src/pnpm-workspace.yaml\n"
+          if old not in s: raise SystemExit('stable fast-uri binding missing')
+          s=s.replace(old,new,1)
+
+          marker="""      - name: Materialize production graph evidence
+"""
+          insert="""      - name: Apply exact upstream-adopted fast-uri 3.1.6 backport
+        working-directory: /tmp/n8n-src
+        env:
+          UPSTREAM_FAST_URI_REF: '33eb5c196e0ce3a2c71525929a4ef861cb94b168'
+        run: |
+          set -euo pipefail
+          cp pnpm-workspace.yaml \"$GITHUB_WORKSPACE/$OUT/pnpm-workspace.stable.yaml\"
+          cp pnpm-lock.yaml \"$GITHUB_WORKSPACE/$OUT/pnpm-lock.stable.yaml\"
+          curl --fail --location --silent --show-error \"https://raw.githubusercontent.com/n8n-io/n8n/${UPSTREAM_FAST_URI_REF}/pnpm-workspace.yaml\" -o \"$GITHUB_WORKSPACE/$OUT/upstream-fast-uri-adoption.yaml\"
+          grep -F 'fast-uri: 3.1.6' \"$GITHUB_WORKSPACE/$OUT/upstream-fast-uri-adoption.yaml\"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('pnpm-workspace.yaml'); s=p.read_text()
+          if s.count('fast-uri: 3.1.5') != 1: raise SystemExit('stable fast-uri 3.1.5 binding multiplicity changed')
+          if 'fast-uri: 3.1.6' in s: raise SystemExit('target already present unexpectedly')
+          p.write_text(s.replace('fast-uri: 3.1.5','fast-uri: 3.1.6',1))
+          PY
+          pnpm install --lockfile-only --ignore-scripts
+          cp pnpm-workspace.yaml \"$GITHUB_WORKSPACE/$OUT/pnpm-workspace.backported.yaml\"
+          cp pnpm-lock.yaml \"$GITHUB_WORKSPACE/$OUT/pnpm-lock.backported.yaml\"
+          git diff -- pnpm-workspace.yaml pnpm-lock.yaml > \"$GITHUB_WORKSPACE/$OUT/fast-uri-backport.diff\"
+          git diff --check -- pnpm-workspace.yaml pnpm-lock.yaml
+          grep -F 'fast-uri: 3.1.6' pnpm-workspace.yaml
+          ! grep -F 'fast-uri@3.1.5' pnpm-lock.yaml
+          grep -F 'fast-uri@3.1.6' pnpm-lock.yaml
+
+"""
+          if marker not in s: raise SystemExit('materialize marker missing')
+          s=s.replace(marker,insert+marker,1)
+
+          start="          parent_map={v:[] for v in targets.values()}; links=[]\n"
+          end="          if toml_parents != ['snowflake-sdk@2.1.0']: raise SystemExit(f'unexpected toml parents: {toml_parents}')\n"
+          a=s.find(start); b=s.find(end,a)
+          if a<0 or b<0: raise SystemExit('old parent-map block missing')
+          b += len(end)
+          graph="""          why_snow=json.load(open(out/'pnpm-why-prod-snowflake-sdk.json'))
+          why_toml=json.load(open(out/'pnpm-why-prod-toml.json'))
+          if len(why_snow)!=1 or why_snow[0].get('name')!='snowflake-sdk' or why_snow[0].get('version')!='2.1.0':
+              raise SystemExit(f'unexpected snowflake pnpm why root: {why_snow}')
+          snow_deps=why_snow[0].get('dependents') or []
+          snow_parent_ids=sorted(f\"{d.get('name')}@{d.get('version')}\" for d in snow_deps)
+          if snow_parent_ids != ['n8n-nodes-base@2.37.4']:
+              raise SystemExit(f'unexpected snowflake production parents: {snow_parent_ids}')
+          if len(why_toml)!=1 or why_toml[0].get('name')!='toml' or why_toml[0].get('version')!='3.0.0':
+              raise SystemExit(f'unexpected toml pnpm why root: {why_toml}')
+          toml_deps=why_toml[0].get('dependents') or []
+          toml_parent_ids=sorted(f\"{d.get('name')}@{d.get('version')}\" for d in toml_deps)
+          if toml_parent_ids != ['snowflake-sdk@2.1.0']:
+              raise SystemExit(f'unexpected toml production parents: {toml_parent_ids}')
+          nested=toml_deps[0].get('dependents') or []
+          nested_ids=sorted(f\"{d.get('name')}@{d.get('version')}\" for d in nested)
+          if nested_ids != ['n8n-nodes-base@2.37.4']:
+              raise SystemExit(f'unexpected transitive Snowflake chain: {nested_ids}')
+          links=[]
+          for base,dirs,files in os.walk(root,followlinks=False):
+              for name in list(dirs)+list(files):
+                  p=Path(base)/name
+                  if not p.is_symlink(): continue
+                  try: target=p.resolve(strict=True)
+                  except FileNotFoundError: continue
+                  if target in targets:
+                      links.append({'link':str(p),'target':str(target),'package':targets[target]})
+          linked_packages=sorted(set(r['package'] for r in links))
+          if linked_packages != ['snowflake-sdk@2.1.0','toml@3.0.0']:
+              raise SystemExit(f'target filesystem links incomplete: {linked_packages}')
+          parent_map={'snowflake-sdk@2.1.0':snow_parent_ids,'toml@3.0.0':toml_parent_ids}
+          graph={'parents':parent_map,'transitive_chain':{'toml@3.0.0':['snowflake-sdk@2.1.0','n8n-nodes-base@2.37.4']},'pnpm_why_snowflake':why_snow,'pnpm_why_toml':why_toml,'filesystem_links':links,'authorized_removed_packages':['snowflake-sdk@2.1.0','toml@3.0.0'],'shared_parent_analysis':{'snowflake_sdk_external_parents':[],'toml_external_parents':[]}}
+          json.dump(graph,open(out/'parent-map.json','w'),indent=2,sort_keys=True); print(json.dumps(graph,indent=2,sort_keys=True))
+"""
+          s=s[:a]+graph+s[b:]
+          p.write_text(s)
+          PY
+          python - <<'PY'
+          import base64,hashlib,json,os,urllib.request
+          from pathlib import Path
+          data=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml').read_bytes()
+          payload=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode()
+          req=urllib.request.Request(
+              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/git/blobs',
+              data=payload,method='POST',headers={
+                  'Authorization':f'Bearer {os.environ["GH_TOKEN"]}',
+                  'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',
+                  'Content-Type':'application/json','User-Agent':'sitescore-faz7-prune-patcher'})
+          with urllib.request.urlopen(req,timeout=30) as r: result=json.load(r)
+          print('PATCHED_BLOB_SHA='+result['sha'])
+          print('PATCHED_SHA256='+hashlib.sha256(data).hexdigest())
+          PY
