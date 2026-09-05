@@ -126,7 +126,7 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=7168'
         run: |
           set -euo pipefail
-          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm install --frozen-lockfile
           pnpm why --prod --recursive snowflake-sdk --json > "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-snowflake-sdk.json"
           pnpm why --prod --recursive toml --json > "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-toml.json"
           pnpm why --prod --recursive fast-uri --json > "$GITHUB_WORKSPACE/$OUT/pnpm-why-prod-fast-uri.json"
