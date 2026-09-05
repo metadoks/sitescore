@@ -11,26 +11,25 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: BLOCKED_LATEST_STABLE_2_37_9_REQUIRES_NEW_SECURITY_DESIGN_DECISION
+IMPLEMENTER_STATE: BLOCKED_TRUE_DESIGN_SECURITY_OR_OWNER_GOVERNANCE_ACTION
 IMPLEMENTER_ACTION: STOP_FOR_REVIEWER_DESIGN_DECISION
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
 PR_STATE: OPEN
 PR_DRAFT: TRUE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
 PR_MERGED: FALSE
-CURRENT_HEAD_SHA: 609adf39771fb1bb7dfacfb78ccfe65f4471c4a3
+CURRENT_HEAD_SHA: b012d4ee69257c4a6652340fda935690a28d8ffa
 CURRENT_CHANGED_FILE_COUNT: 20
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
 OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71_N8N_VULN_001_STATUS: LATEST_STABLE_2_37_9_OFFICIAL_GATE_FAILED_NEW_DESIGN_REQUIRED
+OPS71_N8N_VULN_001_STATUS: BLOCKED_NEW_CRITICAL_HIGH_PACKAGE_FAMILY_TOML_ON_LATEST_STABLE_2_37_10
 
 DESIGN_DECISION_REVIEW_REQUIRED: 1
 CONTRACT_CHANGE_REQUIRED: 0
@@ -43,12 +42,9 @@ READY_TO_LOCK: NO
 MERGE_PERFORMED: NO
 FAZ_7_2_STARTED: NO
 
-FAZ6_HISTORICAL_N8N_VERSION: 2.33.4
-FAZ6_HISTORICAL_N8N_DIGEST: sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1ab891d7d50196b2162
-FAZ7_HISTORICAL_N8N_STATUS: SUPERSEDED_FOR_SECURITY
-PREVIOUS_REVIEWER_BOUND_STABLE: 2.37.7
-LATEST_OFFICIAL_STABLE: 2.37.9
-NEW_N8N_BASELINE_STATUS: NOT_SELECTED_LATEST_OFFICIAL_SECURITY_GATE_FAILED
+LATEST_OFFICIAL_STABLE: 2.37.10
+LATEST_OFFICIAL_DIGEST_AMD64: sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
+NEW_N8N_BASELINE_STATUS: NOT_SELECTED_NEW_PACKAGE_FAMILY_REQUIRES_REVIEWER_DECISION
 SELECTED_N8N_VERSION: NONE
 SELECTED_N8N_DIGEST: NONE
 
@@ -65,151 +61,87 @@ PRODUCTION_SECRET_COMMITTED: NONE
 
 ---
 
-## 1. Reviewer decision consumed exactly
+## 1. Reviewer patch-forward decision consumed exactly
 
-The latest Reviewer decision was read before continuing implementation. It authorized the exact three-package Alpine runtime remediation only for the then-bound n8n 2.37.7 hardened rebuild identities:
+The current Reviewer decision authorized continuous FAZ 7.1 completion under n8n 2.37.9 hardened rebuild authority and Section 9 patch-forward continuity.
 
-```text
-libcrypto3: 3.5.7-r1 -> 3.5.8-r0
-libssl3:    3.5.7-r1 -> 3.5.8-r0
-libexpat:   2.8.3-r1 -> 2.8.4-r0
-```
+For a newer patch-level stable, Implementer was permitted to continue without another Reviewer round-trip only if every CRITICAL/HIGH remained within already-authorized package/advisory families and no new CISA KEV, package family, security exception, base design or workflow/API/credential migration appeared.
 
-The Reviewer explicitly prohibited floating `apk upgrade`, arbitrary package versions, another Alpine minor, another Node line/base distribution, scanner suppression, and SiteScore-authored VEX. Permanentization remained conditional on the complete security/runtime gate.
+Reviewer Section 9.3 explicitly requires STOP on a new CRITICAL/HIGH package family.
 
-No such prohibited substitution was made.
+No authorization was found for `toml` remediation or a `toml` residual-risk exception.
 
 ---
 
-## 2. Exact 2.37.7 patched candidate reached the intended security state
+## 2. n8n 2.37.9 was superseded correctly by the latest-stable guard
 
-Before the upstream stable changed, the Reviewer-authorized exact three-package patch was executed against the exact bound 2.37.7 source/build chain.
-
-Relevant completed probe:
+The corrected 2.37.9 hardened probe reached its mandatory fresh stable enumeration and stopped before building because a new official stable existed:
 
 ```text
-workflow = faz7-7-1-n8n-patched-final-probe
-run = 33741721597
-job = 100604947932
-source head = 425f35c80da22c373f50140c70bb81f6743a8ba0
-artifact id = 9889756482
-artifact sha256 = 14d22c2c419e5e407b592d83c154e30b13d5a86e36eb5c962173ea6cacdf7259
-artifact size = 1260955 bytes
-created_at = 2026-09-03T10:49:12Z
-expires_at = 2026-09-17T10:49:11Z
+new official stable 2.37.10 exists; stop and validate official image first
 ```
 
-The exact package-delta construction and security evaluation reached:
-
-```text
-RAW_CRITICAL = 0
-RAW_HIGH = 1
-BLOCKING_CRITICAL = 0
-CISA_KEV = 0
-OS_HIGH_BLOCKING = 0
-IP_ADDRESS_HIGH_BLOCKING = 0
-BRACE_EXPANSION_HIGH_BLOCKING = 0
-NEW_HIGH_INTRODUCED = 0
-OTHER_HIGH = 0
-NODEMAILER_EXCEPTION_CANDIDATES = 1
-```
-
-The sole residual was the already-authorized conditional exception candidate:
-
-```text
-package = nodemailer
-installed = 8.0.10
-advisory = GHSA-p6gq-j5cr-w38f
-fixed = 9.0.1+
-```
-
-The generic upstream OpenVEX reconciliation truthfully remained `FAIL` because that HIGH remained undispositioned; it was not suppressed or rewritten. The temporary probe had a CI control-flow defect that skipped the separately-authorized nodemailer containment/static/runtime branch even though the machine-readable security summary had reached the sole-nodemailer state.
-
-A narrow follow-up changed only the probe control flow: the generic OpenVEX truth remained visible, while exception eligibility was re-read from the persisted JSON and required exact zero counts for all other blockers. No vulnerability threshold, application source, workflow, or scanner result was changed.
-
-Control-flow-only commit:
-
-```text
-6fb603124a99185064b9855ad6028716e6c0e347
-```
-
-The corrected 2.37.7 probe did not proceed to candidate promotion because the required latest-stable guard detected a new upstream stable first.
+No 2.37.9 candidate was promoted.
 
 ---
 
-## 3. Latest-stable guard detected n8n 2.37.9 and correctly stopped 2.37.7 promotion
+## 3. Exact n8n 2.37.10 official-first validation
 
-Corrected probe run:
-
-```text
-workflow = faz7-7-1-n8n-patched-final-probe
-run = 33794600549
-job = 100779133721
-source head = 6fb603124a99185064b9855ad6028716e6c0e347
-```
-
-The first authoritative stable enumeration stopped with:
+Upstream release/source identity:
 
 ```text
-new official stable 2.37.9; official-first revalidation required
+version = 2.37.10
+tag = n8n@2.37.10
+release id = 382600929
+published_at = 2026-09-04T09:13:04Z
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+OpenVEX asset id = 544085903
+OpenVEX sha256 = a2b6a9444b21027742cf4b120f3b6e22d745c9d3a025d766635b6e2304ed41d7
 ```
 
-Therefore the successful 2.37.7 security reduction was not permanentized and was not selected as the FAZ 7.1 n8n baseline.
-
-This is required by the existing official-first policy, not a 2.37.7 security regression.
-
----
-
-## 4. Official n8n 2.37.9 was revalidated before any custom hardening
-
-Because a new non-prerelease stable existed, Implementer created a temporary official-image-only probe. It did not rebuild or patch n8n and did not transfer the 2.37.7 package remediation to 2.37.9.
-
-Probe source commit:
+Official linux/amd64 image:
 
 ```text
-6eeafd4167f8c58cd12a8eb7683f5721f5f8325d
+n8nio/n8n@sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
+arch = amd64
+user = node
+runtime version = 2.37.10
 ```
 
-Exact run/evidence:
+Official probe:
 
 ```text
-workflow = faz7-7-1-n8n-latest-official-probe
-run = 33795008277
-job = 100780473708
-artifact id = 9909036938
-artifact sha256 = 3a504c9bee16b79be01a40cd1b21adb2bab322c9c58c8dc94cf30cf85aa07d42
-artifact size = 1059491 bytes
-created_at = 2026-09-03T19:18:25Z
-expires_at = 2026-09-17T19:18:24Z
+workflow = faz7-7-1-n8n-23710-official-probe
+run = 33972295439
+job = 101322830102
+source PR head = b9ad4809a88b7e4f7ffcf0ffb5739fb7974ede5e
+artifact id = 9971353356
+artifact sha256 = 2b3300eb002da3cd710984df689c4cb57ceed4cf97b838c67283d85c78dfcba7
+artifact size = 1061775 bytes
+created_at = 2026-09-05T14:41:41Z
+expires_at = 2026-09-19T14:41:39Z
 ```
 
-Release/image identity:
+Compatibility/evidence before security decision:
 
 ```text
-version = 2.37.9
-release tag = n8n@2.37.9
-release id = 382036593
-published_at = 2026-09-03T13:16:03Z
-linux/amd64 official digest = n8nio/n8n@sha256:ed6bbab565eddbb688f394594cb2932d2b3b24f02240299a8fcce78bfe4201db
+latest-stable enumeration = PASS
+exact release/source/tree binding = PASS
+frozen workflow hashes = PASS
+linux/amd64 = PASS
+non-root = PASS
+n8n --version 2.37.10 = PASS
+startup/healthz = PASS
+order-paid frozen workflow import = PASS
+recovery frozen workflow import = PASS
+pinned Syft SPDX = PASS
+pinned Grype = PASS
+exact-release OpenVEX digest verification = PASS
+CISA KEV correlation execution = PASS
 ```
 
-Official image pre-security compatibility evidence passed:
-
-```text
-latest stable enumeration = PASS
-linux/amd64 image binding = PASS
-n8n --version = 2.37.9 = PASS
-startup/loadability = PASS
-frozen order-paid workflow import = PASS
-frozen recovery workflow import = PASS
-workflow hashes = exact frozen values
-SPDX generation = PASS
-raw Grype = PASS
-exact-release OpenVEX asset digest verification = PASS
-CISA KEV correlation = PASS
-```
-
-Frozen hashes remained:
+Frozen hashes remained exact:
 
 ```text
 order-paid = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
@@ -218,138 +150,152 @@ recovery   = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 
 ---
 
-## 5. Official 2.37.9 security gate is a true FAIL
+## 4. Official 2.37.10 security result — FAIL
 
-Verified reconciliation:
+Verified reconciliation result:
 
 ```text
 N8N_CISA_KEV_MATCHES = 0
-N8N_VENDOR_AFFECTED_CRITICAL = 0
-N8N_VENDOR_AFFECTED_HIGH = 0
-N8N_VENDOR_UNDER_INVESTIGATION_CRITICAL = 0
-N8N_VENDOR_UNDER_INVESTIGATION_HIGH = 0
-N8N_VEX_SCANNER_CONFLICT_CRITICAL = 0
-N8N_VEX_SCANNER_CONFLICT_HIGH = 0
+N8N_RAW_CRITICAL = 12
+N8N_RAW_HIGH = 42
 N8N_REMEDIABLE_UNDISPOSITIONED_CRITICAL = 11
-N8N_REMEDIABLE_UNDISPOSITIONED_HIGH = 37
+N8N_REMEDIABLE_UNDISPOSITIONED_HIGH = 39
 N8N_UNDISPOSITIONED_CRITICAL = 1
 N8N_UNDISPOSITIONED_HIGH = 3
-N8N_RAW_CRITICAL = 12
-N8N_RAW_HIGH = 40
-N8N_VEX_NOT_AFFECTED_ALLOWED_CRITICAL = 0
-N8N_VEX_NOT_AFFECTED_ALLOWED_HIGH = 0
 N8N_ACTIONABLE_GATE = FAIL
 OPENVEX_ASSET_SHA256_VERIFIED = true
 ```
 
-Direct official-gate summary:
+The official image still contains package families already covered by the prior hardened authority, including:
 
 ```text
-BLOCKING_CRITICAL = 12
-BLOCKING_HIGH = 40
-CISA_KEV = 0
-OFFICIAL_LATEST_SECURITY_PASS = false
+openssh family
+graphicsmagick/tiff closure
+libcrypto3
+libssl3
+libexpat
+brace-expansion
+ip-address
+fast-uri
+nodemailer residual candidate
 ```
 
-Blocking findings grouped by package:
+However the official 2.37.10 image also introduces a CRITICAL/HIGH blocker package family not covered by the current Reviewer decision:
 
 ```text
-brace-expansion          = 1
-fast-uri                 = 4
-graphicsmagick           = 2
-ip-address               = 1
-libcrypto3               = 9
-libexpat                  = 2
-libssl3                   = 9
-nodemailer                = 1
-openssh                   = 3
-openssh-client-common     = 3
-openssh-client-default    = 3
-openssh-keygen            = 3
-openssh-server            = 3
-openssh-server-common     = 3
-openssh-sftp-server       = 3
-tiff                      = 2
+package = toml
+package type = npm
+installed = 3.0.0
+HIGH advisories:
+  GHSA-v5mp-jgw5-2x6j
+  GHSA-82x6-q7mm-w9cf
+count = 2 HIGH
 ```
 
-The presence of `fast-uri` blockers and the changed official-image vulnerability closure means the previous 2.37.7 design decision cannot safely be treated as blanket authorization for a 2.37.9 rebuild. In particular, the Reviewer authorization named exact 2.37.7-bound source/build/runtime identities and exact package-version deltas.
+This is a new package family relative to the authorized closure. Therefore Reviewer Section 9.3 is triggered literally.
 
-Implementer therefore did NOT:
-
-```text
-- copy the 2.37.7 three-package pin transaction onto 2.37.9;
-- invent a fast-uri remediation;
-- arbitrarily upgrade npm dependencies;
-- alter workflow semantics;
-- suppress or ignore the 12 CRITICAL / 40 HIGH findings;
-- select 2.37.9 as production baseline;
-- fall back to 2.37.7 despite the official-first latest-stable rule.
-```
+No local `toml` dependency override, suppression, reachability exception, VEX, arbitrary dependency upgrade or alternate base was attempted.
 
 ---
 
-## 6. Temporary probes removed; PR restored to permanent 20-file scope
+## 5. Why hardened 2.37.10 was NOT started
 
-Temporary diagnostic/probe workflows were removed after evidence preservation:
+The patch-forward authority requires all CRITICAL/HIGH package families to remain already-authorized families. `toml` violates that precondition.
+
+Therefore the Implementer did NOT self-authorize:
 
 ```text
-.github/workflows/faz7-7-1-ci-diagnostics.yml
-.github/workflows/faz7-7-1-n8n-latest-official-probe.yml
-.github/workflows/faz7-7-1-n8n-patched-final-probe.yml
+toml version override
+toml lockfile override
+toml reachability exception
+scanner suppression
+SiteScore-authored VEX
+new base/runtime design
 ```
 
-Cleanup commits included:
+The correct terminal state is a true Reviewer design/security decision, not another mechanical remediation loop.
+
+---
+
+## 6. Permanent CI status reached before mandatory STOP
+
+On the recent exact-head permanent CI work:
 
 ```text
-dc778074969a71653dde3564d0d458dcc28f061f
-1168ce71ae86017beaf808468d900db381f39260
-609adf39771fb1bb7dfacfb78ccfe65f4471c4a3
+source-boundary = PASS
+frozen application source diff = NONE
+frozen n8n workflow hashes = PASS
+full-40-character Action pin checker = PASS
+static-contracts = PASS
+FAZ6 historical Commerce replay = PASS
 ```
 
-Current PR #34 state after cleanup:
+Historical replay has already been proven at:
 
 ```text
-head = 609adf39771fb1bb7dfacfb78ccfe65f4471c4a3
+417 passed, 139 warnings
+```
+
+Application container validation reached:
+
+```text
+API image build = PASS
+Commerce image build = PASS
+amd64/non-root/labels/read-only contract = PASS
+API regression = 114 PASS
+report regression = 24 PASS
+Commerce = 416 PASS + 1 phase-local final-freeze test accidentally executed
+```
+
+The Commerce issue is a known mechanics-only deselection-path defect: pytest working directory uses relative node ID `tests/...`, while the current command passed an absolute `/testsrc/sitescore-commerce/tests/...` deselect path. The frozen test itself is unchanged. This mechanics fix was deliberately not continued after the mandatory Section 9.3 security STOP.
+
+Permanent n8n baseline remains unselected, so `n8n-validation` / aggregate required gate are not yet expected to pass.
+
+---
+
+## 7. Cleanup / exact live PR state
+
+All temporary n8n 2.37.9 / 2.37.10 probe workflows were removed after evidence preservation.
+
+Current PR #34:
+
+```text
+head = b012d4ee69257c4a6652340fda935690a28d8ffa
 base = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-OPEN = true
-DRAFT = true
-MERGEABLE = true
-MERGED = false
+state = OPEN
+DRAFT = TRUE
+mergeable = TRUE
+merged = FALSE
 changed files = 20
-additions = 3864
-deletions = 0
 ```
 
-Changed paths are again exactly the original permanent FAZ 7.1 20-file set. No probe-only workflow remains in the PR diff.
+The changed-file scope is back to the original permanent FAZ 7.1 set. No frozen application or n8n workflow JSON path is changed.
 
 ---
 
-## 7. Mandatory STOP / requested Reviewer decision
+## 8. Reviewer decision required
 
-A fresh Reviewer design decision is now required because the selected latest non-prerelease stable changed from 2.37.7 to 2.37.9 after the prior exact-remediation authorization, and the new official image fails with a different blocker closure.
+Single true technical blocker requiring Reviewer authority:
 
 ```text
-IMPLEMENTER_STATE: BLOCKED_LATEST_STABLE_2_37_9_REQUIRES_NEW_SECURITY_DESIGN_DECISION
-IMPLEMENTER_ACTION: STOP_FOR_REVIEWER_DESIGN_DECISION
-OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
-OPS71-N8N-VULN-001: LATEST_STABLE_2_37_9_OFFICIAL_GATE_FAILED_NEW_DESIGN_REQUIRED
-OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-DESIGN_DECISION_REVIEW_REQUIRED: 1
-CONTRACT_CHANGE_REQUIRED: 0
+OPS71-N8N-VULN-001:
+LATEST_STABLE_2_37_10_INTRODUCES_NEW_HIGH_PACKAGE_FAMILY_TOML
+
+package = toml
+installed = 3.0.0
+advisories = GHSA-v5mp-jgw5-2x6j, GHSA-82x6-q7mm-w9cf
+CISA KEV = 0
+```
+
+Reviewer must decide whether and under what exact upstream-bound conditions `toml` may be remediated or otherwise dispositioned. Implementer will not infer this authority.
+
+Owner governance remains separately pending and unchanged, but it was not the cause of this technical STOP.
+
+```text
 READY_FOR_REVIEW: NO
 READY_TO_LOCK: NO
-USER_LOCK_AUTHORIZED: NO
 MERGE: NO
-FAZ_7_2_STARTED: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
-
-Reviewer must decide whether FAZ 7.1 should now:
-
-```text
-A. bind and harden exact stable 2.37.9 under a newly-scoped upstream-faithful remediation decision, including explicit treatment of the newly observed fast-uri and other current blockers; or
-B. issue another explicit policy/design path consistent with the official-first requirement.
-```
-
-Until Reviewer issues that decision, Implementer will not transfer the 2.37.7 security patch authorization to 2.37.9, will not permanentize an n8n baseline, will not merge PR #34, and will not start FAZ 7.2 or FAZ 8.
