@@ -167,7 +167,12 @@ jobs:
                   for m in root.glob(pat):
                       try: j=json.loads(m.read_text())
                       except Exception: continue
-                      rows.append({'name':j.get('name'),'version':j.get('version'),'manifest':str(m),'dir':str(m.parent.resolve()),'store':str(m.parents[2].resolve())})
+                      real_dir=m.parent.resolve()
+            real_store=real_dir.parents[1].resolve()
+            pnpm_root=(root/'.pnpm').resolve()
+            if real_store.parent.resolve()!=pnpm_root:
+                raise SystemExit(f'unexpected resolved pnpm store layout: dir={real_dir} store={real_store}')
+            rows.append({'name':j.get('name'),'version':j.get('version'),'manifest':str(m),'dir':str(real_dir),'store':str(real_store)})
               unique={r['dir']:r for r in rows if r['name'] and r['version']}
               return sorted(unique.values(),key=lambda r:(r['name'],r['version'],r['dir']))
           before=instances(); json.dump(before,open(out/'inventory.before.json','w'),indent=2,sort_keys=True)
@@ -176,6 +181,10 @@ jobs:
           snow=bykey.get(('snowflake-sdk','2.1.0'),[]); toml=bykey.get(('toml','3.0.0'),[])
           if len(snow)!=1 or len(toml)!=1: raise SystemExit(f'exact target multiplicity failed: snow={len(snow)} toml={len(toml)}')
           targets={Path(snow[0]['dir']).resolve():'snowflake-sdk@2.1.0',Path(toml[0]['dir']).resolve():'toml@3.0.0'}
+authorized_target_ids={'snowflake-sdk@2.1.0','toml@3.0.0'}
+n8n_base=bykey.get(('n8n-nodes-base','2.37.4'),[])
+if len(n8n_base)!=1: raise SystemExit(f'exact n8n-nodes-base multiplicity failed: {len(n8n_base)}')
+n8n_store=Path(n8n_base[0]['store']).resolve()
           why_snow=json.load(open(out/'pnpm-why-prod-snowflake-sdk.json'))
           why_toml=json.load(open(out/'pnpm-why-prod-toml.json'))
           if len(why_snow)!=1 or why_snow[0].get('name')!='snowflake-sdk' or why_snow[0].get('version')!='2.1.0':
@@ -212,15 +221,44 @@ jobs:
           for row in links:
               p=Path(row['link'])
               if p.is_symlink(): p.unlink()
-          for r in (snow[0],toml[0]):
-              store=Path(r['store'])
-              if store.exists(): shutil.rmtree(store)
+          delete_targets=[]
+for r in (snow[0],toml[0]):
+    pkg_dir=Path(r['dir']).resolve()
+    store=Path(r['store']).resolve()
+    meta=json.loads((pkg_dir/'package.json').read_text())
+    ident=f"{meta.get('name')}@{meta.get('version')}"
+    if ident not in authorized_target_ids:
+        raise SystemExit(f'unauthorized resolved delete identity: {ident}')
+    expected_store=pkg_dir.parents[1].resolve()
+    if store != expected_store or store.parent.resolve() != (root/'.pnpm').resolve():
+        raise SystemExit(f'resolved delete store mismatch for {ident}: store={store} expected={expected_store}')
+    if store == n8n_store or n8n_store in store.parents:
+        raise SystemExit(f'delete target overlaps n8n-nodes-base store: {ident} target={store} n8n={n8n_store}')
+    delete_targets.append({'package':ident,'dir':str(pkg_dir),'store':str(store)})
+if {r['package'] for r in delete_targets} != authorized_target_ids or len({r['store'] for r in delete_targets}) != 2:
+    raise SystemExit(f'expected delete-target set mismatch: {delete_targets}')
+json.dump(delete_targets,open(out/'delete-targets.json','w'),indent=2,sort_keys=True)
+print(json.dumps({'resolved_delete_targets':delete_targets,'n8n_nodes_base_store':str(n8n_store)},indent=2,sort_keys=True))
+for row in delete_targets:
+    store=Path(row['store'])
+    if not store.exists(): raise SystemExit(f'resolved delete store missing before prune: {store}')
+    shutil.rmtree(store)
           after=instances(); json.dump(after,open(out/'inventory.after.json','w'),indent=2,sort_keys=True)
           b={(r['name'],r['version']) for r in before}; a={(r['name'],r['version']) for r in after}
           removed=sorted(f'{n}@{v}' for n,v in b-a); added=sorted(f'{n}@{v}' for n,v in a-b)
-          delta={'removed':removed,'added':added,'version_changes':[],'shared_non_snowflake_removed':[]}
+          authorized_removed=['snowflake-sdk@2.1.0','toml@3.0.0']
+shared_non_snowflake_removed=sorted(x for x in removed if x not in authorized_removed)
+before_versions={}; after_versions={}
+for n,v in b: before_versions.setdefault(n,set()).add(v)
+for n,v in a: after_versions.setdefault(n,set()).add(v)
+version_changes=[]
+for n in sorted(set(before_versions)&set(after_versions)):
+    if before_versions[n] != after_versions[n]:
+        version_changes.append({'name':n,'before':sorted(before_versions[n]),'after':sorted(after_versions[n])})
+delta={'removed':removed,'added':added,'version_changes':version_changes,'shared_non_snowflake_removed':shared_non_snowflake_removed}
           json.dump(delta,open(out/'package-delta.json','w'),indent=2,sort_keys=True); print(json.dumps(delta,indent=2,sort_keys=True))
-          if removed != ['snowflake-sdk@2.1.0','toml@3.0.0'] or added: raise SystemExit(f'unexpected prune delta: {delta}')
+          if removed != authorized_removed or added or version_changes or shared_non_snowflake_removed: raise SystemExit(f'unexpected prune delta: {delta}')
+if len([r for r in after if r['name']=='n8n-nodes-base' and r['version']=='2.37.4']) != 1: raise SystemExit('n8n-nodes-base@2.37.4 not preserved exactly once')
           if any(r['name']=='snowflake-sdk' for r in after): raise SystemExit('snowflake-sdk remains')
           if any(r['name']=='toml' and r['version']=='3.0.0' for r in after): raise SystemExit('toml 3.0.0 remains')
           PY

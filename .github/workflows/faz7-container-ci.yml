@@ -264,7 +264,7 @@ jobs:
             -e SITESCORE_COMMERCE_DATABASE_URL="$commerce_db" \
             sitescore-commerce:test-integration \
             python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-commerce/tests \
-              --deselect /testsrc/sitescore-commerce/tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only \
+              --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only \
             > /tmp/commerce-tests.txt 2>&1
           commerce_rc=$?
           set -e
