@@ -25,13 +25,19 @@ jobs:
           git checkout --detach FETCH_HEAD
           python - <<'PY'
           from pathlib import Path
-          def one(s,old,new,label):
+          import re
+
+          def literal_one(s, old, new, label):
               n=s.count(old)
-              if n!=1: raise SystemExit(f'{label}: expected 1 match, got {n}')
+              if n != 1: raise SystemExit(f'{label}: expected 1 match, got {n}')
               return s.replace(old,new,1)
+          def regex_one(s, pattern, new, label):
+              out,n=re.subn(pattern,new,s,count=1,flags=re.MULTILINE)
+              if n != 1: raise SystemExit(f'{label}: expected 1 regex match, got {n}')
+              return out
 
           p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml'); s=p.read_text()
-          s=one(s,
+          s=literal_one(s,
             "                      rows.append({'name':j.get('name'),'version':j.get('version'),'manifest':str(m),'dir':str(m.parent.resolve()),'store':str(m.parents[2].resolve())})",
             """                      real_dir=m.parent.resolve()
                       real_store=real_dir.parents[1].resolve()
@@ -40,7 +46,7 @@ jobs:
                           raise SystemExit(f'unexpected resolved pnpm store layout: dir={real_dir} store={real_store}')
                       rows.append({'name':j.get('name'),'version':j.get('version'),'manifest':str(m),'dir':str(real_dir),'store':str(real_store)})""",
             'resolved store derivation')
-          s=one(s,
+          s=literal_one(s,
             "          targets={Path(snow[0]['dir']).resolve():'snowflake-sdk@2.1.0',Path(toml[0]['dir']).resolve():'toml@3.0.0'}",
             """          targets={Path(snow[0]['dir']).resolve():'snowflake-sdk@2.1.0',Path(toml[0]['dir']).resolve():'toml@3.0.0'}
           authorized_target_ids={'snowflake-sdk@2.1.0','toml@3.0.0'}
@@ -48,10 +54,8 @@ jobs:
           if len(n8n_base)!=1: raise SystemExit(f'exact n8n-nodes-base multiplicity failed: {len(n8n_base)}')
           n8n_store=Path(n8n_base[0]['store']).resolve()""",
             'target identity guard')
-          s=one(s,
-            """          for r in (snow[0],toml[0]):
-              store=Path(r['store'])
-              if store.exists(): shutil.rmtree(store)""",
+          s=regex_one(s,
+            r"^\s*for r in \(snow\[0\],toml\[0\]\):\n\s*store=Path\(r\['store'\]\)\n\s*if store\.exists\(\): shutil\.rmtree\(store\)$",
             """          delete_targets=[]
           for r in (snow[0],toml[0]):
               pkg_dir=Path(r['dir']).resolve()
@@ -75,7 +79,7 @@ jobs:
               if not store.exists(): raise SystemExit(f'resolved delete store missing before prune: {store}')
               shutil.rmtree(store)""",
             'resolved delete loop')
-          s=one(s,
+          s=literal_one(s,
             "          delta={'removed':removed,'added':added,'version_changes':[],'shared_non_snowflake_removed':[]}",
             """          authorized_removed=['snowflake-sdk@2.1.0','toml@3.0.0']
           shared_non_snowflake_removed=sorted(x for x in removed if x not in authorized_removed)
@@ -88,7 +92,7 @@ jobs:
                   version_changes.append({'name':n,'before':sorted(before_versions[n]),'after':sorted(after_versions[n])})
           delta={'removed':removed,'added':added,'version_changes':version_changes,'shared_non_snowflake_removed':shared_non_snowflake_removed}""",
             'delta derivation')
-          s=one(s,
+          s=literal_one(s,
             "          if removed != ['snowflake-sdk@2.1.0','toml@3.0.0'] or added: raise SystemExit(f'unexpected prune delta: {delta}')",
             """          if removed != authorized_removed or added or version_changes or shared_non_snowflake_removed: raise SystemExit(f'unexpected prune delta: {delta}')
           if len([r for r in after if r['name']=='n8n-nodes-base' and r['version']=='2.37.4']) != 1: raise SystemExit('n8n-nodes-base@2.37.4 not preserved exactly once')""",
@@ -96,7 +100,7 @@ jobs:
           p.write_text(s)
 
           p=Path('.github/workflows/faz7-container-ci.yml'); s=p.read_text()
-          s=one(s,
+          s=literal_one(s,
             '--deselect /testsrc/sitescore-commerce/tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only',
             '--deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only',
             'commerce deselect')
