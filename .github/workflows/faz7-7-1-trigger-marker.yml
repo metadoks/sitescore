@@ -1,0 +1,9 @@
+# temporary trigger marker for Reviewer-authorized FAZ 7.1 mechanics only
+name: faz7-7-1-trigger-marker
+on:
+  workflow_dispatch:
+jobs:
+  marker:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo marker
