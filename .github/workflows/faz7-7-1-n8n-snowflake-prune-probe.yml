@@ -167,10 +167,12 @@ jobs:
                   for m in root.glob(pat):
                       try: j=json.loads(m.read_text())
                       except Exception: continue
-                      pnpm_root=(root/'.pnpm').resolve()
-                      store_key=m.relative_to(root/'.pnpm').parts[0]
-                      real_store=(root/'.pnpm'/store_key).resolve()
                       real_dir=m.parent.resolve()
+                      pnpm_root=(root/'.pnpm').resolve()
+                      store_candidates=[p.resolve() for p in real_dir.parents if p.parent.resolve()==pnpm_root]
+                      if len(store_candidates)!=1:
+                          raise SystemExit(f'unexpected resolved pnpm store candidates: dir={real_dir} candidates={store_candidates}')
+                      real_store=store_candidates[0]
                       if real_store.parent.resolve()!=pnpm_root:
                           raise SystemExit(f'unexpected resolved pnpm store layout: dir={real_dir} store={real_store}')
                       rows.append({'name':j.get('name'),'version':j.get('version'),'manifest':str(m),'dir':str(real_dir),'store':str(real_store)})

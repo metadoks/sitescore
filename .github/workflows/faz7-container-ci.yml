@@ -294,7 +294,7 @@ jobs:
           docker stop -t 2 "$api_cid" >/dev/null
           trap - EXIT
           api_env=(
-            -e SITESCORE_DATABASE_URL=postgresql://ci:ci@127.0.0.1/ci
+            -e SITESCORE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1/ci
             -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0
             -e SITESCORE_API_KEY_PEPPER=ci-only-pepper-00000000000000000000000000000000
           )
