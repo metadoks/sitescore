@@ -28,14 +28,12 @@ jobs:
           from pathlib import Path
           p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml')
           data=p.read_text()
-          old_version="r['version']=='2.37.4'"
-          old_message='n8n-nodes-base@2.37.4 not preserved exactly once'
-          if data.count(old_version) != 1 or data.count(old_message) != 1:
-              raise SystemExit(f'unexpected stale verifier counts: version={data.count(old_version)} message={data.count(old_message)}')
-          data=data.replace(old_version,"r['version']=='2.37.10'",1)
-          data=data.replace(old_message,'n8n-nodes-base@2.37.10 not preserved exactly once',1)
-          if '2.37.4' in data:
-              raise SystemExit('unexpected additional 2.37.4 literal remains')
+          count=data.count('2.37.4')
+          if count != 6:
+              raise SystemExit(f'unexpected stale 2.37.4 verifier literal count: {count}')
+          data=data.replace('2.37.4','2.37.10')
+          if data.count('2.37.10') < 7 or '2.37.4' in data:
+              raise SystemExit('verifier identity replacement invariant failed')
           raw=data.encode()
           payload=json.dumps({'content':base64.b64encode(raw).decode(),'encoding':'base64'}).encode()
           req=urllib.request.Request(
@@ -44,6 +42,7 @@ jobs:
               headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json','User-Agent':'sitescore-faz7-prune-verifier'})
           with urllib.request.urlopen(req,timeout=30) as r:
               result=json.load(r)
+          print('STALE_LITERAL_COUNT='+str(count))
           print('PATCHED_BLOB_SHA='+result['sha'])
           print('PATCHED_WORKFLOW_SHA256='+hashlib.sha256(raw).hexdigest())
           PY
