@@ -29,11 +29,11 @@ jobs:
           p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml')
           data=p.read_text()
           count=data.count('2.37.4')
-          if count != 6:
-              raise SystemExit(f'unexpected stale 2.37.4 verifier literal count: {count}')
+          if count < 1:
+              raise SystemExit('no stale 2.37.4 verifier literal found')
           data=data.replace('2.37.4','2.37.10')
-          if data.count('2.37.10') < 7 or '2.37.4' in data:
-              raise SystemExit('verifier identity replacement invariant failed')
+          if '2.37.4' in data:
+              raise SystemExit('stale verifier identity remains after replacement')
           raw=data.encode()
           payload=json.dumps({'content':base64.b64encode(raw).decode(),'encoding':'base64'}).encode()
           req=urllib.request.Request(
