@@ -28,11 +28,14 @@ jobs:
           from pathlib import Path
           p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml')
           data=p.read_text()
-          old="if len([r for r in after if r['name']=='n8n-nodes-base' and r['version']=='2.37.4']) != 1: raise SystemExit('n8n-nodes-base@2.37.4 not preserved exactly once')"
-          new="if len([r for r in after if r['name']=='n8n-nodes-base' and r['version']=='2.37.10']) != 1: raise SystemExit('n8n-nodes-base@2.37.10 not preserved exactly once')"
-          if data.count(old) != 1:
-              raise SystemExit(f'expected stale verifier assertion exactly once, got {data.count(old)}')
-          data=data.replace(old,new,1)
+          old_version="r['version']=='2.37.4'"
+          old_message='n8n-nodes-base@2.37.4 not preserved exactly once'
+          if data.count(old_version) != 1 or data.count(old_message) != 1:
+              raise SystemExit(f'unexpected stale verifier counts: version={data.count(old_version)} message={data.count(old_message)}')
+          data=data.replace(old_version,"r['version']=='2.37.10'",1)
+          data=data.replace(old_message,'n8n-nodes-base@2.37.10 not preserved exactly once',1)
+          if '2.37.4' in data:
+              raise SystemExit('unexpected additional 2.37.4 literal remains')
           raw=data.encode()
           payload=json.dumps({'content':base64.b64encode(raw).decode(),'encoding':'base64'}).encode()
           req=urllib.request.Request(
