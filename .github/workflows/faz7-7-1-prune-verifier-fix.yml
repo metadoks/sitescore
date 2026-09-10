@@ -6,43 +6,41 @@ on:
       - faz7/7-1-reproducible-containers-supply-chain-governance
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   patch:
     runs-on: ubuntu-24.04
     steps:
-      - name: Emit corrected prune workflow blob
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
+      - name: Checkout exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+
+      - name: Patch only stale proof identities
         run: |
           set -euo pipefail
-          git init repo
-          cd repo
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${SOURCE_SHA}"
-          git checkout --detach FETCH_HEAD
+          mkdir -p /tmp/patched
+          cp .github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml /tmp/patched/faz7-7-1-n8n-snowflake-prune-probe.yml
           python - <<'PY'
-          import base64, hashlib, json, os, urllib.request
           from pathlib import Path
-          p=Path('.github/workflows/faz7-7-1-n8n-snowflake-prune-probe.yml')
+          p=Path('/tmp/patched/faz7-7-1-n8n-snowflake-prune-probe.yml')
           data=p.read_text()
           count=data.count('2.37.4')
           if count < 1:
-              raise SystemExit('no stale 2.37.4 verifier literal found')
+              raise SystemExit('no stale proof identity found')
           data=data.replace('2.37.4','2.37.10')
           if '2.37.4' in data:
-              raise SystemExit('stale verifier identity remains after replacement')
-          raw=data.encode()
-          payload=json.dumps({'content':base64.b64encode(raw).decode(),'encoding':'base64'}).encode()
-          req=urllib.request.Request(
-              f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/git/blobs',
-              data=payload, method='POST',
-              headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json','User-Agent':'sitescore-faz7-prune-verifier'})
-          with urllib.request.urlopen(req,timeout=30) as r:
-              result=json.load(r)
+              raise SystemExit('stale proof identity remains')
+          p.write_text(data)
           print('STALE_LITERAL_COUNT='+str(count))
-          print('PATCHED_BLOB_SHA='+result['sha'])
-          print('PATCHED_WORKFLOW_SHA256='+hashlib.sha256(raw).hexdigest())
           PY
+          sha256sum /tmp/patched/faz7-7-1-n8n-snowflake-prune-probe.yml
+
+      - name: Upload corrected workflow bytes
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-prune-verifier-corrected-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: /tmp/patched/faz7-7-1-n8n-snowflake-prune-probe.yml
