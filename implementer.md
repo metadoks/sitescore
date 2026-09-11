@@ -24,12 +24,12 @@ PR_STATE: OPEN
 PR_DRAFT: TRUE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
 PR_MERGED: FALSE
-CURRENT_HEAD_SHA: 434a2419d0bcc99681b8cf544d321bbb01b88315
-CURRENT_CHANGED_FILE_COUNT: 20
+CURRENT_HEAD_SHA: 4c7bdabdc2e3198ce57d6b39404ddad149c3d2ca
+CURRENT_CHANGED_FILE_COUNT: 25
 
-OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_ON_LATEST_CLEAN_HEAD
+OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_ON_EXACT_CURRENT_HEAD
 OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71_N8N_VULN_001_STATUS: SNOWFLAKE_TOML_PRUNE_AUTHORIZED_EVIDENCE_PARTIAL_PENDING_EXECUTION_RECOVERY
+OPS71_N8N_VULN_001_STATUS: FROZEN_2_37_10_PERMANENT_HARDENING_AND_PUBLICATION_MECHANICS_COMPLETE_PENDING_REAL_HOSTED_EXECUTION
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -43,6 +43,7 @@ MERGE_PERFORMED: NO
 FAZ_7_2_STARTED: NO
 
 FROZEN_N8N_VERSION: 2.37.10
+FROZEN_N8N_NODES_BASE_VERSION: 2.37.4
 APPLICATION_SOURCE_CHANGE: NONE
 BUSINESS_SEMANTICS_CHANGE: NONE
 N8N_WORKFLOW_JSON_CHANGE: NONE
@@ -57,34 +58,133 @@ PRODUCTION_SECRET_COMMITTED: NONE
 
 ---
 
-## 1. Latest Reviewer decision consumed
+## 1. Reviewer terminal policy consumed
 
-Reviewer terminal closure policy remains authoritative. FAZ 7.1 is frozen to n8n 2.37.10 and must be completed on that candidate without restarting the ordinary latest-stable loop. Existing Snowflake-only capability-pruning authorization remains in force.
-
-Frozen candidate identity:
+FAZ 7.1 remains frozen to the exact 2026-09-07 candidate boundary:
 
 ```text
-version = 2.37.10
+n8n runtime version = 2.37.10
 source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
 source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
 official amd64 digest reference = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
 cutoff date = 2026-09-07
 ```
 
-Authorized Snowflake/TOML removal remains limited to:
+The authoritative internal package identity is distinct from the n8n runtime version:
 
 ```text
-snowflake-sdk@2.1.0
-toml@3.0.0
+n8n 2.37.10
+└─ n8n-nodes-base@2.37.4
+   └─ snowflake-sdk@2.1.0
+      └─ toml@3.0.0
 ```
 
-No TOML major override, unrelated dependency removal, application-source patch, scanner suppression, SiteScore-authored VEX, alternative CI, or self-hosted runner is authorized or used.
+The verifier now correctly preserves `n8n-nodes-base@2.37.4` exactly once. The earlier temporary assumption that this internal package should be `2.37.10` was corrected before terminal execution.
+
+Authorized deterministic removal remains exactly:
+
+```text
+removed = [snowflake-sdk@2.1.0, toml@3.0.0]
+added = []
+version_changes = []
+shared_non_snowflake_removed = []
+```
+
+No moving-latest rebase was performed.
 
 ---
 
-## 2. Accepted technical evidence preserved
+## 2. Permanent hardening mechanics now present on PR #34
 
-Evidence already achieved before hosted execution stopped remains valid and is not reopened by the platform outage:
+The formerly probe-only n8n mechanics are now permanent FAZ 7.1 assets:
+
+```text
+deploy/containers/n8n-image.lock
+deploy/containers/n8n-frozen-candidate-ci.sh
+deploy/containers/n8n_prune_closure.py
+deploy/containers/n8n_openvex_reconcile.py
+deploy/containers/nodemailer-risk-record.md
+```
+
+Permanent `n8n-validation` now owns:
+
+```text
+exact frozen source commit/tree binding
+exact builder/runtime-base identities
+fast-uri 3.1.6 upstream-adopted backport
+production graph materialization
+Snowflake/TOML exclusive-closure proof
+exact two-package prune
+hardened runtime-base construction
+linux/amd64 proof
+non-root proof
+NODES_EXCLUDE proof
+startup / health / node-type proof
+frozen workflow imports
+SPDX generation
+raw Grype generation
+exact-release OpenVEX digest verification
+CISA KEV reconciliation
+terminal n8n security policy
+order-paid runtime smoke
+recovery schedule runtime smoke
+recovery replay runtime smoke
+provenance evidence
+```
+
+The frozen SiteScore workflow JSON files were not modified.
+
+---
+
+## 3. Post-LOCK publication permanentized
+
+`.github/workflows/faz7-publish-images.yml` now publishes all three immutable subjects after LOCK/main merge:
+
+```text
+ghcr.io/metadoks/sitescore-api:sha-<main-SHA>
+ghcr.io/metadoks/sitescore-commerce:sha-<main-SHA>
+ghcr.io/metadoks/sitescore-n8n:sha-<main-SHA>
+```
+
+The n8n path rebuilds and fully validates the frozen candidate, pushes the exact validated image, resolves the registry digest, then requires:
+
+```text
+published image ID == locally validated candidate image ID
+runtime version == 2.37.10
+architecture == linux/amd64
+required NODES_EXCLUDE entries present
+published SPDX contains n8n-nodes-base@2.37.4
+published SPDX contains no snowflake-sdk
+published SPDX contains no toml@3.0.0
+```
+
+API, Commerce and n8n published digest subjects all receive keyless Cosign signatures plus SPDX and provenance attestations.
+
+No deployment or cloud resource mutation is performed by the publish workflow.
+
+---
+
+## 4. Normative FAZ 7.1 record aligned
+
+`docs/FAZ7_1_CONTAINER_SUPPLY_CHAIN_GOVERNANCE.md` now records the terminal frozen-candidate model and explicitly supersedes the historical n8n 2.33.4 identity in the older FAZ 7.0 runtime contract for the FAZ 7.1 candidate.
+
+The updated record now captures:
+
+```text
+n8n 2.37.10 frozen source identity
+n8n-nodes-base@2.37.4 package identity
+Snowflake/TOML exact prune
+NODES_EXCLUDE boundary
+OpenVEX + CISA KEV policy
+authorized nodemailer residual containment
+n8n GHCR post-LOCK publication/signing/attestation
+```
+
+---
+
+## 5. Preserved accepted evidence
+
+Earlier real hosted runs established and remain useful historical evidence:
 
 ```text
 source-boundary = PASS
@@ -96,83 +196,95 @@ Commerce = 416 PASS + exactly one authorized phase-local deselect
 frozen application source semantics change = NONE
 frozen n8n workflow JSON change = NONE
 Snowflake/TOML exclusive production closure = PROVEN
-package delta = removed [snowflake-sdk@2.1.0, toml@3.0.0]
-added = []
-version_changes = []
-shared_non_snowflake_removed = []
+package delta = exactly two authorized removals
 ```
 
-The remaining verifier issue before execution loss was mechanical only: stale `n8n-nodes-base@2.37.4` literals had to be aligned to frozen candidate `2.37.10` identities. Reviewer permits continuing through such ordinary proof mechanics once hosted execution is restored.
+These historical passes are not represented as terminal exact-current-head evidence. Current-head terminal CI remains required.
 
 ---
 
-## 3. GitHub-hosted Actions execution blocker re-confirmed on 2026-09-11
+## 6. Exact current-head GitHub-hosted Actions blocker
 
-An exact rerun of the older clean head run `34530157300` was accepted by GitHub but again failed before runner execution. New attempt jobs all returned `failure` with `steps = null`.
-
-The branch then temporarily gained two mechanics-only artifacts used to stage an Action-pin predicate correction. They were subsequently removed. The current PR is clean again at exactly 20 permanent files.
-
-Latest clean code head:
+Current code head:
 
 ```text
-434a2419d0bcc99681b8cf544d321bbb01b88315
+4c7bdabdc2e3198ce57d6b39404ddad149c3d2ca
 ```
 
-The automatic exact-head PR workflow for this clean state is:
+Current changed-file count:
 
 ```text
-run = 34559341273
+25
 ```
 
-Every mandatory job again failed before normal runner-step execution:
+No temporary probe/patcher workflow remains in the PR.
+
+Latest exact-head PR workflow:
 
 ```text
-source-boundary       = 103138666554 -> failure, steps = null
-n8n-validation        = 103138666678 -> failure, steps = null
-container-validation = 103138666711 -> failure, steps = null
-static-contracts      = 103138666721 -> failure, steps = null
-faz6-commerce-replay  = 103138666727 -> failure, steps = null
-required-gate         = 103138675502 -> failure, steps = null
+run = 34581786484
 ```
 
-This proves the hosted-execution blocker persists on the latest clean 20-file head and is not caused by a temporary workflow artifact, a SiteScore test, Docker build, dependency graph, or frozen source change.
+GitHub accepted and parsed the workflow, created all mandatory jobs, then every job terminated before ordinary hosted-runner step execution:
 
-The GitHub API available to this Implementer does not expose the account/UI pre-run reason, so no unsupported claim is made about whether the cause is billing, quota/usage, plan entitlement, account restriction, or another GitHub-hosted Actions platform condition.
+```text
+n8n-validation        job 103206801712 -> failure, steps = null
+source-boundary       job 103206801836 -> failure, steps = null
+static-contracts      job 103206801973 -> failure, steps = null
+faz6-commerce-replay  job 103206801996 -> failure, steps = null
+container-validation job 103206802006 -> failure, steps = null
+required-gate         job 103206819156 -> failure, steps = null
+```
+
+This is the same pre-run failure signature repeatedly observed on previous exact heads. No current-head SiteScore test failure, Docker failure, package-graph failure, vulnerability failure, shell error, or runtime error can be inferred because ordinary runner execution never began and no step graph/logs were produced.
+
+The available GitHub API does not expose the account/UI pre-run reason. No unsupported assertion is made that the cause is specifically billing, quota, plan entitlement, account restriction, or another named GitHub condition.
 
 ---
 
-## 4. Required owner action remains unchanged
+## 7. Consolidated owner action
 
-Owner must restore GitHub-hosted Actions execution for `metadoks/sitescore` by opening run `34559341273` (or the earlier exact-head run `34530157300`) in the GitHub Actions UI and resolving the pre-run account/platform message shown there.
+Owner must open run `34581786484` in the GitHub Actions UI and resolve the pre-run account/platform message presented by GitHub.
 
 Acceptance criterion:
 
 ```text
-A rerun/new exact-head GitHub-hosted Actions job enters normal runner execution
+new/rerun exact-head GitHub-hosted job enters normal runner execution
 AND
-jobs contain ordinary steps/logs rather than immediate failure with steps = null.
+ordinary job steps/logs are produced instead of immediate steps = null failure
 ```
 
-Do not weaken `faz7 / required-gate`, change frozen SiteScore code, switch CI providers, or use a self-hosted runner as a workaround.
+Forbidden workarounds remain:
 
-After hosted execution is restored, Implementer resumes from the authorized Snowflake/TOML verifier correction, reruns the full frozen 2.37.10 security/runtime pipeline, permanentizes only after PASS, and completes the exact-final-head required gate and governance checklist.
+```text
+weaken faz7 / required-gate
+remove mandatory jobs
+switch CI provider
+use self-hosted runner
+change frozen SiteScore business/application semantics
+change frozen n8n workflow JSON
+advance to FAZ 7.2
+merge without Reviewer READY_TO_LOCK + literal user LOCK
+```
+
+When hosted execution is restored, Implementer should run the permanent exact-head pipeline and correct only genuine mechanical issues supported by real runner logs. The terminal handoff can become `READY_FOR_REVIEW` only after full current-head evidence and final governance verification are complete.
 
 ---
 
-## 5. Clean live state
+## 8. Live state
 
 ```text
 PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
 base = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-head = 434a2419d0bcc99681b8cf544d321bbb01b88315
-changed files = 20
+head = 4c7bdabdc2e3198ce57d6b39404ddad149c3d2ca
+changed files = 25
 temporary probe workflows = NONE
 temporary fixer workflows = NONE
 frozen application source diff = NONE
 frozen n8n workflow JSON diff = NONE
+post-LOCK n8n publication mechanics = PERMANENTIZED
+terminal current-head hosted evidence = BLOCKED BEFORE RUNNER EXECUTION
 ```
-
-No merge was performed and no later phase was started.
 
 ```text
 READY_FOR_REVIEW: NO
