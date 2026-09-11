@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: TERMINAL_CLOSURE_POLICY_ISSUED
-IMPLEMENTER_ACTION: COMPLETE_7_1_ON_FROZEN_CANDIDATE_CUTOFF_WITHOUT_NONCRITICAL_REBASE_LOOP
+REVIEWER_STATE: TRUE_BLOCKERS_DECIDED_BOUNDED_TRIXIE_AND_DHI_OWNER_ACTION
+IMPLEMENTER_ACTION: APPLY_BOUNDED_TRIXIE_REFRESH_WIRE_DHI_AUTH_AND_COMPLETE_TO_TERMINAL_HANDOFF
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,12 +21,18 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: e397cd77606f84809e282ad9b1de2075610b0676
+OBSERVED_HEAD_SHA: f531d0612961bfe099ef9f1e1429dd2c0b9a435e
 REVIEWED_HEAD_SHA: NONE
+
+LIVE_FAZ7_RUN: 34608218961
+LIVE_CONTAINER_VALIDATION_JOB: 103291835180
+LIVE_N8N_VALIDATION_JOB: 103291835247
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71-N8N-VULN-001: CONTINUE_UNDER_FROZEN_2_37_10_CANDIDATE_AND_AUTHORIZED_SNOWFLAKE_CAPABILITY_PRUNING
+OPS71-N8N-VULN-001: CONTINUE_FROZEN_2_37_10_SNOWFLAKE_PRUNING
+OPS71-APP-BASE-001: EMERGENCY_REOPEN_D_TRIXIE_REFRESH_AUTHORIZED
+OPS71-N8N-DHI-001: OWNER_EXTERNAL_REGISTRY_CREDENTIAL_ACTION_REQUIRED
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -47,73 +53,147 @@ READY_TO_LOCK: NO
 
 ---
 
-## 1. Purpose of this optimized terminal handoff
+## 1. Decision scope
 
-FAZ 7.1 has accumulated excessive implementation/review iterations because the previous rule continuously rebound the checkpoint to the newest upstream n8n patch and newest scanner knowledge while the candidate was still being hardened.
+The Implementer terminal blocker handoff at exact PR head
+`f531d0612961bfe099ef9f1e1429dd2c0b9a435e` is accepted as a true
+Reviewer decision point with two independent blockers:
 
-That behavior is now intentionally terminated for this checkpoint.
+1. the previously authorized Bookworm-only application-base refresh cannot
+   satisfy the terminal application-image security target because the
+   required fixed package state is not available inside that frozen family;
+2. the frozen n8n hardening path uses the exact pinned `dhi.io` runtime base,
+   but GitHub Actions currently has no credential path for authenticated DHI
+   pulls.
 
-The goal of the next Implementer run is not to discover a newer platform baseline. The goal is to finish, attest, and hand off one exact FAZ 7.1 release candidate.
-
-This policy does NOT weaken the security gate. It converts the gate from a moving target into a reproducible release-candidate boundary.
+Neither blocker authorizes application/business-semantics changes, n8n
+workflow changes, scanner suppression, or a moving-latest restart.
 
 ---
 
-## 2. Frozen FAZ 7.1 candidate cutoff
+## 2. OPS71-APP-BASE-001 — bounded Bookworm → Trixie expansion AUTHORIZED
 
-For purposes of closing FAZ 7.1, the authoritative n8n baseline is frozen to:
+The FAZ 7.1 Emergency Reopen Rule condition D is satisfied: the candidate
+cannot meet the already-frozen security gate safely while remaining inside
+the Bookworm-only restriction.
+
+The application-base authority is therefore expanded exactly once from
+Bookworm to Debian Trixie under the following hard boundary:
 
 ```text
-version = 2.37.10
+Python family = 3.11.x ONLY
+Debian family = trixie / slim-trixie ONLY
+architecture = linux/amd64 ONLY
+base source = Docker Official Image for Python ONLY
+base reference = immutable digest REQUIRED
+APT package source = reproducible Debian snapshot strategy REQUIRED
+application/business source semantics change = FORBIDDEN
+unrelated Python dependency modernization = FORBIDDEN
+another distro/family change = FORBIDDEN
+blanket apt upgrade detached from reproducible build = FORBIDDEN
+scanner suppression / blanket ignore / SiteScore-authored waiver = FORBIDDEN
+```
+
+The currently available official `python:3.11.16-slim-trixie` line is an
+acceptable candidate family. Implementer MUST resolve the exact immutable
+linux/amd64-compatible digest at implementation time, use a deterministic
+Trixie snapshot/package input, and prove the full existing runtime/regression
+contract.
+
+Required terminal application evidence remains:
+
+```text
+API = 114 PASS
+report = 24 PASS
+Commerce = 416 PASS + exactly 1 authorized deselect
+FAZ6 Commerce replay = 417 PASS
+linux/amd64 = PASS
+non-root/read-only = PASS
+API web/worker/beat = PASS
+Commerce web/dispatcher = PASS
+PDF/font = PASS
+CISA KEV = 0
+CRITICAL = 0
+OS HIGH = 0
+no new undispositioned HIGH introduced by the refresh
+SBOM/Grype/image-hygiene evidence = COMPLETE
+```
+
+The first exact Trixie version/digest/snapshot combination that satisfies the
+terminal gate becomes frozen for FAZ 7.1. Do NOT chase later ordinary image or
+snapshot refreshes after that green evidence unless the existing Emergency
+Reopen Rule is independently triggered again.
+
+The old `Bookworm/slim-bookworm only` restriction is superseded only by this
+section; all other anti-loop and frozen-application restrictions remain in
+force.
+
+---
+
+## 3. OPS71-N8N-DHI-001 — authenticated DHI pull path AUTHORIZED
+
+The frozen n8n candidate remains exactly:
+
+```text
+n8n = 2.37.10
 source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
 source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
-official amd64 digest reference = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
-cutoff date = 2026-09-07
+DHI runtime input = exact digest already pinned in deploy/containers/n8n-image.lock
+Snowflake/TOML resolution = existing graph-proven capability pruning
 ```
 
-A newer ordinary n8n patch release appearing after this cutoff MUST NOT automatically rebase/restart FAZ 7.1.
+Do NOT replace the DHI runtime silently with a weaker public runtime image.
+The registry-auth failure is an external credential problem, not authority to
+reselect n8n or reopen the Snowflake/TOML design.
 
-A newer non-emergency patch belongs to later normal dependency/security maintenance after 7.1 lock.
+Implementer is authorized to wire authenticated `dhi.io` access into the
+permanent GitHub Actions n8n-validation job using repository/organization
+Actions secrets only.
 
-The old rule `latest official stable guard = must continuously select newest stable` is superseded for this checkpoint by:
+Required credential contract:
 
 ```text
-candidate identity guard = exact frozen 2.37.10 source/tree/build inputs
+registry = dhi.io
+username secret reference = DHI_USERNAME
+credential/token secret reference = DHI_TOKEN
+credential scope = read-only / minimum required pull access
+secret values in repository = FORBIDDEN
+secret values in logs/artifacts/docs = FORBIDDEN
+plaintext command-line token exposure = FORBIDDEN
 ```
 
-Do not restart 7.1 merely because 2.37.11 or another routine patch appears.
+Preferred permanent CI mechanism is the Docker CLI already present on the
+runner, for example a non-echoing `docker login dhi.io` using password-stdin,
+with `DHI_USERNAME` and `DHI_TOKEN` supplied from `${{ secrets.* }}`. A
+third-party login action is unnecessary; if one is used anyway it must obey
+the existing full-40-character-SHA pin rule and least permissions.
 
----
+A missing secret must fail closed before attempting the hardened n8n build.
+No fallback to anonymous pull, alternate registry, unpinned image, or weaker
+base is authorized.
 
-## 3. Emergency reopen rule — the ONLY post-cutoff moving-target exception
+Owner action is required outside repository contents: create/provide a Docker
+credential that can pull the exact frozen `dhi.io` image and store it as the
+two GitHub Actions secrets above. Docker account password SHOULD NOT be used
+when an access token is available. Organization-owned read-only automation
+credentials are preferred where available.
 
-After this handoff, a newer release/advisory/scanner update may reopen the frozen candidate only when at least one of these conditions is proven:
+If valid authentication is configured but the exact frozen image remains
+inaccessible because the account/organization lacks entitlement, stop once
+with:
 
 ```text
-A. CISA KEV match affects a component present in the candidate; OR
-B. a NEW undispositioned CRITICAL affects a component present in the candidate; OR
-C. a newly disclosed vulnerability is directly reachable through SiteScore's enabled runtime/workflows/public attack surface and materially defeats an existing security boundary; OR
-D. the frozen candidate cannot be built/run safely without a broader architecture/dependency change.
+OPS71-N8N-DHI-001: PLAN_OR_ENTITLEMENT_BLOCKED
 ```
 
-The following by themselves are NOT grounds to restart candidate selection:
-
-```text
-new ordinary n8n patch release
-new MEDIUM/LOW advisory
-new HIGH in an already-reviewed/contained family without changed reachability
-scanner database timestamp changing after the exact candidate evidence run
-upstream dependency churn unrelated to SiteScore enabled runtime
-new optional node/package that is absent or deterministically excluded from final image
-```
-
-If an emergency reopen condition is hit, stop once with one consolidated true blocker. Do not enter exploratory patch-forward loops.
+That is the only DHI-related true blocker authorized for another Reviewer
+round trip.
 
 ---
 
 ## 4. Existing n8n security design remains authoritative
 
-The accepted capability boundary remains:
+The previously accepted capability boundary remains unchanged:
 
 ```text
 NODES_EXCLUDE retains:
@@ -123,15 +203,7 @@ NODES_EXCLUDE retains:
   n8n-nodes-base.snowflake
 ```
 
-The Snowflake/TOML resolution remains capability reduction, not a dependency-contract violation:
-
-```text
-snowflake-sdk@2.1.0 may be removed only from graph-proven Snowflake-only production closure.
-toml@3.0.0 may be removed only when snowflake-sdk@2.1.0 is its sole production parent.
-shared non-Snowflake production dependencies must remain.
-```
-
-Required after-prune inventory:
+Required post-prune state remains:
 
 ```text
 n8n-nodes-base@2.37.4 = PRESENT
@@ -142,171 +214,61 @@ no unrelated version change
 Snowflake node unavailable at runtime = PASS
 ```
 
-Still prohibited:
+Existing authorized dependency hardening remains limited to the already
+reviewed families. Do not introduce a parent-source patch, incompatible TOML
+override, arbitrary package upgrade, scanner suppression, or SiteScore-authored
+VEX waiver.
 
-```text
-frozen SiteScore business/application behavior changes
-frozen n8n workflow JSON changes
-n8n/Snowflake application-source patching
-incompatible toml major override
-unadopted Snowflake parent upgrade
-blanket scanner suppression
-blanket CVE ignore
-SiteScore-authored VEX used to waive an otherwise actionable vulnerability
-arbitrary unrelated dependency upgrades
-alternate CI/self-hosted runner workaround
-FAZ 7.2 cloud/IaC work
-merge before READY_TO_LOCK + literal user LOCK
-FAZ 8 work
-```
+The exact previously-authorized nodemailer residual HIGH may remain only if it
+is still the sole residual HIGH and every established containment control is
+proven. No second residual CRITICAL/HIGH exception is authorized.
 
 ---
 
-## 5. Application container security refresh authority — bounded, one-way
+## 5. Terminal completion contract — no more partial blocker returns
 
-The current application image security gate has surfaced vulnerabilities in the previously frozen Python/Debian container baseline. Implementer is authorized to perform ONE bounded application-base security refresh without returning to Reviewer, provided all of the following remain true:
-
-```text
-Python major/minor family = 3.11.x only
-Debian family = bookworm/slim-bookworm only
-architecture = linux/amd64
-base reference = immutable digest
-no application/business source semantics change
-no unrelated Python dependency modernization
-no distro replacement
-no blanket apt upgrade detached from the reproducible image build
-no scanner suppression
-```
-
-Implementer must choose the smallest secure same-family immutable base/snapshot update that closes the actionable candidate findings and passes the full frozen regression/runtime set.
-
-Once that refreshed base produces the first fully green candidate security run, pin its exact version/digest/snapshot into the permanent lock/evidence and DO NOT chase later ordinary base refreshes during FAZ 7.1.
-
-A later base change before LOCK is permitted only under the Emergency Reopen Rule in section 3.
-
----
-
-## 6. Security evidence snapshot policy
-
-For each final image, preserve the exact scanner/tool/database identities used for the terminal evidence run where available.
-
-The final exact-head security evidence must satisfy, at the time of that terminal run:
+After the owner provides the two DHI secret values, Implementer MUST continue
+through all remaining mechanics in one run/continuation:
 
 ```text
-CISA KEV = 0
-CRITICAL = 0
-OS HIGH = 0
-fast-uri vulnerable findings = 0
-ip-address vulnerable findings = 0
-brace-expansion vulnerable findings = 0
-toml vulnerable findings = 0
-Snowflake vulnerable closure = absent
-no NEW undispositioned HIGH introduced by the hardening/refresh
-```
-
-The previously-authorized nodemailer residual HIGH may remain only if it is still exactly the previously reviewed advisory/version and every containment control remains proven:
-
-```text
-frozen workflows do not use emailSend
-emailSend excluded
-no SMTP transport injected
-unsafe alternate execution/file nodes excluded as already required
-editor/admin/API non-public in target deployment design
-risk record complete with owner/expiry/re-review
-no second residual CRITICAL/HIGH exception
-```
-
-After a terminal exact-head run satisfies this policy, a later scanner DB update alone does not invalidate the candidate unless section 3 emergency criteria are met.
-
----
-
-## 7. Current known progress — do not redo passing work without cause
-
-The Implementer should preserve already-achieved green work and rerun only as required by exact-head CI after changes.
-
-Known achieved/accepted progress includes:
-
-```text
-source-boundary = PASS
-static-contracts = PASS
-FAZ6 Commerce replay = PASS
-API regression = 114 PASS
-report regression = 24 PASS
-Commerce = 416 PASS + exactly one authorized phase-local deselect
-API/Commerce build + runtime/non-root mechanics have materially progressed
-Snowflake graph/pruning mechanics reached PASS before final hardened runtime assembly
-frozen application source semantics change = NONE
-frozen n8n workflow JSON change = NONE
-```
-
-Do not reopen frozen business/model/application design because a container or scanner mechanic changes.
-
----
-
-## 8. Terminal technical checklist — one exact final head
-
-Implementer must now finish all remaining work on one exact final PR head:
-
-```text
-N8N IDENTITY / BUILD
-[ ] exact n8n 2.37.10 source commit/tree pinned
-[ ] exact builder/runtime/base/Dockerfile identities pinned
-[ ] Snowflake/TOML exclusive closure prune proven
-[ ] n8n version = 2.37.10
-[ ] linux/amd64 = PASS
-[ ] non-root = PASS
-[ ] startup/loadability = PASS
-
-N8N FUNCTIONAL
-[ ] frozen workflow hashes/imports = PASS
-[ ] n8n static = PASS
-[ ] order-paid webhook/auth/payload smoke = PASS
-[ ] recovery schedule/API smoke = PASS
-[ ] Snowflake node unavailable = PASS
-
-SECURITY / SUPPLY CHAIN
-[ ] application base bounded security refresh complete if needed
-[ ] CISA KEV = 0
-[ ] CRITICAL = 0
-[ ] OS HIGH = 0
-[ ] authorized npm-family findings = 0
-[ ] no new undispositioned HIGH
-[ ] only exact authorized nodemailer residual HIGH if containment passes
-[ ] SPDX/SBOM complete
-[ ] raw Grype evidence complete
-[ ] OpenVEX/upstream disposition evidence complete where applicable
-[ ] provenance/attestation complete
-[ ] n8n-image.lock/permanent hardening assets complete
-
-APPLICATION REGRESSION / RUNTIME
+[ ] bounded Trixie application refresh implemented and pinned
+[ ] application vulnerability policy green
+[ ] DHI authenticated pull succeeds without credential disclosure
+[ ] frozen n8n 2.37.10 hardened image completes
+[ ] Snowflake/TOML post-prune inventory exact
+[ ] frozen n8n workflow hashes/imports/static/smokes PASS
+[ ] n8n security gate PASS under the existing residual-risk contract
+[ ] n8n-image.lock/SBOM/Grype/OpenVEX/provenance evidence complete
 [ ] API = 114 PASS
 [ ] report = 24 PASS
-[ ] Commerce = 416 PASS + exactly 1 authorized deselect
-[ ] FAZ6 Commerce replay = 417 PASS
-[ ] API/Commerce/n8n runtime and non-root smokes = PASS
-[ ] PDF/font smoke = PASS
-
-CI / SCOPE
-[ ] source-boundary = PASS
-[ ] full 40-char Actions pin checker = PASS
-[ ] static-contracts = PASS
-[ ] container-validation = PASS
-[ ] n8n-validation = PASS
-[ ] faz7 / required-gate = PASS on exact final head
-[ ] temporary probe/patcher workflows removed
+[ ] Commerce = 416 PASS + exactly 1 deselect
+[ ] FAZ6 replay = 417 PASS
+[ ] source-boundary PASS
+[ ] static-contracts PASS
+[ ] container-validation PASS
+[ ] n8n-validation PASS
+[ ] `faz7 / required-gate` PASS on ONE exact final HEAD
+[ ] temporary diagnostic workflows/assets absent
 [ ] frozen application source diff = NONE
 [ ] frozen n8n workflow JSON diff = NONE
 [ ] cloud/IaC mutation = NONE
 [ ] production secret commit = NONE
 ```
 
-Do not create new probes when an existing permanent job can prove the same property. If a temporary probe is unavoidable for a one-time mechanical diagnosis, remove it before terminal handoff.
+Do NOT return for YAML, shell, Docker, snapshot, digest-resolution, test,
+artifact, evidence, or quoting mechanics. Resolve those mechanically.
+
+Do NOT reselect n8n because a routine post-cutoff release exists.
+Do NOT restart scanning against moving future timestamps after the first exact
+green terminal snapshot.
+Do NOT start FAZ 7.2.
+Do NOT merge.
 
 ---
 
-## 9. Governance is the final gate, not an excuse to reopen technical work
+## 6. Governance remains the final gate
 
-After all technical gates are green, enforce/verify exactly:
+Once technical CI is completely green, verify/enforce exactly:
 
 ```text
 main protected = TRUE
@@ -322,55 +284,28 @@ rebase merge disabled
 auto merge disabled
 ```
 
-If available GitHub authority cannot mutate these settings, stop ONCE with one consolidated owner action containing every required UI setting.
-
-If the repository plan/account cannot support required protection on a private repository, report exactly:
-
-```text
-OPS71-GOV-001: PLAN_CAPABILITY_BLOCKED
-```
-
-Do not reopen container/n8n work because governance is manual.
+If available GitHub authority cannot apply those settings, return once with
+one consolidated owner-governance action. Do not reopen technical work.
 
 ---
 
-## 10. Anti-loop execution rules
+## 7. Required next handoff
 
-From this handoff until terminal return:
-
-```text
-DO NOT stop for YAML/shell/quoting/path/Docker/test-environment/artifact/evidence mechanics.
-DO NOT reselect n8n because an ordinary newer patch exists.
-DO NOT rescan/rebase endlessly against later database timestamps after a green terminal evidence snapshot.
-DO NOT introduce new security requirements beyond this contract unless Emergency Reopen Rule applies.
-DO NOT return partial progress reports as blockers.
-DO NOT start FAZ 7.2.
-DO NOT merge.
-```
-
-Implementer owns all mechanical corrections required to reach the terminal state.
-
-When multiple mechanical issues remain, resolve them in one continuation rather than returning one at a time.
-
----
-
-## 11. Required next Implementer handoff — terminal only
-
-The next Implementer handoff MUST be exactly one of:
+The next Implementer handoff after DHI owner credential configuration MUST be
+exactly one of:
 
 ```text
 IMPLEMENTER_STATE: READY_FOR_REVIEW
 ```
 
-with one exact final HEAD and complete evidence; or:
+with one exact final HEAD and complete evidence; or, only if actually proven:
 
 ```text
 IMPLEMENTER_STATE: BLOCKED_TRUE_DESIGN_SECURITY_OR_OWNER_GOVERNANCE_ACTION
 ```
 
-with ONE consolidated blocker that satisfies either the Emergency Reopen Rule or the final owner-governance condition.
-
-No other intermediate STOP is authorized.
+for `OPS71-N8N-DHI-001: PLAN_OR_ENTITLEMENT_BLOCKED`, an Emergency Reopen Rule
+condition, or the final consolidated GitHub owner-governance action.
 
 ```text
 READY_FOR_REVIEW: NO
