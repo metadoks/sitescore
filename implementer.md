@@ -27,7 +27,7 @@ PR_MERGED: FALSE
 CURRENT_HEAD_SHA: 1e7e710d28da4ecfc5351f6aa9f58dea36d83303
 CURRENT_CHANGED_FILE_COUNT: 20
 
-OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER
+OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_BY_RERUN
 OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
 OPS71_N8N_VULN_001_STATUS: SNOWFLAKE_TOML_PRUNE_AUTHORIZED_EVIDENCE_PARTIAL_PENDING_EXECUTION_RECOVERY
 
@@ -59,112 +59,32 @@ PRODUCTION_SECRET_COMMITTED: NONE
 
 ## 1. Latest Reviewer decision consumed
 
-The prior TOML-major incompatibility STOP is superseded by the current Reviewer handoff. The Reviewer authorized the Snowflake-only capability-pruning path for the exact frozen n8n 2.37.10 candidate and instructed the Implementer to continue to a terminal state without stopping for ordinary YAML/shell/path/test/evidence mechanics.
+Reviewer terminal closure policy remains authoritative. FAZ 7.1 is frozen to n8n 2.37.10 and must be completed on that candidate without restarting the ordinary latest-stable loop. Existing Snowflake-only capability-pruning authorization remains in force.
 
-The authorized dependency closure is:
+Frozen candidate identity:
 
 ```text
-n8n-nodes-base@2.37.10
-└─ snowflake-sdk@2.1.0
-   └─ toml@3.0.0
+version = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+official amd64 digest reference = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
+cutoff date = 2026-09-07
 ```
 
-Authorized removal is limited to:
+Authorized Snowflake/TOML removal remains limited to:
 
 ```text
 snowflake-sdk@2.1.0
 toml@3.0.0
 ```
 
-No TOML major override, unrelated dependency removal, parent-source patch, scanner suppression, SiteScore VEX, alternative CI, or self-hosted runner was authorized or used.
+No TOML major override, unrelated dependency removal, application-source patch, scanner suppression, SiteScore-authored VEX, alternative CI, or self-hosted runner is authorized or used.
 
 ---
 
-## 2. Snowflake/TOML pruning evidence achieved before platform execution loss
+## 2. Accepted technical evidence preserved
 
-Exact temporary probe evidence from run `34083746044`, job `101623771228`, artifact `10004956148` proved the essential dependency and package-delta facts:
-
-```text
-snowflake-sdk version = 2.1.0
-toml version = 3.0.0
-snowflake direct production parent = n8n-nodes-base@2.37.10
-toml direct production parent = snowflake-sdk@2.1.0
-external parents = NONE
-```
-
-The machine-readable delete target set contained only the Snowflake/TOML closure. `package-delta.json` established:
-
-```text
-removed = [snowflake-sdk@2.1.0, toml@3.0.0]
-added = []
-version_changes = []
-shared_non_snowflake_removed = []
-```
-
-The probe itself then hit a proof-mechanics defect: several verifier expectations still contained stale `n8n-nodes-base@2.37.4` literals even though the frozen candidate/source identity was already 2.37.10. This is a verifier-only defect, not an additional production parent or security-design blocker.
-
-The temporary probe and all temporary fixer workflows were removed before this handoff. No permanent frozen source/workflow bytes were changed by those diagnostics.
-
----
-
-## 3. GitHub-hosted Actions execution has externally stopped
-
-After the verifier defect was isolated, GitHub-hosted Actions ceased starting jobs at the runner-step level.
-
-Exact clean current head:
-
-```text
-1e7e710d28da4ecfc5351f6aa9f58dea36d83303
-```
-
-Exact PR workflow run:
-
-```text
-run = 34530157300
-event = pull_request
-conclusion = failure
-```
-
-Every independent mandatory job completed as failure without a runnable step graph or job log:
-
-```text
-faz6-commerce-replay  -> failure, steps = null
-n8n-validation        -> failure, steps = null
-static-contracts      -> failure, steps = null
-source-boundary       -> failure, steps = null
-container-validation  -> failure, steps = null
-required-gate         -> failure, steps = null
-```
-
-The corresponding push run `34530152698` showed the same immediate failure class. Separate temporary probe/fixer workflows on preceding heads also completed within seconds with `steps = null` and no downloadable runner logs.
-
-This cross-workflow/cross-job pattern is not consistent with one test, YAML command, Docker build, dependency graph, or SiteScore source failure. The available GitHub API does not expose the account/UI pre-run message that identifies whether the external cause is billing, usage/quota, account lock, plan/entitlement, or another hosted-Actions platform restriction, so the Implementer does not invent a more specific cause.
-
-The project contract prohibits switching to self-hosted runners, weakening the required gate, or substituting another CI system. Therefore no technical workaround is authorized.
-
----
-
-## 4. Single consolidated owner action
-
-Owner must restore GitHub-hosted Actions execution for `metadoks/sitescore` so a normal job actually starts and produces runner steps/logs.
-
-In the GitHub UI, inspect one of the exact failed runs above and resolve the account/platform pre-run reason shown there (for example billing/usage/plan/account restriction if that is what GitHub displays). Do not change frozen SiteScore code, do not weaken `faz7 / required-gate`, do not switch CI providers, and do not use a self-hosted runner as a workaround.
-
-Acceptance criterion for the owner action:
-
-```text
-A rerun/new exact-head GitHub-hosted Actions job enters normal runner execution
-AND
-its jobs contain ordinary steps/logs instead of immediate failure with steps = null.
-```
-
-Once hosted execution is restored, Implementer can resume from the already-authorized Snowflake/TOML prune verifier correction, rerun the full exact 2.37.10 security/runtime pipeline, permanentize only after PASS, and finish the permanent `faz7 / required-gate` plus governance checklist.
-
----
-
-## 5. Current known accepted/passing technical evidence remains preserved
-
-Reviewer has already recorded the following passing work and it is not reopened by the hosted-execution outage:
+Evidence already achieved before hosted execution stopped remains valid and is not reopened by the platform outage:
 
 ```text
 source-boundary = PASS
@@ -175,14 +95,70 @@ report regression = 24 PASS
 Commerce = 416 PASS + exactly one authorized phase-local deselect
 frozen application source semantics change = NONE
 frozen n8n workflow JSON change = NONE
-Snowflake/TOML exclusive closure and removal delta = PROVEN
+Snowflake/TOML exclusive production closure = PROVEN
+package delta = removed [snowflake-sdk@2.1.0, toml@3.0.0]
+added = []
+version_changes = []
+shared_non_snowflake_removed = []
 ```
 
-The terminal n8n security/runtime candidate and exact-final-head required gate remain pending because GitHub-hosted jobs cannot currently start.
+The remaining verifier issue before execution loss was mechanical only: stale `n8n-nodes-base@2.37.4` literals had to be aligned to frozen candidate `2.37.10` identities. Reviewer permits continuing through such ordinary proof mechanics once hosted execution is restored.
 
 ---
 
-## 6. Clean live PR state
+## 3. GitHub-hosted Actions execution blocker re-confirmed on 2026-09-11
+
+Current clean code head remains:
+
+```text
+1e7e710d28da4ecfc5351f6aa9f58dea36d83303
+```
+
+Existing exact-head PR workflow:
+
+```text
+run = 34530157300
+original source-boundary job = 103048648231
+```
+
+The Implementer re-ran that exact failed `source-boundary` job without changing code or workflow semantics. GitHub accepted the rerun request successfully.
+
+New attempt job identities then returned:
+
+```text
+source-boundary       = 103138187862 -> failure, steps = null
+faz6-commerce-replay  = 103138188584 -> failure, steps = null
+container-validation = 103138188652 -> failure, steps = null
+n8n-validation        = 103138188700 -> failure, steps = null
+static-contracts      = 103138188721 -> failure, steps = null
+required-gate         = 103138194460 -> failure, steps = null
+```
+
+The rerun therefore again failed before ordinary runner-step execution. No runnable step graph or job log was produced. This satisfies the same external hosted-execution failure signature as the prior attempt and does not indicate a SiteScore test, Docker, YAML command, dependency, or frozen-source failure.
+
+The GitHub API available to this Implementer still does not expose the account/UI pre-run reason, so no unsupported claim is made about whether the external cause is billing, quota/usage, plan entitlement, account restriction, or another GitHub-hosted Actions platform condition.
+
+---
+
+## 4. Required owner action remains unchanged
+
+Owner must restore GitHub-hosted Actions execution for `metadoks/sitescore` by opening one of the failed runs in the GitHub Actions UI and resolving the pre-run account/platform message shown there.
+
+Acceptance criterion:
+
+```text
+A rerun/new exact-head GitHub-hosted Actions job enters normal runner execution
+AND
+jobs contain ordinary steps/logs rather than immediate failure with steps = null.
+```
+
+Do not weaken `faz7 / required-gate`, change frozen SiteScore code, switch CI providers, or use a self-hosted runner as a workaround.
+
+After hosted execution is restored, Implementer resumes from the authorized Snowflake/TOML verifier correction, reruns the full frozen 2.37.10 security/runtime pipeline, permanentizes only after PASS, and completes the exact-final-head required gate and governance checklist.
+
+---
+
+## 5. Clean live state
 
 ```text
 PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
