@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}"
+: "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
+: "${GH_TOKEN:?GH_TOKEN is required}"
+
+LOCK="$GITHUB_WORKSPACE/deploy/containers/n8n-image.lock"
+# shellcheck disable=SC1090
+set -a
+. "$LOCK"
+set +a
+
+OUT="$GITHUB_WORKSPACE/deploy/containers/artifacts/n8n-final"
+export OUT
+SRC=/tmp/sitescore-n8n-src
+mkdir -p "$OUT"
+rm -rf "$SRC"
+
+test "$N8N_BASELINE_STATUS" = FROZEN_CANDIDATE_2026_09_07
+test "$N8N_VERSION" = 2.37.10
+test "$N8N_SOURCE_COMMIT" = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+test "$N8N_SOURCE_TREE" = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+test "$N8N_OFFICIAL_AMD64_DIGEST" = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
+test "$N8N_CUTOFF_DATE" = 2026-09-07
+
+test "$(sha256sum "$GITHUB_WORKSPACE/automation/n8n/workflows/sitescore-order-paid-v1.json" | awk '{print $1}')" = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
+test "$(sha256sum "$GITHUB_WORKSPACE/automation/n8n/workflows/sitescore-recovery-schedule-v1.json" | awk '{print $1}')" = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
+! grep -R -F 'n8n-nodes-base.snowflake' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F 'n8n-nodes-base.emailSend' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F 'n8n-nodes-base.executeCommand' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+
+python - <<'PY'
+import json, os, urllib.parse, urllib.request
+out=os.environ['OUT']
+tag=os.environ['N8N_RELEASE_TAG']
+url='https://api.github.com/repos/n8n-io/n8n/releases/tags/'+urllib.parse.quote(tag, safe='')
+req=urllib.request.Request(url,headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-frozen-n8n'})
+with urllib.request.urlopen(req, timeout=30) as r:
+    rel=json.load(r)
+if rel.get('tag_name') != tag or rel.get('draft') or rel.get('prerelease'):
+    raise SystemExit(f'exact frozen n8n release metadata invalid: {rel.get("tag_name")}')
+ctx={'selected_version':os.environ['N8N_VERSION'],'release_id':rel['id'],'tag':rel['tag_name'],'published_at':rel.get('published_at'),'cutoff_date':os.environ['N8N_CUTOFF_DATE'],'source_commit':os.environ['N8N_SOURCE_COMMIT'],'source_tree':os.environ['N8N_SOURCE_TREE'],'official_image':os.environ['N8N_OFFICIAL_IMAGE'],'official_amd64_digest':os.environ['N8N_OFFICIAL_AMD64_DIGEST'],'dhi_ref':os.environ['N8N_DHI_RUNTIME_BASE'],'builder_image':os.environ['N8N_BUILDER_IMAGE']}
+json.dump(ctx,open(os.path.join(out,'source-context.json'),'w'),indent=2,sort_keys=True)
+print(json.dumps(ctx,indent=2,sort_keys=True))
+PY
+
+docker pull --platform linux/amd64 "$N8N_OFFICIAL_IMAGE" >/dev/null
+test "$(docker image inspect "$N8N_OFFICIAL_IMAGE" --format '{{.Architecture}}')" = amd64
+test "$(docker run --rm "$N8N_OFFICIAL_IMAGE" n8n --version | tr -d '\r' | tail -n1)" = "$N8N_VERSION"
+
+git clone --filter=blob:none --no-checkout https://github.com/n8n-io/n8n.git "$SRC"
+git -C "$SRC" fetch --depth=1 origin "$N8N_SOURCE_COMMIT"
+git -C "$SRC" checkout --detach "$N8N_SOURCE_COMMIT"
+test "$(git -C "$SRC" rev-parse HEAD)" = "$N8N_SOURCE_COMMIT"
+test "$(git -C "$SRC" rev-parse HEAD^{tree})" = "$N8N_SOURCE_TREE"
+cp "$SRC/docker/images/n8n/Dockerfile" "$OUT/upstream-n8n-Dockerfile"
+cp "$SRC/docker/images/n8n-base/Dockerfile" "$OUT/upstream-n8n-base-Dockerfile"
+cp "$SRC/.github/workflows/build-base-image.yml" "$OUT/upstream-build-base-image.yml"
+grep -F "$N8N_BUILDER_IMAGE" "$SRC/docker/images/n8n/Dockerfile"
+grep -F "$N8N_DHI_RUNTIME_BASE" "$SRC/.github/workflows/build-base-image.yml"
+grep -F 'fast-uri: 3.1.5' "$SRC/pnpm-workspace.yaml"
+grep -F 'ip-address@10: 10.3.1' "$SRC/pnpm-workspace.yaml"
+grep -F 'brace-expansion@5: 5.0.9' "$SRC/pnpm-workspace.yaml"
+
+pushd "$SRC" >/dev/null
+cp pnpm-workspace.yaml "$OUT/pnpm-workspace.stable.yaml"
+cp pnpm-lock.yaml "$OUT/pnpm-lock.stable.yaml"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_FAST_URI_UPSTREAM_REF}/pnpm-workspace.yaml" -o "$OUT/upstream-fast-uri-adoption.yaml"
+grep -F "fast-uri: ${N8N_FAST_URI_TARGET}" "$OUT/upstream-fast-uri-adoption.yaml"
+python - <<'PY'
+from pathlib import Path
+p=Path('pnpm-workspace.yaml')
+s=p.read_text()
+assert s.count('fast-uri: 3.1.5') == 1
+assert 'fast-uri: 3.1.6' not in s
+p.write_text(s.replace('fast-uri: 3.1.5','fast-uri: 3.1.6',1))
+PY
+pnpm install --lockfile-only --ignore-scripts
+cp pnpm-workspace.yaml "$OUT/pnpm-workspace.backported.yaml"
+cp pnpm-lock.yaml "$OUT/pnpm-lock.backported.yaml"
+git diff -- pnpm-workspace.yaml pnpm-lock.yaml > "$OUT/fast-uri-backport.diff"
+git diff --check -- pnpm-workspace.yaml pnpm-lock.yaml
+grep -F 'fast-uri: 3.1.6' pnpm-workspace.yaml
+! grep -F 'fast-uri@3.1.5' pnpm-lock.yaml
+grep -F 'fast-uri@3.1.6' pnpm-lock.yaml
+CI=true NODE_OPTIONS=--max-old-space-size=7168 pnpm install --frozen-lockfile
+pnpm why --prod --recursive snowflake-sdk --json > "$OUT/pnpm-why-prod-snowflake-sdk.json"
+pnpm why --prod --recursive toml --json > "$OUT/pnpm-why-prod-toml.json"
+pnpm why --prod --recursive fast-uri --json > "$OUT/pnpm-why-prod-fast-uri.json"
+pnpm why --prod --recursive ip-address --json > "$OUT/pnpm-why-prod-ip-address.json"
+pnpm why --prod --recursive brace-expansion --json > "$OUT/pnpm-why-prod-brace-expansion.json"
+grep -F snowflake-sdk "$OUT/pnpm-why-prod-snowflake-sdk.json"
+grep -F toml "$OUT/pnpm-why-prod-toml.json"
+CI=true NODE_OPTIONS=--max-old-space-size=7168 RELEASE="$N8N_VERSION" pnpm build:n8n
+test -d compiled
+grep -R '"version": "3.1.6"' compiled/node_modules/.pnpm/fast-uri@3.1.6*/node_modules/fast-uri/package.json
+grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
+grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
+grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
+grep -R '"version": "2.1.0"' compiled/node_modules/.pnpm/snowflake-sdk@2.1.0*/node_modules/snowflake-sdk/package.json
+grep -R '"version": "3.0.0"' compiled/node_modules/.pnpm/toml@3.0.0*/node_modules/toml/package.json
+python "$GITHUB_WORKSPACE/deploy/containers/n8n_prune_closure.py" compiled/node_modules "$OUT"
+! find compiled/node_modules -type f -path '*/snowflake-sdk/package.json' -print -quit | grep .
+! find compiled/node_modules -type f -path '*/toml/package.json' -exec grep -l '"version": "3.0.0"' {} + | grep .
+popd >/dev/null
+
+cat > /tmp/sitescore-n8n-base.Dockerfile <<'EOF'
+ARG DHI_REF
+FROM ${DHI_REF} AS evidence
+RUN apk add --no-cache busybox-binsh && \
+    apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontconfig && \
+    update-ms-fonts && fc-cache -f && apk del .build-deps-fonts && \
+    find /usr/share/fonts/truetype/msttcorefonts/ -type l -exec unlink {} \; && \
+    apk add --no-cache openssh graphicsmagick tini tzdata ca-certificates libc6-compat librdkafka && \
+    mkdir -p /security-evidence && \
+    cp /etc/apk/repositories /security-evidence/repositories.before && \
+    cp /etc/apk/world /security-evidence/world.before && \
+    cp /lib/apk/db/installed /security-evidence/installed.before && \
+    (apk del openssh graphicsmagick 2>&1 | tee /security-evidence/removal.log) && \
+    (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' 2>&1 | tee /security-evidence/pins.log) && \
+    apk policy libcrypto3 libssl3 libexpat > /security-evidence/policy.after.txt && \
+    cp /etc/apk/repositories /security-evidence/repositories.after && \
+    cp /etc/apk/world /security-evidence/world.after && \
+    cp /lib/apk/db/installed /security-evidence/installed.after && \
+    rm -rf /tmp/* /root/.npm /root/.cache/node /opt/yarn*
+FROM evidence AS final
+RUN apk del apk-tools && rm -rf /security-evidence
+RUN mkdir -p /usr/local/bin && ln -sf /usr/bin/node /usr/local/bin/node
+WORKDIR /home/node
+ENV NODE_PATH=/usr/local/lib/node_modules
+EXPOSE 5678/tcp
+EOF
+
+docker build --platform linux/amd64 --no-cache --target evidence --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" -f /tmp/sitescore-n8n-base.Dockerfile -t sitescore-n8n-base-pruned:evidence "$SRC"
+eid="$(docker create sitescore-n8n-base-pruned:evidence)"
+docker cp "$eid:/security-evidence/." "$OUT/apk-evidence"
+docker rm "$eid" >/dev/null
+docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
+docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'cat /lib/apk/db/installed' > "$OUT/final-installed.raw"
+test "$(docker image inspect "$N8N_HARDENED_BASE_IMAGE" --format '{{.Architecture}}')" = amd64
+test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --version')" = v26.5.1
+! docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'command -v apk >/dev/null'
+python - <<'PY'
+import os
+raw=open(os.path.join(os.environ['OUT'],'final-installed.raw')).read()
+for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.4-r0'):
+    if item not in raw: raise SystemExit('required exact runtime pin missing: '+item)
+for item in ('P:openssh\n','P:graphicsmagick\n','P:apk-tools\n'):
+    if item in raw: raise SystemExit('forbidden runtime package remains: '+item)
+for item in ('P:tini\n','P:tzdata\n','P:ca-certificates\n','P:librdkafka\n','P:gcompat\n'):
+    if item not in raw: raise SystemExit('required runtime package/provider missing: '+item)
+PY
+
+pushd "$SRC" >/dev/null
+docker build --platform linux/amd64 --build-arg BUILDER_IMAGE="$N8N_BUILDER_IMAGE" --build-arg RUNTIME_IMAGE="$N8N_HARDENED_BASE_IMAGE" --build-arg N8N_VERSION="$N8N_VERSION" --build-arg N8N_RELEASE_TYPE=stable -f docker/images/n8n/Dockerfile -t sitescore-n8n-pruned-core:frozen .
+popd >/dev/null
+cat > /tmp/sitescore-n8n-contract.Dockerfile <<'EOF'
+FROM sitescore-n8n-pruned-core:frozen
+ENV NODES_EXCLUDE='["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.emailSend","n8n-nodes-base.snowflake"]'
+EOF
+docker build --network=none --platform linux/amd64 -f /tmp/sitescore-n8n-contract.Dockerfile -t "$N8N_CANDIDATE_IMAGE" /tmp
+docker image inspect "$N8N_CANDIDATE_IMAGE" > "$OUT/final-image-inspect.json"
+docker image inspect "$N8N_CANDIDATE_IMAGE" --format '{{.Id}}' > "$OUT/final-image-id.txt"
+test "$(docker image inspect "$N8N_CANDIDATE_IMAGE" --format '{{.Architecture}}')" = amd64
+user="$(docker image inspect "$N8N_CANDIDATE_IMAGE" --format '{{.Config.User}}')"
+test -n "$user" && test "$user" != root && test "$user" != 0
+test "$(docker run --rm "$N8N_CANDIDATE_IMAGE" n8n --version | tr -d '\r' | tail -n1)" = "$N8N_VERSION"
+envs="$(docker image inspect "$N8N_CANDIDATE_IMAGE" --format '{{json .Config.Env}}')"
+printf '%s\n' "$envs" > "$OUT/image-env.json"
+for node in n8n-nodes-base.executeCommand n8n-nodes-base.localFileTrigger n8n-nodes-base.emailSend n8n-nodes-base.snowflake; do grep -F "$node" "$OUT/image-env.json"; done
+cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n8n -e N8N_ENCRYPTION_KEY=ci-only-frozen-key-000000000000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -p 127.0.0.1:15678:5678 "$N8N_CANDIDATE_IMAGE")"
+trap 'docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
+for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
+curl -fsS http://127.0.0.1:15678/healthz >/dev/null
+curl -fsS http://127.0.0.1:15678/types/nodes.json -o "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.snowflake "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.emailSend "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.executeCommand "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.localFileTrigger "$OUT/node-types.json"
+grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json"
+docker stop -t 5 "$cid" >/dev/null
+trap - EXIT
+vol="sitescore-frozen-import-${GITHUB_RUN_ID}"
+docker volume create "$vol" >/dev/null
+trap 'docker volume rm -f "$vol" >/dev/null 2>&1 || true' EXIT
+for wf in sitescore-order-paid-v1.json sitescore-recovery-schedule-v1.json; do docker run --rm -e N8N_ENCRYPTION_KEY=ci-only-frozen-key-000000000000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -v "$vol:/home/node/.n8n" -v "$GITHUB_WORKSPACE/automation/n8n/workflows:/workflows:ro" "$N8N_CANDIDATE_IMAGE" import:workflow --input="/workflows/$wf"; done
+docker volume rm -f "$vol" >/dev/null
+trap - EXIT
+
+syft="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' "$GITHUB_WORKSPACE/deploy/containers/supply-chain-tools.lock")"
+grype="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' "$GITHUB_WORKSPACE/deploy/containers/supply-chain-tools.lock")"
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft" "$N8N_CANDIDATE_IMAGE" -o spdx-json > "$OUT/n8n.spdx.json"
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$N8N_CANDIDATE_IMAGE" -o json > "$OUT/n8n.grype.json"
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype" "$N8N_OFFICIAL_IMAGE" -o json > "$OUT/official.grype.json"
+curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o "$OUT/cisa-kev.json"
+python - <<'PY'
+import hashlib, json, os, urllib.request
+out=os.environ['OUT']; ctx=json.load(open(os.path.join(out,'source-context.json')))
+req=urllib.request.Request(f'https://api.github.com/repos/n8n-io/n8n/releases/{ctx["release_id"]}/assets',headers={'Authorization':f'Bearer {os.environ["GH_TOKEN"]}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'sitescore-faz7-frozen-n8n'})
+with urllib.request.urlopen(req,timeout=30) as r: assets=json.load(r)
+asset=next((a for a in assets if a.get('name')=='vex.openvex.json'),None)
+if not asset: raise SystemExit('exact frozen release OpenVEX asset missing')
+urllib.request.urlretrieve(asset['browser_download_url'],os.path.join(out,'upstream.openvex.json'))
+computed='sha256:'+hashlib.sha256(open(os.path.join(out,'upstream.openvex.json'),'rb').read()).hexdigest(); recorded=asset.get('digest'); verified=bool(recorded and recorded==computed)
+json.dump(asset,open(os.path.join(out,'openvex-asset-metadata.json'),'w'),indent=2,sort_keys=True)
+json.dump({'metadata_digest':recorded,'computed_digest':computed,'verified':verified},open(os.path.join(out,'openvex-asset-verification.json'),'w'),indent=2,sort_keys=True)
+if not verified: raise SystemExit('OpenVEX digest verification failed')
+ctx['selected_digest']=open(os.path.join(out,'final-image-id.txt')).read().strip(); json.dump(ctx,open(os.path.join(out,'release-context.json'),'w'),indent=2,sort_keys=True)
+PY
+python "$GITHUB_WORKSPACE/deploy/containers/n8n_openvex_reconcile.py" "$OUT"
+python - <<'PY'
+import json, os
+out=os.environ['OUT']; rows=json.load(open(os.path.join(out,'n8n.vendor-openvex-reconciliation.json'))); official=json.load(open(os.path.join(out,'official.grype.json')))
+critical=[r for r in rows if r['severity']=='CRITICAL' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']; high=[r for r in rows if r['severity']=='HIGH' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']; kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
+nodemailer=[]; other=[]
+for r in high:
+    ids={str(x).upper() for x in (r.get('scanner_alias_ids') or [])}; ids.add(str(r.get('scanner_advisory_id') or '').upper())
+    if r.get('package_name')=='nodemailer' and r.get('installed_version')=='8.0.10' and 'GHSA-P6GQ-J5CR-W38F' in ids: nodemailer.append(r)
+    else: other.append(r)
+os_high=[r for r in high if r.get('package_type')=='apk']; forbidden={n:[r for r in high if r.get('package_name')==n] for n in ('fast-uri','ip-address','brace-expansion','toml','snowflake-sdk')}
+official_high={(str((m.get('vulnerability') or {}).get('id')),str((m.get('artifact') or {}).get('name'))) for m in official.get('matches',[]) if str((m.get('vulnerability') or {}).get('severity') or '').upper()=='HIGH'}; new_high=[r for r in high if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
+summary={'BLOCKING_CRITICAL':len(critical),'CISA_KEV':len(kev),'OS_HIGH':len(os_high),'NEW_HIGH':len(new_high),'OTHER_HIGH':len(other),'NODEMAILER_RESIDUAL_HIGH':len(nodemailer),'FORBIDDEN_PACKAGE_HIGH':{k:len(v) for k,v in forbidden.items()}}
+json.dump(summary,open(os.path.join(out,'security-summary.json'),'w'),indent=2,sort_keys=True); print(json.dumps(summary,indent=2,sort_keys=True))
+if critical or kev or os_high or new_high or other or len(nodemailer)>1 or any(forbidden.values()): raise SystemExit('final security threshold failed')
+PY
+! grep -R -F n8n-nodes-base.emailSend "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.snowflake "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.executeCommand "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.localFileTrigger "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -Eiq 'SMTP|N8N_EMAIL_MODE|N8N_SMTP' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
+grep -F '127.0.0.1:5678:5678' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
+test -s "$GITHUB_WORKSPACE/deploy/containers/nodemailer-risk-record.md"
+python -m pip install --disable-pip-version-check --no-input pytest==8.4.2
+python -m pytest -q "$GITHUB_WORKSPACE/automation/n8n/tests" | tee "$OUT/static-tests.txt"
+grep -E '12 passed' "$OUT/static-tests.txt"
+python - <<'PY'
+from pathlib import Path
+import difflib, os, re
+root=Path(os.environ['GITHUB_WORKSPACE']); out=root/'deploy/containers/artifacts/n8n-final'; paths=[root/'automation/n8n/tests/runtime_smoke.sh',root/'automation/n8n/tests/recovery_schedule_runtime_smoke.sh',root/'automation/n8n/tests/recovery_replay_runtime_smoke.sh']
+for p in paths:
+    text=p.read_text(); patched=text.replace('IMAGE="n8nio/n8n:2.33.4"','IMAGE="sitescore-n8n-frozen:2.37.10"').replace('docker pull "$IMAGE" >/dev/null\n','').replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.10"')
+    patched=re.sub(r'DIGEST="\$\(docker image inspect "\$IMAGE" --format \'\{\{index \.RepoDigests 0\}\}\'\)"\ncase "\$DIGEST" in .*?esac\n','DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"\ntest -n "$DIGEST"\n',patched,count=1,flags=re.S)
+    q=p.with_name('.faz7-'+p.name); q.write_text(patched); q.chmod(0o755); (out/(p.name+'.faz7.patch')).write_text(''.join(difflib.unified_diff(text.splitlines(True),patched.splitlines(True),fromfile=str(p),tofile=str(q))))
+PY
+trap 'rm -f "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_schedule_runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_replay_runtime_smoke.sh' EXIT
+bash "$GITHUB_WORKSPACE/automation/n8n/tests/.faz7-runtime_smoke.sh" | tee "$OUT/order-paid-runtime-smoke.txt"
+bash "$GITHUB_WORKSPACE/automation/n8n/tests/.faz7-recovery_schedule_runtime_smoke.sh" | tee "$OUT/recovery-schedule-runtime-smoke.txt"
+bash "$GITHUB_WORKSPACE/automation/n8n/tests/.faz7-recovery_replay_runtime_smoke.sh" | tee "$OUT/recovery-replay-runtime-smoke.txt"
+rm -f "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_schedule_runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_replay_runtime_smoke.sh
+trap - EXIT
+git -C "$GITHUB_WORKSPACE" diff --exit-code
+python - <<'PY'
+import hashlib, json, os, pathlib
+out=pathlib.Path(os.environ['OUT']); lock=pathlib.Path(os.environ['GITHUB_WORKSPACE'])/'deploy/containers/n8n-image.lock'
+predicate={'buildDefinition':{'buildType':'https://github.com/metadoks/sitescore/.github/workflows/faz7-container-ci.yml','externalParameters':{'platform':'linux/amd64','candidate':'n8n-2.37.10-snowflake-pruned'},'internalParameters':{'lock_sha256':hashlib.sha256(lock.read_bytes()).hexdigest()},'resolvedDependencies':[{'uri':'git+https://github.com/n8n-io/n8n','digest':{'gitCommit':os.environ['N8N_SOURCE_COMMIT'],'gitTree':os.environ['N8N_SOURCE_TREE']}},{'uri':'docker://n8nio/n8n','digest':{'sha256':os.environ['N8N_OFFICIAL_AMD64_DIGEST'].split(':',1)[1]}}]},'runDetails':{'builder':{'id':f'https://github.com/metadoks/sitescore/actions/runs/{os.environ["GITHUB_RUN_ID"]}'},'metadata':{'invocationId':f'{os.environ["GITHUB_RUN_ID"]}/{os.environ.get("GITHUB_RUN_ATTEMPT","1")}'}}}
+(out/'n8n.provenance.json').write_text(json.dumps(predicate,indent=2,sort_keys=True)+'\n')
+PY
+for f in package-delta.json security-summary.json n8n.spdx.json n8n.grype.json n8n.provenance.json order-paid-runtime-smoke.txt recovery-schedule-runtime-smoke.txt recovery-replay-runtime-smoke.txt; do test -f "$OUT/$f"; done
+echo FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE=PASS | tee "$OUT/final-gate.txt"

@@ -77,18 +77,12 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import pathlib, re
-          workflows = [
-              pathlib.Path('.github/workflows/faz7-container-ci.yml'),
-              pathlib.Path('.github/workflows/faz7-publish-images.yml'),
-          ]
-          bad = []
-          pattern = re.compile(r'^\s*uses:\s*[^#\s]+@([0-9a-f]{40})\s*$')
+          workflows = [pathlib.Path('.github/workflows/faz7-container-ci.yml'), pathlib.Path('.github/workflows/faz7-publish-images.yml')]
+          bad=[]; pattern=re.compile(r'^\s*uses:\s*[^#\s]+@([0-9a-f]{40})\s*$')
           for path in workflows:
-              for lineno, line in enumerate(path.read_text().splitlines(), 1):
-                  if re.match(r'^\s*uses:\s*', line) and not pattern.match(line):
-                      bad.append(f'{path}:{lineno}:{line.strip()}')
-          if bad:
-              raise SystemExit('unpinned permanent action dependencies: ' + ' | '.join(bad))
+              for lineno,line in enumerate(path.read_text().splitlines(),1):
+                  if re.match(r'^\s*uses:\s*',line) and not pattern.match(line): bad.append(f'{path}:{lineno}:{line.strip()}')
+          if bad: raise SystemExit('unpinned permanent action dependencies: '+' | '.join(bad))
           print('PERMANENT_ACTION_FULL_SHA_PINNING=PASS')
           PY
 
@@ -98,8 +92,7 @@ jobs:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact source without third-party action
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           set -euo pipefail
           git init .
@@ -107,7 +100,6 @@ jobs:
           git fetch --depth=1 origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-
       - name: Run dispatcher supervisor and n8n static suites with hashed test tools
         run: |
           set -euo pipefail
@@ -119,7 +111,6 @@ jobs:
             /tmp/faz7-tests/bin/python -m pytest automation/n8n/tests -q | tee /tmp/n8n-static.txt
             grep -E "12 passed" /tmp/n8n-static.txt
           '
-
       - name: Verify frozen role command semantics
         run: |
           set -euo pipefail
@@ -137,8 +128,7 @@ jobs:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact source without third-party action
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           set -euo pipefail
           git init .
@@ -146,32 +136,19 @@ jobs:
           git fetch --depth=1 origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-
       - name: Build linux amd64 runtime and test images
         run: |
           set -euo pipefail
           version="sha-${SOURCE_SHA}"
           for target in runtime test; do
-            docker buildx build --platform linux/amd64 --load \
-              --target "$target" \
-              --build-arg "SOURCE_REVISION=${SOURCE_SHA}" \
-              --build-arg "SOURCE_VERSION=${version}" \
-              -f deploy/containers/api/Dockerfile \
-              -t "sitescore-api:${target}" .
-            docker buildx build --platform linux/amd64 --load \
-              --target "$target" \
-              --build-arg "SOURCE_REVISION=${SOURCE_SHA}" \
-              --build-arg "SOURCE_VERSION=${version}" \
-              -f deploy/containers/commerce/Dockerfile \
-              -t "sitescore-commerce:${target}" .
+            docker buildx build --platform linux/amd64 --load --target "$target" --build-arg "SOURCE_REVISION=${SOURCE_SHA}" --build-arg "SOURCE_VERSION=${version}" -f deploy/containers/api/Dockerfile -t "sitescore-api:${target}" .
+            docker buildx build --platform linux/amd64 --load --target "$target" --build-arg "SOURCE_REVISION=${SOURCE_SHA}" --build-arg "SOURCE_VERSION=${version}" -f deploy/containers/commerce/Dockerfile -t "sitescore-commerce:${target}" .
           done
-
       - name: Prove runtime identity non-root labels and read-only smoke
         run: |
           set -euo pipefail
           for pair in 'sitescore-api:runtime sitescore-api' 'sitescore-commerce:runtime sitescore-commerce'; do
-            set -- $pair
-            image="$1" title="$2"
+            set -- $pair; image="$1"; title="$2"
             test "$(docker image inspect "$image" --format '{{.Architecture}}')" = amd64
             test "$(docker image inspect "$image" --format '{{.Config.User}}')" = '10001:10001'
             test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = 'https://github.com/metadoks/sitescore'
@@ -180,37 +157,20 @@ jobs:
             test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "$title"
             docker run --rm "$image" sh -euc 'test "$(id -u)" -ne 0; test "$(id -g)" -ne 0; test -z "$(find /opt/venv -type f -writable -print -quit)"'
           done
-          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-api:runtime \
-            python /opt/sitescore/verify_image_contract.py api
-          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:runtime \
-            python /opt/sitescore/verify_image_contract.py commerce
-
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-api:runtime python /opt/sitescore/verify_image_contract.py api
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:runtime python /opt/sitescore/verify_image_contract.py commerce
       - name: Run exact current API report and Commerce applicable regressions
         run: |
           set -euo pipefail
           set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
-          api_rc=$?
-          set -e
-          cat /tmp/api-tests.txt
-          test "$api_rc" -eq 0
-          grep -E '114 passed' /tmp/api-tests.txt
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1; api_rc=$?
+          set -e; cat /tmp/api-tests.txt; test "$api_rc" -eq 0; grep -E '114 passed' /tmp/api-tests.txt
           set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
-          report_rc=$?
-          set -e
-          cat /tmp/report-tests.txt
-          test "$report_rc" -eq 0
-          grep -E '24 passed' /tmp/report-tests.txt
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1; report_rc=$?
+          set -e; cat /tmp/report-tests.txt; test "$report_rc" -eq 0; grep -E '24 passed' /tmp/report-tests.txt
           set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests \
-            --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only > /tmp/commerce-tests.txt 2>&1
-          commerce_rc=$?
-          set -e
-          cat /tmp/commerce-tests.txt
-          test "$commerce_rc" -eq 0
-          grep -E '416 passed' /tmp/commerce-tests.txt
-
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only > /tmp/commerce-tests.txt 2>&1; commerce_rc=$?
+          set -e; cat /tmp/commerce-tests.txt; test "$commerce_rc" -eq 0; grep -E '416 passed' /tmp/commerce-tests.txt
       - name: Prove API web worker beat commands and PDF font runtime
         run: |
           set -euo pipefail
@@ -220,113 +180,55 @@ jobs:
           import time, urllib.request
           for _ in range(30):
               try:
-                  with urllib.request.urlopen('http://127.0.0.1:18080/openapi.json', timeout=1) as response:
-                      assert response.status == 200
-                      break
-              except Exception:
-                  time.sleep(1)
-          else:
-              raise SystemExit('API web socket did not become ready')
+                  with urllib.request.urlopen('http://127.0.0.1:18080/openapi.json',timeout=1) as r:
+                      assert r.status==200; break
+              except Exception: time.sleep(1)
+          else: raise SystemExit('API web socket did not become ready')
           PY
-          docker stop -t 2 "$api_cid" >/dev/null
-          trap - EXIT
-          api_env=(
-            -e SITESCORE_DATABASE_URL=postgresql://ci:ci@127.0.0.1/ci
-            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0
-            -e SITESCORE_API_KEY_PEPPER=ci-only-pepper-00000000000000000000000000000000
-          )
-          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
-            celery -A sitescore_api.tasks:celery_app worker --help >/dev/null
-          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
-            celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
-          set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
-          pdf_rc=$?
-          set -e
-          cat /tmp/pdf-test.txt
-          test "$pdf_rc" -eq 0
-          grep -E 'passed' /tmp/pdf-test.txt
-
+          docker stop -t 2 "$api_cid" >/dev/null; trap - EXIT
+          api_env=(-e SITESCORE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1/ci -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 -e SITESCORE_API_KEY_PEPPER=ci-only-pepper-00000000000000000000000000000000)
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime celery -A sitescore_api.tasks:celery_app worker --help >/dev/null
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
+          set +e; docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1; pdf_rc=$?; set -e
+          cat /tmp/pdf-test.txt; test "$pdf_rc" -eq 0; grep -E 'passed' /tmp/pdf-test.txt
       - name: Prove Commerce web socket and dispatcher supervisor runtime
         run: |
           set -euo pipefail
-          commerce_env=(
-            -e COMMERCE_ENV=test
-            -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1:5432/ci
-            -e STRIPE_SECRET_KEY=sk_test_ci_only
-            -e STRIPE_PRICE_LOCATION_REPORT_V1=price_ci123456789
-            -e COMMERCE_SUCCESS_URL_BASE=http://127.0.0.1:8000/success
-            -e COMMERCE_CANCEL_URL_BASE=http://127.0.0.1:8000/cancel
-            -e STRIPE_WEBHOOK_SECRET=whsec_ci_only
-            -e STRIPE_EXPECTED_LIVEMODE=false
-            -e SITESCORE_API_BASE_URL=http://127.0.0.1:8001
-            -e SITESCORE_API_SERVICE_KEY=ssk1_ci.12345678901234567890123456789012
-            -e SITESCORE_API_TARGET_ID=ci
-            -e COMMERCE_AUTOMATION_API_KEY=ci-automation-key-12345678901234567890
-            -e POSTMARK_SERVER_TOKEN=ci-postmark-token-123456
-            -e POSTMARK_FROM_EMAIL=noreply@example.com
-            -e POSTMARK_TEMPLATE_ALIAS=sitescore-report-v1
-            -e COMMERCE_PUBLIC_BASE_URL=http://127.0.0.1:8000
-          )
+          commerce_env=(-e COMMERCE_ENV=test -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1:5432/ci -e STRIPE_SECRET_KEY=sk_test_ci_only -e STRIPE_PRICE_LOCATION_REPORT_V1=price_ci123456789 -e COMMERCE_SUCCESS_URL_BASE=http://127.0.0.1:8000/success -e COMMERCE_CANCEL_URL_BASE=http://127.0.0.1:8000/cancel -e STRIPE_WEBHOOK_SECRET=whsec_ci_only -e STRIPE_EXPECTED_LIVEMODE=false -e SITESCORE_API_BASE_URL=http://127.0.0.1:8001 -e SITESCORE_API_SERVICE_KEY=ssk1_ci.12345678901234567890123456789012 -e SITESCORE_API_TARGET_ID=ci -e COMMERCE_AUTOMATION_API_KEY=ci-automation-key-12345678901234567890 -e POSTMARK_SERVER_TOKEN=ci-postmark-token-123456 -e POSTMARK_FROM_EMAIL=noreply@example.com -e POSTMARK_TEMPLATE_ALIAS=sitescore-report-v1 -e COMMERCE_PUBLIC_BASE_URL=http://127.0.0.1:8000)
           commerce_cid="$(docker run -d --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${commerce_env[@]}" -e PORT=8000 -p 127.0.0.1:18081:8000 sitescore-commerce:runtime)"
           trap 'docker stop -t 2 "$commerce_cid" >/dev/null 2>&1 || true' EXIT
           python - <<'PY'
-          import socket, time
+          import socket,time
           for _ in range(30):
               try:
-                  with socket.create_connection(('127.0.0.1', 18081), timeout=1):
-                      break
-              except OSError:
-                  time.sleep(1)
-          else:
-              raise SystemExit('Commerce web socket did not become ready')
+                  with socket.create_connection(('127.0.0.1',18081),timeout=1): break
+              except OSError: time.sleep(1)
+          else: raise SystemExit('Commerce web socket did not become ready')
           PY
-          docker stop -t 2 "$commerce_cid" >/dev/null
-          trap - EXIT
+          docker stop -t 2 "$commerce_cid" >/dev/null; trap - EXIT
           dispatcher_cid="$(docker run -d --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:runtime python /opt/sitescore/bin/commerce-dispatcher-supervisor.py)"
-          sleep 4
-          docker logs "$dispatcher_cid" 2>&1 | tee /tmp/dispatcher-runtime.log
-          grep -E 'backoff_seconds|sleep_seconds' /tmp/dispatcher-runtime.log
-          docker stop -t 5 "$dispatcher_cid" >/dev/null
-
+          sleep 4; docker logs "$dispatcher_cid" 2>&1 | tee /tmp/dispatcher-runtime.log; grep -E 'backoff_seconds|sleep_seconds' /tmp/dispatcher-runtime.log; docker stop -t 5 "$dispatcher_cid" >/dev/null
       - name: Generate application SBOMs scans and image hygiene evidence
         run: |
           set -euo pipefail
           mkdir -p deploy/containers/artifacts/application-images
-          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"; grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
           for name in api commerce; do
-            image="sitescore-${name}:runtime"
-            docker history --no-trunc "$image" > "deploy/containers/artifacts/application-images/${name}.history.txt"
-            docker image inspect "$image" > "deploy/containers/artifacts/application-images/${name}.inspect.json"
-            if grep -E -i '(STRIPE_SECRET_KEY=|STRIPE_WEBHOOK_SECRET=|SITESCORE_API_KEY_PEPPER=|POSTMARK_SERVER_TOKEN=|OPENAI_API_KEY=|SITESCORE_COMMERCE_DATABASE_URL=|SITESCORE_DATABASE_URL=|SITESCORE_BROKER_URL=)' \
-                "deploy/containers/artifacts/application-images/${name}.history.txt" \
-                "deploy/containers/artifacts/application-images/${name}.inspect.json"; then
-              echo "secret-bearing image metadata detected for ${name}" >&2
-              exit 1
-            fi
+            image="sitescore-${name}:runtime"; docker history --no-trunc "$image" > "deploy/containers/artifacts/application-images/${name}.history.txt"; docker image inspect "$image" > "deploy/containers/artifacts/application-images/${name}.inspect.json"
+            if grep -E -i '(STRIPE_SECRET_KEY=|STRIPE_WEBHOOK_SECRET=|SITESCORE_API_KEY_PEPPER=|POSTMARK_SERVER_TOKEN=|OPENAI_API_KEY=|SITESCORE_COMMERCE_DATABASE_URL=|SITESCORE_DATABASE_URL=|SITESCORE_BROKER_URL=)' "deploy/containers/artifacts/application-images/${name}.history.txt" "deploy/containers/artifacts/application-images/${name}.inspect.json"; then exit 1; fi
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > "deploy/containers/artifacts/application-images/${name}.spdx.json"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "deploy/containers/artifacts/application-images/${name}.grype.json"
             python - "$name" "deploy/containers/artifacts/application-images/${name}.grype.json" <<'PY'
-          import json, sys
-          name, path = sys.argv[1:]
-          data = json.load(open(path))
-          blockers = []
-          for match in data.get('matches', []):
-              v = match.get('vulnerability') or {}
-              sev = str(v.get('severity', '')).upper()
-              fixes = (v.get('fix') or {}).get('versions') or []
-              if sev == 'CRITICAL' or (sev == 'HIGH' and fixes):
-                  a = match.get('artifact') or {}
-                  blockers.append({'id': v.get('id'), 'severity': sev, 'package': a.get('name'), 'version': a.get('version'), 'fix_versions': fixes})
-          print(f'{name.upper()}_POLICY_BLOCKERS={len(blockers)}')
-          for blocker in blockers:
-              print('BLOCKER', blocker)
-          if blockers:
-              raise SystemExit(42)
+          import json,sys
+          name,path=sys.argv[1:]; data=json.load(open(path)); blockers=[]
+          for m in data.get('matches',[]):
+              v=m.get('vulnerability') or {}; sev=str(v.get('severity','')).upper(); fixes=(v.get('fix') or {}).get('versions') or []
+              if sev=='CRITICAL' or (sev=='HIGH' and fixes):
+                  a=m.get('artifact') or {}; blockers.append((v.get('id'),sev,a.get('name'),a.get('version'),fixes))
+          print(f'{name.upper()}_POLICY_BLOCKERS={len(blockers)}'); [print('BLOCKER',b) for b in blockers]
+          if blockers: raise SystemExit(42)
           PY
           done
-
       - name: Upload application supply-chain evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
@@ -340,119 +242,45 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout exact frozen FAZ6 Commerce base without third-party action
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           set -euo pipefail
-          git init .
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${FAZ6_COMMERCE_SHA}"
-          git checkout --detach FETCH_HEAD
-          test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
-
+          git init .; git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"; git fetch --depth=1 origin "${FAZ6_COMMERCE_SHA}"; git checkout --detach FETCH_HEAD; test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
       - name: Replay frozen FAZ6 Commerce 417-pass baseline
         run: |
-          set -euo pipefail
-          set +e
-          docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
-            python -m venv /tmp/faz6-commerce
-            /tmp/faz6-commerce/bin/pip install "./sitescore-commerce[test]" >/dev/null
-            /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q
-          ' > /tmp/faz6-replay.txt 2>&1
-          replay_rc=$?
-          set -e
-          cat /tmp/faz6-replay.txt
-          test "$replay_rc" -eq 0
-          grep -E '417 passed' /tmp/faz6-replay.txt
+          set -euo pipefail; set +e
+          docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc 'python -m venv /tmp/faz6-commerce; /tmp/faz6-commerce/bin/pip install "./sitescore-commerce[test]" >/dev/null; /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q' > /tmp/faz6-replay.txt 2>&1
+          replay_rc=$?; set -e; cat /tmp/faz6-replay.txt; test "$replay_rc" -eq 0; grep -E '417 passed' /tmp/faz6-replay.txt
 
   n8n-validation:
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     env:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact source without third-party action
-        env:
-          GH_TOKEN: ${{ github.token }}
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           set -euo pipefail
-          git init .
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "${SOURCE_SHA}"
-          git checkout --detach FETCH_HEAD
-          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-
-      - name: Verify selected n8n production-candidate identity and runtime
+          git init .; git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"; git fetch --depth=1 origin "${SOURCE_SHA}"; git checkout --detach FETCH_HEAD; test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+      - name: Free runner disk for frozen n8n source build
         run: |
           set -euo pipefail
-          test -s deploy/containers/n8n-image.lock
-          . deploy/containers/n8n-image.lock
-          test "$N8N_BASELINE_STATUS" = CANDIDATE_NOT_FROZEN
-          case "$SELECTED_N8N_DIGEST" in sha256:*) ;; *) exit 1;; esac
-          test "$SELECTED_N8N_IMAGE" = "n8nio/n8n@${SELECTED_N8N_DIGEST}"
-          docker pull --platform linux/amd64 "$SELECTED_N8N_IMAGE"
-          test "$(docker image inspect "$SELECTED_N8N_IMAGE" --format '{{.Architecture}}')" = amd64
-          user="$(docker image inspect "$SELECTED_N8N_IMAGE" --format '{{.Config.User}}')"
-          test -n "$user" && test "$user" != 0 && test "$user" != root
-          runtime_version="$(docker run --rm "$SELECTED_N8N_IMAGE" n8n --version | tr -d '\r' | tail -n 1)"
-          printf 'EXPECTED_N8N_VERSION=%s\nRUNTIME_N8N_VERSION=%s\nN8N_USER=%s\n' "$SELECTED_N8N_VERSION" "$runtime_version" "$user"
-          test "$runtime_version" = "$SELECTED_N8N_VERSION"
-          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = "02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1"
-          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = "f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c"
-
-      - name: Prove n8n server is operationally loadable
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h /
+      - name: Setup exact Node 26.5.1
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.5.1'
+      - name: Execute frozen n8n 2.37.10 source build hardening and security gate
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           set -euo pipefail
-          . deploy/containers/n8n-image.lock
-          cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev \
-            -e N8N_USER_FOLDER=/tmp/n8n \
-            -e N8N_ENCRYPTION_KEY=ci-only-encryption-key-00000000000000000000 \
-            -e N8N_DIAGNOSTICS_ENABLED=false \
-            -e N8N_PERSONALIZATION_ENABLED=false \
-            -p 127.0.0.1:15678:5678 "$SELECTED_N8N_IMAGE")"
-          trap 'docker logs "$cid" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
-          python - <<'PY'
-          import socket, time
-          for _ in range(60):
-              try:
-                  with socket.create_connection(('127.0.0.1', 15678), timeout=1):
-                      break
-              except OSError:
-                  time.sleep(1)
-          else:
-              raise SystemExit('n8n runtime did not open port 5678')
-          PY
-          docker stop -t 5 "$cid" >/dev/null
-          trap - EXIT
-
-      - name: Generate n8n SBOM and enforce zero raw HIGH CRITICAL security baseline
-        run: |
-          set -euo pipefail
-          . deploy/containers/n8n-image.lock
-          mkdir -p deploy/containers/artifacts/n8n-final
-          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$SELECTED_N8N_IMAGE" -o spdx-json > deploy/containers/artifacts/n8n-final/n8n.spdx.json
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$SELECTED_N8N_IMAGE" -o json > deploy/containers/artifacts/n8n-final/n8n.grype.json
-          python - <<'PY'
-          import json
-          data = json.load(open('deploy/containers/artifacts/n8n-final/n8n.grype.json'))
-          counts = {'CRITICAL': 0, 'HIGH': 0}
-          rows = []
-          for match in data.get('matches', []):
-              v = match.get('vulnerability') or {}
-              sev = str(v.get('severity', '')).upper()
-              if sev in counts:
-                  counts[sev] += 1
-                  a = match.get('artifact') or {}
-                  rows.append((v.get('id'), sev, a.get('name'), a.get('version')))
-          print('N8N_CRITICAL=', counts['CRITICAL'])
-          print('N8N_HIGH=', counts['HIGH'])
-          for row in rows:
-              print('N8N_FINDING', row)
-          if counts['CRITICAL'] or counts['HIGH']:
-              raise SystemExit(42)
-          PY
-
+          test "$(node --version)" = v26.5.1
+          set -a; . deploy/containers/n8n-image.lock; set +a
+          corepack enable; corepack prepare "pnpm@${N8N_PNPM_VERSION}" --activate; test "$(pnpm --version)" = "$N8N_PNPM_VERSION"
+          bash deploy/containers/n8n-frozen-candidate-ci.sh
       - name: Upload n8n final supply-chain evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
@@ -465,12 +293,7 @@ jobs:
   required-gate:
     name: required-gate
     if: always()
-    needs:
-      - source-boundary
-      - static-contracts
-      - container-validation
-      - faz6-commerce-replay
-      - n8n-validation
+    needs: [source-boundary, static-contracts, container-validation, faz6-commerce-replay, n8n-validation]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every mandatory FAZ7 upstream gate
@@ -482,8 +305,5 @@ jobs:
           N8N_VALIDATION: ${{ needs.n8n-validation.result }}
         run: |
           set -euo pipefail
-          printf 'source-boundary=%s\nstatic-contracts=%s\ncontainer-validation=%s\nfaz6-commerce-replay=%s\nn8n-validation=%s\n' \
-            "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"
-          for result in "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"; do
-            test "$result" = success
-          done
+          printf 'source-boundary=%s\nstatic-contracts=%s\ncontainer-validation=%s\nfaz6-commerce-replay=%s\nn8n-validation=%s\n' "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"
+          for result in "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"; do test "$result" = success; done
