@@ -48,18 +48,18 @@ for row in before:
 
 snow = bykey.get(('snowflake-sdk', '2.1.0'), [])
 toml = bykey.get(('toml', '3.0.0'), [])
-n8n_base = bykey.get(('n8n-nodes-base', '2.37.10'), [])
+n8n_base = bykey.get(('n8n-nodes-base', '2.37.4'), [])
 if len(snow) != 1 or len(toml) != 1:
     raise SystemExit(f'exact target multiplicity failed: snow={len(snow)} toml={len(toml)}')
 if len(n8n_base) != 1:
-    raise SystemExit(f'exact n8n-nodes-base@2.37.10 multiplicity failed: {len(n8n_base)}')
+    raise SystemExit(f'exact n8n-nodes-base@2.37.4 multiplicity failed: {len(n8n_base)}')
 
 why_snow = json.load(open(out / 'pnpm-why-prod-snowflake-sdk.json'))
 why_toml = json.load(open(out / 'pnpm-why-prod-toml.json'))
 if len(why_snow) != 1 or why_snow[0].get('name') != 'snowflake-sdk' or why_snow[0].get('version') != '2.1.0':
     raise SystemExit(f'unexpected snowflake pnpm why root: {why_snow}')
 snow_parents = sorted(f"{d.get('name')}@{d.get('version')}" for d in (why_snow[0].get('dependents') or []))
-if snow_parents != ['n8n-nodes-base@2.37.10']:
+if snow_parents != ['n8n-nodes-base@2.37.4']:
     raise SystemExit(f'unexpected snowflake production parents: {snow_parents}')
 if len(why_toml) != 1 or why_toml[0].get('name') != 'toml' or why_toml[0].get('version') != '3.0.0':
     raise SystemExit(f'unexpected toml pnpm why root: {why_toml}')
@@ -69,7 +69,7 @@ if toml_parents != ['snowflake-sdk@2.1.0']:
     raise SystemExit(f'unexpected toml production parents: {toml_parents}')
 nested = toml_dependents[0].get('dependents') or []
 nested_ids = sorted(f"{d.get('name')}@{d.get('version')}" for d in nested)
-if nested_ids != ['n8n-nodes-base@2.37.10']:
+if nested_ids != ['n8n-nodes-base@2.37.4']:
     raise SystemExit(f'unexpected transitive Snowflake chain: {nested_ids}')
 
 targets = {
@@ -95,7 +95,7 @@ if linked_packages != ['snowflake-sdk@2.1.0', 'toml@3.0.0']:
 
 parent_map = {
     'parents': {'snowflake-sdk@2.1.0': snow_parents, 'toml@3.0.0': toml_parents},
-    'transitive_chain': {'toml@3.0.0': ['snowflake-sdk@2.1.0', 'n8n-nodes-base@2.37.10']},
+    'transitive_chain': {'toml@3.0.0': ['snowflake-sdk@2.1.0', 'n8n-nodes-base@2.37.4']},
     'pnpm_why_snowflake': why_snow,
     'pnpm_why_toml': why_toml,
     'filesystem_links': links,
@@ -165,8 +165,8 @@ json.dump(delta, open(out / 'package-delta.json', 'w'), indent=2, sort_keys=True
 print(json.dumps(delta, indent=2, sort_keys=True))
 if removed != authorized_removed or added or version_changes or shared_non_snowflake_removed:
     raise SystemExit(f'unexpected prune delta: {delta}')
-if len([row for row in after if row['name'] == 'n8n-nodes-base' and row['version'] == '2.37.10']) != 1:
-    raise SystemExit('n8n-nodes-base@2.37.10 not preserved exactly once')
+if len([row for row in after if row['name'] == 'n8n-nodes-base' and row['version'] == '2.37.4']) != 1:
+    raise SystemExit('n8n-nodes-base@2.37.4 not preserved exactly once')
 if any(row['name'] == 'snowflake-sdk' for row in after):
     raise SystemExit('snowflake-sdk remains')
 if any(row['name'] == 'toml' and row['version'] == '3.0.0' for row in after):
