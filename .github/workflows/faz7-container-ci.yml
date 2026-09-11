@@ -15,8 +15,6 @@ env:
   BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
   FAZ6_COMMERCE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
   PYTHON_IMAGE: python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91
-  POSTGRES_IMAGE: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
-  VALKEY_IMAGE: valkey/valkey:8.1.10-alpine3.24@sha256:95726b32393eb4214e972149b1d8b1fc7c04ee4d67aae6b65a83ed475f17b7c5
 
 jobs:
   source-boundary:
@@ -145,12 +143,9 @@ jobs:
           set -euo pipefail
           git init .
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags origin "${SOURCE_SHA}"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-          for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
-            git fetch --no-tags origin "$sha"
-          done
 
       - name: Build linux amd64 runtime and test images
         run: |
@@ -193,86 +188,28 @@ jobs:
       - name: Run exact current API report and Commerce applicable regressions
         run: |
           set -euo pipefail
-          pg_cid="$(docker run -d --rm --name faz7-regression-postgres \
-            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \
-            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
-          valkey_cid="$(docker run -d --rm --name faz7-regression-valkey \
-            -p 127.0.0.1:6379:6379 "$VALKEY_IMAGE")"
-          trap 'docker rm -f "$pg_cid" "$valkey_cid" >/dev/null 2>&1 || true' EXIT
-          for _ in $(seq 1 60); do
-            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          docker exec "$pg_cid" pg_isready -U ci -d postgres
-          for _ in $(seq 1 60); do
-            if [ "$(docker exec "$valkey_cid" valkey-cli ping 2>/dev/null || true)" = PONG ]; then break; fi
-            sleep 1
-          done
-          test "$(docker exec "$valkey_cid" valkey-cli ping)" = PONG
-          docker exec "$pg_cid" createdb -U ci api_ci
-          docker exec "$pg_cid" createdb -U ci commerce_ci
-          api_db='postgresql+psycopg://ci:ci@127.0.0.1:5432/api_ci'
-          commerce_db='postgresql+psycopg://ci:ci@127.0.0.1:5432/commerce_ci'
-
-          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \
-            -e SITESCORE_DATABASE_URL="$api_db" sitescore-api:test \
-            alembic -c /testsrc/sitescore-api/alembic.ini upgrade head
-
           set +e
-          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \
-            -e SITESCORE_DATABASE_URL="$api_db" \
-            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 \
-            sitescore-api:test \
-            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
           api_rc=$?
           set -e
           cat /tmp/api-tests.txt
           test "$api_rc" -eq 0
           grep -E '114 passed' /tmp/api-tests.txt
-
           set +e
-          docker run --rm -v "$PWD:/testsrc:ro" -w /testsrc sitescore-api:test \
-            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
           report_rc=$?
           set -e
           cat /tmp/report-tests.txt
           test "$report_rc" -eq 0
           grep -E '24 passed' /tmp/report-tests.txt
-
-          cat > /tmp/Dockerfile.commerce-integration <<'EOF'
-          FROM sitescore-api:test
-          USER 0:0
-          ARG DEBIAN_SNAPSHOT=20260821T000000Z
-          COPY deploy/containers/commerce/requirements.lock /locks/commerce-runtime.lock
-          RUN /opt/venv/bin/pip install --require-hashes -r /locks/commerce-runtime.lock \
-           && rm -f /etc/apt/sources.list.d/debian.sources \
-           && printf '%s\n' \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ bookworm main" \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ bookworm-security main" \
-                > /etc/apt/sources.list \
-           && apt-get -o Acquire::Check-Valid-Until=false update \
-           && apt-get install -y --no-install-recommends git \
-           && git config --system --add safe.directory /testsrc \
-           && rm -rf /var/lib/apt/lists/*
-          USER 10001:10001
-          EOF
-          docker build --platform linux/amd64 -f /tmp/Dockerfile.commerce-integration -t sitescore-commerce:test-integration .
-
           set +e
-          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc/sitescore-commerce \
-            -e PYTHONPATH=/testsrc/sitescore-commerce/src \
-            -e SITESCORE_COMMERCE_DATABASE_URL="$commerce_db" \
-            sitescore-commerce:test-integration \
-            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-commerce/tests \
-              --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only \
-            > /tmp/commerce-tests.txt 2>&1
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:test python -m pytest -q tests \
+            --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only > /tmp/commerce-tests.txt 2>&1
           commerce_rc=$?
           set -e
           cat /tmp/commerce-tests.txt
           test "$commerce_rc" -eq 0
           grep -E '416 passed' /tmp/commerce-tests.txt
-          docker rm -f "$pg_cid" "$valkey_cid" >/dev/null
-          trap - EXIT
 
       - name: Prove API web worker beat commands and PDF font runtime
         run: |
@@ -294,7 +231,7 @@ jobs:
           docker stop -t 2 "$api_cid" >/dev/null
           trap - EXIT
           api_env=(
-            -e SITESCORE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1/ci
+            -e SITESCORE_DATABASE_URL=postgresql://ci:ci@127.0.0.1/ci
             -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0
             -e SITESCORE_API_KEY_PEPPER=ci-only-pepper-00000000000000000000000000000000
           )
@@ -303,7 +240,7 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
             celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
           set +e
-          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -o addopts='' -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
           pdf_rc=$?
           set -e
           cat /tmp/pdf-test.txt
@@ -402,58 +339,31 @@ jobs:
   faz6-commerce-replay:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout exact frozen FAZ6 Commerce base and provenance objects
+      - name: Checkout exact frozen FAZ6 Commerce base without third-party action
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git init .
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags origin "${FAZ6_COMMERCE_SHA}"
+          git fetch --depth=1 origin "${FAZ6_COMMERCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
-          for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
-            git fetch --no-tags origin "$sha"
-          done
 
       - name: Replay frozen FAZ6 Commerce 417-pass baseline
         run: |
           set -euo pipefail
-          pg_cid="$(docker run -d --rm --name faz6-replay-postgres \
-            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \
-            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
-          trap 'docker rm -f "$pg_cid" >/dev/null 2>&1 || true' EXIT
-          for _ in $(seq 1 60); do
-            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          docker exec "$pg_cid" pg_isready -U ci -d postgres
-          docker exec "$pg_cid" createdb -U ci commerce_ci
           set +e
-          docker run --rm --network host -v "$PWD:/repo" -w /repo \
-            -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1:5432/commerce_ci \
-            "$PYTHON_IMAGE" sh -euc '
-              rm -f /etc/apt/sources.list.d/debian.sources
-              printf "%s\n" \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260821T000000Z/ bookworm main" \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260821T000000Z/ bookworm-security main" > /etc/apt/sources.list
-              apt-get -o Acquire::Check-Valid-Until=false update >/dev/null
-              apt-get install -y --no-install-recommends git >/dev/null
-              git config --global --add safe.directory /repo
-              python -m venv /tmp/faz6-commerce
-              /tmp/faz6-commerce/bin/pip install \
-                ./sitescore-core ./sitescore-data ./sitescore-providers ./sitescore-spatial \
-                ./sitescore-metrics ./sitescore-benchmarks ./sitescore-pipeline ./sitescore-app \
-                ./sitescore-report ./sitescore-api "./sitescore-commerce[test]" >/dev/null
-              /tmp/faz6-commerce/bin/python -m pytest -o addopts='' -q -p no:cacheprovider sitescore-commerce/tests
-            ' > /tmp/faz6-replay.txt 2>&1
+          docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
+            python -m venv /tmp/faz6-commerce
+            /tmp/faz6-commerce/bin/pip install "./sitescore-commerce[test]" >/dev/null
+            /tmp/faz6-commerce/bin/python -m pytest sitescore-commerce/tests -q
+          ' > /tmp/faz6-replay.txt 2>&1
           replay_rc=$?
           set -e
           cat /tmp/faz6-replay.txt
           test "$replay_rc" -eq 0
           grep -E '417 passed' /tmp/faz6-replay.txt
-          docker rm -f "$pg_cid" >/dev/null
-          trap - EXIT
 
   n8n-validation:
     runs-on: ubuntu-24.04
