@@ -13,10 +13,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       SOURCE_SHA: ${{ github.sha }}
       API_IMAGE: ghcr.io/metadoks/sitescore-api
       COMMERCE_IMAGE: ghcr.io/metadoks/sitescore-commerce
+      N8N_IMAGE: ghcr.io/metadoks/sitescore-n8n
     steps:
       - name: Checkout exact main commit without third-party action
         env:
@@ -36,7 +38,12 @@ jobs:
           set -euo pipefail
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build and publish immutable linux amd64 images
+      - name: Setup exact Node 26.5.1 for frozen n8n build
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.5.1'
+
+      - name: Build and publish immutable linux amd64 application images
         run: |
           set -euo pipefail
           version="sha-${SOURCE_SHA}"
@@ -57,6 +64,23 @@ jobs:
             --push \
             --file deploy/containers/commerce/Dockerfile .
 
+      - name: Rebuild validate and publish exact frozen n8n candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v26.5.1'
+          set -a
+          . deploy/containers/n8n-image.lock
+          set +a
+          corepack enable
+          corepack prepare "pnpm@${N8N_PNPM_VERSION}" --activate
+          test "$(pnpm --version)" = "$N8N_PNPM_VERSION"
+          bash deploy/containers/n8n-frozen-candidate-ci.sh
+          version="sha-${SOURCE_SHA}"
+          docker tag "$N8N_CANDIDATE_IMAGE" "${N8N_IMAGE}:${version}"
+          docker push "${N8N_IMAGE}:${version}"
+
       - name: Resolve exact published digests
         run: |
           set -euo pipefail
@@ -71,15 +95,18 @@ jobs:
           }
           api_digest="$(resolve_digest "${API_IMAGE}:${version}" deploy/containers/artifacts/publish/api-imagetools.txt)"
           commerce_digest="$(resolve_digest "${COMMERCE_IMAGE}:${version}" deploy/containers/artifacts/publish/commerce-imagetools.txt)"
+          n8n_digest="$(resolve_digest "${N8N_IMAGE}:${version}" deploy/containers/artifacts/publish/n8n-imagetools.txt)"
           cat > deploy/containers/artifacts/publish/image-digests.env <<EOF
           SOURCE_SHA=${SOURCE_SHA}
           API_IMAGE=${API_IMAGE}@${api_digest}
           API_DIGEST=${api_digest}
           COMMERCE_IMAGE=${COMMERCE_IMAGE}@${commerce_digest}
           COMMERCE_DIGEST=${commerce_digest}
+          N8N_IMAGE=${N8N_IMAGE}@${n8n_digest}
+          N8N_DIGEST=${n8n_digest}
           EOF
 
-      - name: Generate SBOM and enforce vulnerability policy on published digests
+      - name: Generate application SBOM and enforce vulnerability policy on published digests
         run: |
           set -euo pipefail
           . deploy/containers/artifacts/publish/image-digests.env
@@ -111,6 +138,43 @@ jobs:
           PY
           done
 
+      - name: Prove published n8n digest is exact validated candidate and generate SBOM
+        run: |
+          set -euo pipefail
+          . deploy/containers/artifacts/publish/image-digests.env
+          set -a
+          . deploy/containers/n8n-image.lock
+          set +a
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          docker pull --platform linux/amd64 "$N8N_IMAGE"
+          test "$(docker image inspect "$N8N_IMAGE" --format '{{.Architecture}}')" = amd64
+          test "$(docker run --rm "$N8N_IMAGE" n8n --version | tr -d '\r' | tail -n 1)" = "$N8N_VERSION"
+          validated_id="$(cat deploy/containers/artifacts/n8n-final/final-image-id.txt)"
+          published_id="$(docker image inspect "$N8N_IMAGE" --format '{{.Id}}')"
+          printf 'VALIDATED_IMAGE_ID=%s\nPUBLISHED_IMAGE_ID=%s\n' "$validated_id" "$published_id" | tee deploy/containers/artifacts/publish/n8n-image-id-equivalence.txt
+          test "$published_id" = "$validated_id"
+          envs="$(docker image inspect "$N8N_IMAGE" --format '{{json .Config.Env}}')"
+          for node in n8n-nodes-base.executeCommand n8n-nodes-base.localFileTrigger n8n-nodes-base.emailSend n8n-nodes-base.snowflake; do printf '%s' "$envs" | grep -F "$node"; done
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$N8N_IMAGE" -o spdx-json > deploy/containers/artifacts/publish/n8n.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$N8N_IMAGE" -o json > deploy/containers/artifacts/publish/n8n.grype.json
+          cp deploy/containers/artifacts/n8n-final/security-summary.json deploy/containers/artifacts/publish/n8n.security-summary.json
+          cp deploy/containers/artifacts/n8n-final/package-delta.json deploy/containers/artifacts/publish/n8n.package-delta.json
+          cp deploy/containers/artifacts/n8n-final/final-gate.txt deploy/containers/artifacts/publish/n8n.final-gate.txt
+          grep -F 'FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE=PASS' deploy/containers/artifacts/publish/n8n.final-gate.txt
+          python - deploy/containers/artifacts/publish/n8n.spdx.json <<'PY'
+          import json, sys
+          data=json.load(open(sys.argv[1]))
+          packages={(p.get('name'), p.get('versionInfo')) for p in data.get('packages', [])}
+          if ('n8n-nodes-base','2.37.4') not in packages:
+              raise SystemExit('published n8n SBOM missing n8n-nodes-base@2.37.4')
+          if any(name == 'snowflake-sdk' for name, version in packages):
+              raise SystemExit('published n8n SBOM contains snowflake-sdk')
+          if ('toml','3.0.0') in packages:
+              raise SystemExit('published n8n SBOM contains toml@3.0.0')
+          print('PUBLISHED_N8N_PRUNED_PACKAGE_IDENTITY=PASS')
+          PY
+
       - name: Create signed provenance predicates
         run: |
           set -euo pipefail
@@ -138,13 +202,38 @@ jobs:
           )
           PY
           done
+          set -a
+          . deploy/containers/n8n-image.lock
+          . deploy/containers/artifacts/publish/image-digests.env
+          set +a
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          lock=pathlib.Path('deploy/containers/n8n-image.lock')
+          predicate={
+              'buildDefinition': {
+                  'buildType': 'https://github.com/metadoks/sitescore/.github/workflows/faz7-publish-images.yml@refs/heads/main',
+                  'externalParameters': {'image':'n8n','source_revision':os.environ['SOURCE_SHA'],'platform':'linux/amd64','candidate':'n8n-2.37.10-snowflake-pruned'},
+                  'internalParameters': {'lock_sha256':hashlib.sha256(lock.read_bytes()).hexdigest()},
+                  'resolvedDependencies': [
+                      {'uri':'git+https://github.com/metadoks/sitescore','digest':{'gitCommit':os.environ['SOURCE_SHA']}},
+                      {'uri':'git+https://github.com/n8n-io/n8n','digest':{'gitCommit':os.environ['N8N_SOURCE_COMMIT'],'gitTree':os.environ['N8N_SOURCE_TREE']}},
+                      {'uri':'docker://n8nio/n8n','digest':{'sha256':os.environ['N8N_OFFICIAL_AMD64_DIGEST'].split(':',1)[1]}},
+                  ],
+              },
+              'runDetails': {
+                  'builder': {'id':f'https://github.com/metadoks/sitescore/actions/runs/{os.environ["GITHUB_RUN_ID"]}'},
+                  'metadata': {'invocationId':f'{os.environ["GITHUB_RUN_ID"]}/{os.environ["GITHUB_RUN_ATTEMPT"]}','publishedDigest':os.environ['N8N_DIGEST']},
+              },
+          }
+          pathlib.Path('deploy/containers/artifacts/publish/n8n.provenance.json').write_text(json.dumps(predicate,indent=2,sort_keys=True)+'\n')
+          PY
 
       - name: Keyless sign images and attest SBOM plus provenance
         run: |
           set -euo pipefail
           . deploy/containers/artifacts/publish/image-digests.env
           cosign_image="$(awk -F= '$1=="COSIGN_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
-          for name in api commerce; do
+          for name in api commerce n8n; do
             eval "subject=\${${name^^}_IMAGE}"
             common=(--rm -v "$HOME/.docker:/root/.docker:ro" -v "$PWD:/work" -w /work \
               -e ACTIONS_ID_TOKEN_REQUEST_TOKEN -e ACTIONS_ID_TOKEN_REQUEST_URL)
