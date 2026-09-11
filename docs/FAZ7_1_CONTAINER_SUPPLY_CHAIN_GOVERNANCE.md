@@ -24,22 +24,27 @@ Canonical product statement remains:
 
 `COMB-005` remains `NOT_APPROVED`; the approved composition registry remains empty and a real analysis may legitimately terminate `not_score_ready`.
 
+The Reviewer terminal-closure policy dated 2026-09-07 supersedes the earlier moving-latest n8n selection language in this record and the historical n8n 2.33.4 identity in `docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md` section 4.6 for the FAZ 7.1 release candidate. That older identity remains historical evidence only.
+
 ## 1. Canonical application images
 
-SiteScore builds exactly two application images:
+SiteScore builds two application images and one frozen automation image:
 
 ```text
 ghcr.io/metadoks/sitescore-api
 ghcr.io/metadoks/sitescore-commerce
+ghcr.io/metadoks/sitescore-n8n
 ```
 
-Both target exactly:
+All target exactly:
 
 ```text
 linux/amd64
 ```
 
 One API image supplies the `api-web`, `api-worker`, and `api-beat` roles. One Commerce image supplies the `commerce-web` and `commerce-dispatcher` roles. Role differences are launch-command differences, not application-byte forks.
+
+The n8n image is a deterministic FAZ 7.1 hardened candidate built from the exact frozen upstream n8n 2.37.10 source identity and the exact authorized Snowflake-only capability reduction described below. It does not change frozen SiteScore workflow JSON bytes.
 
 No `latest`, staging, or production tag is deployment authority. A human-readable `sha-<full-source-SHA>` tag may be published after LOCK, but the authoritative deployment identity is the immutable registry digest.
 
@@ -63,7 +68,7 @@ The final runtime images do not intentionally include compiler/build-tool/test s
 
 ## 3. Dependency and native-runtime locks
 
-Canonical lock/evidence inputs:
+Canonical lock/evidence inputs include:
 
 ```text
 deploy/containers/base-image.lock
@@ -73,9 +78,14 @@ deploy/containers/supply-chain-tools.lock
 deploy/containers/api/requirements.lock
 deploy/containers/api/apt-runtime.lock
 deploy/containers/commerce/requirements.lock
+deploy/containers/n8n-image.lock
+deploy/containers/nodemailer-risk-record.md
+deploy/containers/n8n-frozen-candidate-ci.sh
+deploy/containers/n8n_prune_closure.py
+deploy/containers/n8n_openvex_reconcile.py
 ```
 
-Exact final SHA-256 identities for these repository files are **PENDING final-head validation** and must be recorded before `READY_FOR_REVIEW`.
+Exact final SHA-256 identities for repository lock/evidence files remain **PENDING terminal exact-head validation** and must be recorded before `READY_FOR_REVIEW`.
 
 The API native runtime is resolved from the fixed Debian snapshot and currently pins:
 
@@ -141,6 +151,8 @@ Both SiteScore application images run as numeric:
 USER 10001:10001
 ```
 
+The frozen n8n candidate must also prove a non-root runtime user.
+
 Writable cache/runtime surfaces are directed under `/tmp`, including API Matplotlib/XDG cache behavior. CI must prove runtime `id -u`/`id -g` are non-zero and perform read-only-root style smoke execution with only explicit `/tmp` tmpfs writable where practical.
 
 Production credentials are forbidden from Docker build args, baked `ENV`, layers, image config, history, SBOM evidence, or repository files.
@@ -182,7 +194,7 @@ SBOM format: SPDX JSON
 Provenance/signing mode: Cosign keyless with GitHub OIDC
 ```
 
-Application vulnerability policy remains:
+Application-image vulnerability policy remains:
 
 ```text
 CRITICAL -> FAIL / LOCK BLOCKER
@@ -191,9 +203,11 @@ blanket ignore -> forbidden
 scanner disablement -> forbidden
 ```
 
-## 8. n8n historical identity and security reopen
+The n8n candidate is governed by the stricter terminal policy in section 8, including OpenVEX and CISA KEV reconciliation.
 
-FAZ 6 historical identity is preserved as historical evidence:
+## 8. Frozen n8n 2.37.10 candidate and security policy
+
+FAZ 6 historical identity is preserved as historical evidence only:
 
 ```text
 FAZ6_HISTORICAL_N8N_VERSION=2.33.4
@@ -201,34 +215,85 @@ FAZ6_HISTORICAL_N8N_DIGEST=sha256:f9a15cc65378e4e5b6c3b1445c83985131938db8d8b5b1
 FAZ7_HISTORICAL_STATUS=SUPERSEDED_FOR_SECURITY
 ```
 
-The historical image failed the FAZ 7.1 vulnerability gate. Evidence run `32560317363`, job `97000785115`, artifact `faz7-7-1-bootstrap-evidence` recorded raw Grype findings including four CRITICAL and thirty-four HIGH findings.
-
-Reviewer therefore authorized the narrow `OPS71-N8N-VULN-001` security baseline reopen. The replacement must be an official stable upstream `n8nio/n8n` release, selected as the lowest stable acceptable release above the historical baseline, resolved to an exact `linux/amd64` digest, non-root, operationally loadable, and scanned with:
+The historical image failed the FAZ 7.1 vulnerability gate. Reviewer subsequently froze the terminal FAZ 7.1 candidate boundary to:
 
 ```text
-raw CRITICAL = 0
-raw HIGH = 0
+N8N_VERSION=2.37.10
+N8N_SOURCE_COMMIT=5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+N8N_SOURCE_TREE=8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+N8N_OFFICIAL_AMD64_DIGEST_REFERENCE=sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
+CANDIDATE_CUTOFF_DATE=2026-09-07
+TARGET_PLATFORM=linux/amd64
 ```
 
-No vulnerability suppression or SiteScore-built n8n image is allowed.
+Ordinary newer n8n patch releases after the cutoff do not automatically restart FAZ 7.1. Reopen is limited to the Reviewer emergency criteria: a candidate-present CISA KEV, a new undispositioned CRITICAL, a materially reachable vulnerability defeating the enabled SiteScore boundary, or inability to build/run the frozen candidate safely without broader design change.
 
-Current replacement identity:
+The exact frozen build inputs additionally include:
 
 ```text
-SELECTED_N8N_VERSION=PENDING_CANDIDATE_PROBE
-SELECTED_N8N_DIGEST=PENDING_CANDIDATE_PROBE
-SELECTED_N8N_IMAGE=PENDING_CANDIDATE_PROBE
-N8N_BASELINE_STATUS=CANDIDATE_NOT_FROZEN
+builder = node:26.5.1-alpine3.24@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36
+runtime base = dhi.io/node:26.5.1-alpine3.24-dev@sha256:c4062f85acd1ca91ffb7d15048dcc5f15a922d630e65eb3c3c0dcdcef6ea36d8
+pnpm = 11.22.0
+fast-uri target = 3.1.6
+fast-uri upstream-adoption reference = 33eb5c196e0ce3a2c71525929a4ef861cb94b168
 ```
 
-The replacement becomes frozen only after Reviewer `READY_TO_LOCK` for the exact final PR head plus literal user `LOCK` and successful merge.
+The authorized capability reduction is exactly:
 
-Frozen workflow bytes remain authority and may not change:
+```text
+n8n-nodes-base@2.37.4
+└─ snowflake-sdk@2.1.0
+   └─ toml@3.0.0
+```
+
+Required deterministic package delta:
+
+```text
+removed = [snowflake-sdk@2.1.0, toml@3.0.0]
+added = []
+version_changes = []
+shared_non_snowflake_removed = []
+n8n-nodes-base@2.37.4 = PRESENT exactly once
+```
+
+The hardened image must retain:
+
+```text
+NODES_EXCLUDE =
+  n8n-nodes-base.executeCommand
+  n8n-nodes-base.localFileTrigger
+  n8n-nodes-base.emailSend
+  n8n-nodes-base.snowflake
+```
+
+Frozen SiteScore workflow bytes remain authority and may not change:
 
 ```text
 sitescore-order-paid-v1.json SHA256 = 02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1
 sitescore-recovery-schedule-v1.json SHA256 = f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c
 ```
+
+Terminal n8n security evidence must prove at the exact candidate run:
+
+```text
+CISA KEV = 0
+blocking CRITICAL = 0
+OS HIGH = 0
+fast-uri vulnerable findings = 0
+ip-address vulnerable findings = 0
+brace-expansion vulnerable findings = 0
+toml vulnerable findings = 0
+Snowflake vulnerable closure = absent
+no new undispositioned HIGH introduced by hardening
+SPDX generated
+raw Grype generated
+exact-release upstream OpenVEX asset digest verified
+provenance generated
+```
+
+The previously-reviewed `nodemailer@8.0.10` HIGH associated with `GHSA-p6gq-j5cr-w38f` may remain only as the sole residual HIGH exception if all recorded containment controls remain true. Zero residual nodemailer findings is also acceptable. No second residual HIGH/CRITICAL exception is authorized.
+
+SiteScore-authored VEX, blanket scanner suppression, blanket CVE ignores, unrelated dependency upgrades, incompatible TOML overrides, Snowflake application-source patching, alternate CI, and self-hosted-runner workarounds remain forbidden.
 
 ## 9. Permanent PR CI
 
@@ -252,8 +317,8 @@ linux/amd64 API + Commerce image builds
 non-root/runtime/role/socket smokes
 API PDF/font proof
 API/Commerce/n8n SPDX SBOM generation
-mandatory vulnerability policy
-n8n exact candidate identity/runtime/security gate
+application vulnerability policy
+frozen n8n 2.37.10 source/build/prune/runtime/security gate
 image history/config secret sanity
 full-SHA Actions dependency pinning
 ```
@@ -269,15 +334,26 @@ Canonical publishing workflow:
 trigger = push to main
 ```
 
-It is a publication workflow, not a deployment workflow. It uses repository `GITHUB_TOKEN` for GHCR and GitHub OIDC for keyless Cosign signing/attestation. It builds only `linux/amd64`, publishes SHA-derived tags, resolves exact pushed digests, re-generates SBOM/vulnerability evidence against published digests, and signs/attests image subjects.
+It is a publication workflow, not a deployment workflow. It uses repository `GITHUB_TOKEN` for GHCR and GitHub OIDC for keyless Cosign signing/attestation.
 
-No DigitalOcean deployment is performed by this workflow.
+After LOCK/merge, it publishes exactly the immutable linux/amd64 application and automation candidates:
+
+```text
+ghcr.io/metadoks/sitescore-api:sha-<full-main-SHA>
+ghcr.io/metadoks/sitescore-commerce:sha-<full-main-SHA>
+ghcr.io/metadoks/sitescore-n8n:sha-<full-main-SHA>
+```
+
+The n8n publication path rebuilds and revalidates the exact frozen candidate from `deploy/containers/n8n-image.lock`, pushes that validated local image, resolves the registry digest, and requires the pulled published image ID to equal the exact locally validated image ID before signing/attesting it. Published n8n SBOM evidence must still show `n8n-nodes-base@2.37.4`, no `snowflake-sdk`, and no `toml@3.0.0`.
+
+All three published digest subjects receive SPDX and provenance attestations and keyless Cosign signatures. No DigitalOcean deployment is performed by this workflow.
 
 Authoritative post-LOCK identities are not yet available:
 
 ```text
 API_GHCR_DIGEST=PENDING_POST_LOCK_MAIN_PUBLISH
 COMMERCE_GHCR_DIGEST=PENDING_POST_LOCK_MAIN_PUBLISH
+N8N_GHCR_DIGEST=PENDING_POST_LOCK_MAIN_PUBLISH
 SBOM_PROVENANCE_EVIDENCE=PENDING_POST_LOCK_MAIN_PUBLISH
 ```
 
@@ -317,7 +393,7 @@ Live governance mutation is **PENDING**. This document must not be interpreted a
 
 ## 12. Validation baselines to record before review
 
-Required final-head evidence remains:
+Required terminal exact-head evidence remains:
 
 ```text
 API current suite = 114 PASS
@@ -328,12 +404,23 @@ n8n static = 12 PASS
 dispatcher supervisor = 7 PASS
 API image linux/amd64 = PASS
 Commerce image linux/amd64 = PASS
+n8n frozen candidate linux/amd64 = PASS
 SiteScore image non-root = PASS
+n8n non-root = PASS
 API PDF/font/runtime = PASS
 Commerce web/runtime = PASS
-n8n replacement raw HIGH = 0
-n8n replacement raw CRITICAL = 0
+n8n startup/import/order-paid/recovery smokes = PASS
+Snowflake node unavailable = PASS
+CISA KEV = 0
+blocking CRITICAL = 0
+OS HIGH = 0
+forbidden npm-family vulnerable findings = 0
+no new undispositioned HIGH
+only the authorized nodemailer residual if still present and containment passes
 API/Commerce/n8n SPDX SBOM = generated
+raw Grype evidence = generated
+OpenVEX reconciliation = complete
+provenance = complete
 image history/config secret sanity = PASS
 permanent Actions uses full-SHA = PASS
 faz7 / required-gate = PASS on exact final head
@@ -342,9 +429,15 @@ cloud mutation = NONE
 production secrets committed/injected = NONE
 ```
 
-Exact run/job/artifact IDs remain **PENDING final-head validation**.
+Exact terminal run/job/artifact IDs remain **PENDING final-head hosted execution**.
 
-## 13. Deferred scope
+## 13. Current hosted-Actions execution condition
+
+As of 2026-09-11, exact-head PR workflow runs are still being accepted by GitHub but mandatory jobs terminate before normal hosted-runner execution with no step graph (`steps = null`). This record therefore does not claim terminal CI PASS.
+
+The required owner acceptance criterion is that a new/rerun exact-head job enters ordinary GitHub-hosted runner execution and exposes normal steps/logs. Project policy forbids weakening `faz7 / required-gate`, changing CI providers, or using a self-hosted runner as a workaround.
+
+## 14. Deferred scope
 
 Explicitly deferred beyond 7.1:
 
