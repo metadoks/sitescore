@@ -12,7 +12,7 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 IMPLEMENTER_STATE: BLOCKED_TRUE_DESIGN_SECURITY_OR_OWNER_GOVERNANCE_ACTION
-IMPLEMENTER_ACTION: OWNER_ACTION_REQUIRED_RESTORE_GITHUB_HOSTED_ACTIONS_EXECUTION
+IMPLEMENTER_ACTION: OWNER_ACTION_REQUIRED_RESTORE_HOSTED_ACTIONS_AND_GOVERNANCE_CAPABILITY
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -28,7 +28,7 @@ CURRENT_HEAD_SHA: 4c7bdabdc2e3198ce57d6b39404ddad149c3d2ca
 CURRENT_CHANGED_FILE_COUNT: 25
 
 OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_ON_EXACT_CURRENT_HEAD
-OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
+OPS71_GOV_001_STATUS: PLAN_CAPABILITY_BLOCKED
 OPS71_N8N_VULN_001_STATUS: FROZEN_2_37_10_PERMANENT_HARDENING_AND_PUBLICATION_MECHANICS_COMPLETE_PENDING_REAL_HOSTED_EXECUTION
 
 CONTRACT_CHANGE_REQUIRED: 0
@@ -168,7 +168,7 @@ No deployment or cloud resource mutation is performed by the publish workflow.
 
 `docs/FAZ7_1_CONTAINER_SUPPLY_CHAIN_GOVERNANCE.md` now records the terminal frozen-candidate model and explicitly supersedes the historical n8n 2.33.4 identity in the older FAZ 7.0 runtime contract for the FAZ 7.1 candidate.
 
-The updated record now captures:
+The updated record captures:
 
 ```text
 n8n 2.37.10 frozen source identity
@@ -242,9 +242,67 @@ The available GitHub API does not expose the account/UI pre-run reason. No unsup
 
 ---
 
-## 7. Consolidated owner action
+## 7. Live GitHub governance state and plan capability blocker
 
-Owner must open run `34581786484` in the GitHub Actions UI and resolve the pre-run account/platform message presented by GitHub.
+Live repository metadata currently reports:
+
+```text
+visibility = private
+main protected = false
+required status checks = none
+merge commit = enabled
+squash merge = enabled
+rebase merge = enabled
+auto merge = disabled
+```
+
+The repository rulesets API returns the explicit GitHub capability response:
+
+```text
+Upgrade to GitHub Pro or make this repository public to enable this feature.
+```
+
+Therefore the Reviewer-prescribed status is now:
+
+```text
+OPS71-GOV-001: PLAN_CAPABILITY_BLOCKED
+```
+
+Required final governance remains:
+
+```text
+main protected = TRUE
+pull request required = TRUE
+required check = faz7 / required-gate
+strict = TRUE
+force push blocked
+deletion blocked
+admin/bypass disabled where supported
+merge commit enabled
+squash merge disabled
+rebase merge disabled
+auto merge disabled
+```
+
+The available integration cannot configure the missing private-repository protection/ruleset capability on the current plan.
+
+---
+
+## 8. Consolidated owner action
+
+Owner action is now one consolidated GitHub-platform package:
+
+```text
+A. Restore GitHub-hosted Actions execution for exact current head so mandatory jobs enter normal step execution and produce logs.
+B. Resolve private-repository governance capability by either enabling a GitHub plan that supports the required protection/ruleset controls or making the repository public.
+C. Configure the exact final governance state in section 7 after capability is available.
+```
+
+For Actions, open exact-head run:
+
+```text
+34581786484
+```
 
 Acceptance criterion:
 
@@ -267,11 +325,11 @@ advance to FAZ 7.2
 merge without Reviewer READY_TO_LOCK + literal user LOCK
 ```
 
-When hosted execution is restored, Implementer should run the permanent exact-head pipeline and correct only genuine mechanical issues supported by real runner logs. The terminal handoff can become `READY_FOR_REVIEW` only after full current-head evidence and final governance verification are complete.
+When hosted execution and governance capability are restored, Implementer should run the permanent exact-head pipeline and correct only genuine mechanical issues supported by real runner logs. The terminal handoff can become `READY_FOR_REVIEW` only after full current-head evidence and final governance verification are complete.
 
 ---
 
-## 8. Live state
+## 9. Live state
 
 ```text
 PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
@@ -284,6 +342,8 @@ frozen application source diff = NONE
 frozen n8n workflow JSON diff = NONE
 post-LOCK n8n publication mechanics = PERMANENTIZED
 terminal current-head hosted evidence = BLOCKED BEFORE RUNNER EXECUTION
+main protection = OFF
+private-repository governance capability = PLAN_CAPABILITY_BLOCKED
 ```
 
 ```text
