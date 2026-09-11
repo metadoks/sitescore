@@ -24,10 +24,10 @@ PR_STATE: OPEN
 PR_DRAFT: TRUE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
 PR_MERGED: FALSE
-CURRENT_HEAD_SHA: 1e7e710d28da4ecfc5351f6aa9f58dea36d83303
+CURRENT_HEAD_SHA: 434a2419d0bcc99681b8cf544d321bbb01b88315
 CURRENT_CHANGED_FILE_COUNT: 20
 
-OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_BY_RERUN
+OPS71_GHA_EXEC_001_STATUS: REOPENED_EXTERNAL_ACCOUNT_OR_PLATFORM_EXECUTION_BLOCKER_CONFIRMED_ON_LATEST_CLEAN_HEAD
 OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
 OPS71_N8N_VULN_001_STATUS: SNOWFLAKE_TOML_PRUNE_AUTHORIZED_EVIDENCE_PARTIAL_PENDING_EXECUTION_RECOVERY
 
@@ -108,41 +108,42 @@ The remaining verifier issue before execution loss was mechanical only: stale `n
 
 ## 3. GitHub-hosted Actions execution blocker re-confirmed on 2026-09-11
 
-Current clean code head remains:
+An exact rerun of the older clean head run `34530157300` was accepted by GitHub but again failed before runner execution. New attempt jobs all returned `failure` with `steps = null`.
+
+The branch then temporarily gained two mechanics-only artifacts used to stage an Action-pin predicate correction. They were subsequently removed. The current PR is clean again at exactly 20 permanent files.
+
+Latest clean code head:
 
 ```text
-1e7e710d28da4ecfc5351f6aa9f58dea36d83303
+434a2419d0bcc99681b8cf544d321bbb01b88315
 ```
 
-Existing exact-head PR workflow:
+The automatic exact-head PR workflow for this clean state is:
 
 ```text
-run = 34530157300
-original source-boundary job = 103048648231
+run = 34559341273
 ```
 
-The Implementer re-ran that exact failed `source-boundary` job without changing code or workflow semantics. GitHub accepted the rerun request successfully.
-
-New attempt job identities then returned:
+Every mandatory job again failed before normal runner-step execution:
 
 ```text
-source-boundary       = 103138187862 -> failure, steps = null
-faz6-commerce-replay  = 103138188584 -> failure, steps = null
-container-validation = 103138188652 -> failure, steps = null
-n8n-validation        = 103138188700 -> failure, steps = null
-static-contracts      = 103138188721 -> failure, steps = null
-required-gate         = 103138194460 -> failure, steps = null
+source-boundary       = 103138666554 -> failure, steps = null
+n8n-validation        = 103138666678 -> failure, steps = null
+container-validation = 103138666711 -> failure, steps = null
+static-contracts      = 103138666721 -> failure, steps = null
+faz6-commerce-replay  = 103138666727 -> failure, steps = null
+required-gate         = 103138675502 -> failure, steps = null
 ```
 
-The rerun therefore again failed before ordinary runner-step execution. No runnable step graph or job log was produced. This satisfies the same external hosted-execution failure signature as the prior attempt and does not indicate a SiteScore test, Docker, YAML command, dependency, or frozen-source failure.
+This proves the hosted-execution blocker persists on the latest clean 20-file head and is not caused by a temporary workflow artifact, a SiteScore test, Docker build, dependency graph, or frozen source change.
 
-The GitHub API available to this Implementer still does not expose the account/UI pre-run reason, so no unsupported claim is made about whether the external cause is billing, quota/usage, plan entitlement, account restriction, or another GitHub-hosted Actions platform condition.
+The GitHub API available to this Implementer does not expose the account/UI pre-run reason, so no unsupported claim is made about whether the cause is billing, quota/usage, plan entitlement, account restriction, or another GitHub-hosted Actions platform condition.
 
 ---
 
 ## 4. Required owner action remains unchanged
 
-Owner must restore GitHub-hosted Actions execution for `metadoks/sitescore` by opening one of the failed runs in the GitHub Actions UI and resolving the pre-run account/platform message shown there.
+Owner must restore GitHub-hosted Actions execution for `metadoks/sitescore` by opening run `34559341273` (or the earlier exact-head run `34530157300`) in the GitHub Actions UI and resolving the pre-run account/platform message shown there.
 
 Acceptance criterion:
 
@@ -163,7 +164,7 @@ After hosted execution is restored, Implementer resumes from the authorized Snow
 ```text
 PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
 base = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-head = 1e7e710d28da4ecfc5351f6aa9f58dea36d83303
+head = 434a2419d0bcc99681b8cf544d321bbb01b88315
 changed files = 20
 temporary probe workflows = NONE
 temporary fixer workflows = NONE
