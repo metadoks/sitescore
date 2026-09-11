@@ -1,9 +1,9 @@
 # FAZ 7.1 n8n nodemailer residual risk record
 
-Advisory: `GHSA-p6gq-j5cr-w38f`  
-Package/version: `nodemailer@8.0.10`  
-Owner: SiteScore owner/operator  
-Status: conditionally accepted only if it is the sole residual HIGH after exact-candidate OpenVEX/KEV reconciliation  
+Advisory: `GHSA-p6gq-j5cr-w38f`
+Package/version: `nodemailer@8.0.10`
+Owner: SiteScore owner/operator
+Status: conditionally accepted only if it is the sole residual HIGH after exact-candidate OpenVEX/KEV reconciliation
 Expiry: `2026-10-11`
 
 Containment controls required for acceptance:
