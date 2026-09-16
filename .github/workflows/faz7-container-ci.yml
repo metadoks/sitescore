@@ -239,7 +239,7 @@ jobs:
           cat > /tmp/Dockerfile.commerce-integration <<'EOF'
           FROM sitescore-api:test
           USER 0:0
-          ARG DEBIAN_SNAPSHOT=20260910T000000Z
+          ARG DEBIAN_SNAPSHOT=20260916T000000Z
           COPY deploy/containers/commerce/requirements.lock /locks/commerce-runtime.lock
           RUN /opt/venv/bin/pip install --require-hashes -r /locks/commerce-runtime.lock \
            && rm -f /etc/apt/sources.list.d/debian.sources \
