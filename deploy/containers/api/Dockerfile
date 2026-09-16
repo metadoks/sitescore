@@ -51,7 +51,7 @@ FROM python:3.11.16-slim-trixie@sha256:d1053354624536b044162aaab1e418bd000ea3518
 
 ARG SOURCE_REVISION
 ARG SOURCE_VERSION
-ARG DEBIAN_SNAPSHOT=20260910T000000Z
+ARG DEBIAN_SNAPSHOT=20260916T000000Z
 LABEL org.opencontainers.image.source="https://github.com/metadoks/sitescore" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.version="${SOURCE_VERSION}" \
@@ -65,6 +65,7 @@ ENV VIRTUAL_ENV=/opt/venv \
     PYTHONUNBUFFERED=1
 
 COPY deploy/containers/api/apt-runtime.lock /tmp/apt-runtime.lock
+COPY deploy/containers/apt-security-runtime.lock /tmp/apt-security-runtime.lock
 RUN rm -f /etc/apt/sources.list.d/debian.sources \
  && printf '%s\n' \
       "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main" \
@@ -72,14 +73,24 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
       > /etc/apt/sources.list \
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && xargs -r apt-get install -y --no-install-recommends < /tmp/apt-runtime.lock \
- && rm -rf /var/lib/apt/lists/* /tmp/apt-runtime.lock
+ && xargs -r apt-get install -y --only-upgrade --no-install-recommends < /tmp/apt-security-runtime.lock \
+ && while IFS='=' read -r package version; do \
+      current="$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true)"; \
+      if [ -n "$current" ]; then test "$current" = "$version"; fi; \
+    done < /tmp/apt-security-runtime.lock \
+ && rm -rf /var/lib/apt/lists/* /tmp/apt-runtime.lock /tmp/apt-security-runtime.lock
 
 COPY --from=builder /opt/venv /opt/venv
 COPY deploy/containers/runtime/api-web.sh /opt/sitescore/bin/api-web
 COPY deploy/containers/runtime/api-worker.sh /opt/sitescore/bin/api-worker
 COPY deploy/containers/runtime/api-beat.sh /opt/sitescore/bin/api-beat
 COPY deploy/containers/verify_image_contract.py /opt/sitescore/verify_image_contract.py
-RUN chmod 0555 /opt/sitescore/bin/api-web /opt/sitescore/bin/api-worker /opt/sitescore/bin/api-beat \
+RUN rm -rf \
+      /usr/local/lib/python3.11/site-packages/setuptools \
+      /usr/local/lib/python3.11/site-packages/setuptools-*.dist-info \
+      /opt/venv/lib/python3.11/site-packages/setuptools \
+      /opt/venv/lib/python3.11/site-packages/setuptools-*.dist-info \
+ && chmod 0555 /opt/sitescore/bin/api-web /opt/sitescore/bin/api-worker /opt/sitescore/bin/api-beat \
  && chmod 0444 /opt/sitescore/verify_image_contract.py
 
 WORKDIR /app
