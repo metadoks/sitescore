@@ -239,13 +239,13 @@ jobs:
           cat > /tmp/Dockerfile.commerce-integration <<'EOF'
           FROM sitescore-api:test
           USER 0:0
-          ARG DEBIAN_SNAPSHOT=20260821T000000Z
+          ARG DEBIAN_SNAPSHOT=20260910T000000Z
           COPY deploy/containers/commerce/requirements.lock /locks/commerce-runtime.lock
           RUN /opt/venv/bin/pip install --require-hashes -r /locks/commerce-runtime.lock \
            && rm -f /etc/apt/sources.list.d/debian.sources \
            && printf '%s\n' \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ bookworm main" \
-                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ bookworm-security main" \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main" \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ trixie-security main" \
                 > /etc/apt/sources.list \
            && apt-get -o Acquire::Check-Valid-Until=false update \
            && apt-get install -y --no-install-recommends git \
@@ -481,6 +481,16 @@ jobs:
         with:
           node-version: '26.5.1'
 
+      - name: Authenticate frozen DHI runtime registry
+        env:
+          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${DHI_USERNAME:-}" || { echo 'DHI_USERNAME secret is required' >&2; exit 44; }
+          test -n "${DHI_TOKEN:-}" || { echo 'DHI_TOKEN secret is required' >&2; exit 44; }
+          printf '%s' "$DHI_TOKEN" | docker login dhi.io --username "$DHI_USERNAME" --password-stdin >/dev/null
+
       - name: Execute frozen n8n 2.37.10 source build hardening and security gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -503,6 +513,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: deploy/containers/artifacts/n8n-final/
+
+      - name: Logout frozen DHI runtime registry
+        if: always()
+        run: docker logout dhi.io >/dev/null 2>&1 || true
 
   required-gate:
     name: required-gate
