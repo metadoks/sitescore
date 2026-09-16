@@ -11,8 +11,8 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: BLOCKED_TRUE_DESIGN_SECURITY_OR_OWNER_ACTION
-IMPLEMENTER_ACTION: REVIEWER_SECURITY_REOPEN_AND_OWNER_DHI_AUTH_REQUIRED
+IMPLEMENTER_STATE: BLOCKED_OWNER_ACTION_ONLY
+IMPLEMENTER_ACTION: OWNER_ADD_DHI_USERNAME_AND_DHI_TOKEN_THEN_RERUN_EXACT_HEAD
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -24,18 +24,19 @@ PR_STATE: OPEN
 PR_DRAFT: TRUE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
 PR_MERGED: FALSE
-CURRENT_HEAD_SHA: f531d0612961bfe099ef9f1e1429dd2c0b9a435e
-CURRENT_CHANGED_FILE_COUNT: 25
-CURRENT_EXACT_HEAD_RUN: 34608218961
+CURRENT_HEAD_SHA: 1a01ec7de87692fc5d12b8520357d41a5d4dd14e
+CURRENT_CHANGED_FILE_COUNT: 26
+CURRENT_EXACT_HEAD_RUN: 35156778651
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
 OPS71_GOV_001_STATUS: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71_N8N_VULN_001_STATUS: FROZEN_SOURCE_HARDENING_EVIDENCE_PASS_RUNTIME_BUILD_BLOCKED_BY_DHI_REGISTRY_AUTH
-OPS71_APP_BASE_CVE_001_STATUS: TERMINAL_SECURITY_ZERO_UNACHIEVABLE_WITHIN_AUTHORIZED_BOOKWORM_FAMILY
+OPS71_APP_BASE_001_STATUS: TRIXIE_CANDIDATE_GREEN_EXACT_HEAD
+OPS71_N8N_DHI_001_STATUS: OWNER_ACTION_REQUIRED_MISSING_REPOSITORY_SECRETS
+OPS71_N8N_VULN_001_STATUS: FROZEN_2_37_10_PENDING_DHI_AUTHENTICATED_RUNTIME_GATE
 
 CONTRACT_CHANGE_REQUIRED: 0
-DESIGN_DECISION_REVIEW_REQUIRED: 1
-ADDITIONAL_REOPEN_REQUIRED: 1
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 0
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -60,183 +61,151 @@ PRODUCTION_SECRET_COMMITTED: NONE
 
 ---
 
-## 1. Terminal policy and frozen candidate remain intact
+## 1. Exact-head terminal evidence
 
-Reviewer terminal closure policy remains in force. No ordinary moving-latest rebase was performed.
-
-```text
-n8n runtime = 2.37.10
-n8n source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
-n8n source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
-official amd64 digest reference = sha256:307d6065be25619aa24cfc63a7c2f04ca56d084a08c05c8e9f189a89f353b1ec
-internal package = n8n-nodes-base@2.37.4
-```
-
-Authorized Snowflake closure removal remains exactly:
+Exact code head:
 
 ```text
-removed = [snowflake-sdk@2.1.0, toml@3.0.0]
-added = []
-shared_non_snowflake_removed = []
-n8n-nodes-base@2.37.4 = PRESENT
+1a01ec7de87692fc5d12b8520357d41a5d4dd14e
 ```
 
-Current exact-head evidence additionally shows the authorized fast-uri hardening:
+Exact GitHub-hosted run:
 
 ```text
-fast-uri before = 3.1.0
-fast-uri after = 3.1.6
+35156778651
 ```
 
-Frozen SiteScore application semantics and frozen n8n workflow JSON were not changed.
-
----
-
-## 2. GitHub-hosted Actions execution blocker is resolved
-
-Repository visibility is now public. GitHub-hosted jobs on exact head `f531d0612961bfe099ef9f1e1429dd2c0b9a435e` entered normal runner execution and produced ordinary step graphs/logs.
-
-Therefore:
-
-```text
-OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
-```
-
-The previous `steps = null` platform/account blocker is historical and must not be used as the current blocker.
-
-Exact-head run:
-
-```text
-run = 34608218961
-```
-
-Mandatory job result:
+Mandatory jobs:
 
 ```text
 source-boundary       = SUCCESS
 static-contracts      = SUCCESS
 faz6-commerce-replay  = SUCCESS
-container-validation = FAILURE at SBOM/vulnerability policy step only
-n8n-validation        = FAILURE at hardened-runtime build/security step
-required-gate         = FAILURE because mandatory upstream jobs failed
+container-validation = SUCCESS
+n8n-validation        = FAILURE only at DHI credential precondition
+required-gate         = FAILURE only because n8n-validation failed
 ```
+
+PR #34 remains OPEN / DRAFT / MERGEABLE / UNMERGED. No user LOCK exists.
 
 ---
 
-## 3. Exact-head accepted technical evidence
+## 2. Reviewer-authorized Trixie candidate is GREEN
 
-Current exact-head hosted execution confirms:
+The bounded Bookworm → Trixie security refresh is fully exercised on the exact head.
+
+Frozen application runtime lock:
 
 ```text
-source boundary / frozen workflow byte identities = PASS
-permanent GitHub Actions dependency full-SHA pin checker = PASS
-static contracts = PASS
-FAZ6 Commerce frozen replay = 417 PASS
+PYTHON_IMAGE_TAG=python:3.11.16-slim-trixie
+PYTHON_IMAGE_DIGEST=sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72
+TARGET_PLATFORM=linux/amd64
+DEBIAN_SUITE=trixie
+DEBIAN_SECURITY_SUITE=trixie-security
+DEBIAN_SNAPSHOT=20260916T000000Z
+```
+
+Exact-head evidence:
+
+```text
 API regression = 114 PASS
 report regression = 24 PASS
-Commerce regression = 416 PASS + exactly one authorized phase-local deselect
-application image build = PASS
-non-root/read-only runtime contract = PASS
-API command/PDF runtime smoke = PASS
-Commerce socket/supervisor runtime smoke = PASS
+Commerce regression = 416 PASS + exactly 1 authorized deselect
+FAZ6 Commerce frozen replay = 417 PASS
+linux/amd64 image build = PASS
+non-root/read-only image contract = PASS
+API web/worker/beat runtime = PASS
+PDF/font runtime = PASS
+Commerce web/dispatcher supervisor runtime = PASS
+SBOM generation = PASS
+Grype generation = PASS
+API_POLICY_BLOCKERS = 0
+COMMERCE_POLICY_BLOCKERS = 0
+application image evidence upload = PASS
 ```
 
-The CI harness fixes leading to this run were limited to test/provenance mechanics and Markdown whitespace. No application source semantics, business scoring semantics, or frozen workflow bytes changed.
+Application evidence artifact:
+
+```text
+name = faz7-application-image-evidence-1a01ec7de87692fc5d12b8520357d41a5d4dd14e
+artifact_id = 10471063420
+archive_sha256 = 1685ea01f8323e9cbb540b044a47e761594cd25ad68ae585bcd653ef891b1f38
+```
+
+Therefore the historical Bookworm CRITICAL blocker is RESOLVED for the current candidate. No scanner suppression, blanket ignore, SiteScore-authored VEX, application semantic change, or frozen workflow change was used.
+
+The mechanically necessary final CI fix was only alignment of the Commerce integration helper snapshot from `20260910T000000Z` to the frozen Trixie snapshot `20260916T000000Z`; this removed an artificial perl/perl-base package mismatch without changing product behavior.
 
 ---
 
-## 4. True blocker A — application bookworm security zero cannot be achieved inside the authorized family
+## 3. Sole technical blocker — owner DHI Actions secrets
 
-The exact-head application SBOM/Grype gate reached the terminal security stage and failed with current vulnerability evidence. The scan contains CRITICAL findings in Debian bookworm packages for which Debian currently publishes no fixed bookworm package.
-
-Representative unavoidable examples verified against the Debian Security Tracker on 2026-09-11:
+The permanent n8n workflow contains the Reviewer-authorized fail-closed registry login interface:
 
 ```text
-CVE-2026-5450   glibc/libc6   bookworm = vulnerable; no bookworm fixed version
-CVE-2026-58016  glib2.0       bookworm = vulnerable; postponed/no-DSA; no bookworm fixed version
-CVE-2026-6653   libxml2       bookworm = vulnerable; postponed; no bookworm fixed version
+DHI_USERNAME = ${{ secrets.DHI_USERNAME }}
+DHI_TOKEN    = ${{ secrets.DHI_TOKEN }}
+registry     = dhi.io
+login        = password-stdin
 ```
 
-The current application runtime is already on the Reviewer-authorized family:
+Exact-head n8n job `104997997597` proves both repository secrets are currently unavailable to the run:
 
 ```text
-Python 3.11.16
-Debian slim-bookworm
-linux/amd64
-immutable image digest
+DHI_USERNAME = empty
+DHI_TOKEN = empty
+error = DHI_USERNAME secret is required
+exit_code = 44
 ```
 
-A newer snapshot/digest within the same bookworm family can reduce fixable findings but cannot make the Reviewer terminal requirement `CRITICAL = 0` true while mandatory inherited bookworm components remain unfixed.
+As designed, the frozen n8n hardening/runtime step is skipped after this precondition failure. No anonymous fallback or alternate runtime base was introduced.
 
-No scanner suppression, blanket ignore, SiteScore-authored VEX, fake package substitution, or evidence weakening was introduced.
-
-This matches the Reviewer emergency-reopen condition where the candidate cannot safely satisfy the terminal contract without a broader base/distro/security design decision.
-
-Required Reviewer decision:
+Owner action required:
 
 ```text
-authorize a broader application runtime-base family change capable of satisfying
-CRITICAL = 0 and OS HIGH = 0 without suppressions,
-OR issue another explicit security design resolution.
+Add repository Actions secret: DHI_USERNAME
+Add repository Actions secret: DHI_TOKEN
 ```
 
-Implementer must not silently cross the frozen Python 3.11.x + Debian bookworm boundary.
+Values must never be pasted into chat, repository source, PR text, docs, artifacts, or logs. Credentials must be read-only/minimum-required for the frozen `dhi.io` image pull.
+
+After the secrets exist, rerun the exact-head CI. If valid credentials authenticate but the exact frozen DHI digest is denied by registry entitlement, report exactly:
+
+```text
+OPS71-N8N-DHI-001: PLAN_OR_ENTITLEMENT_BLOCKED
+```
 
 ---
 
-## 5. True blocker B — frozen n8n DHI runtime requires registry authentication
-
-Current frozen n8n lock binds the hardened runtime base to:
+## 4. Frozen n8n authority remains unchanged
 
 ```text
-dhi.io/node:26.5.1-alpine3.24-dev@sha256:3ffdd8dc0c28a0a12871b3762f45aa5deb104cbe931948b681af78fb256dae03
+n8n = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+n8n-nodes-base = 2.37.4
+frozen DHI runtime = dhi.io/node:26.5.1-alpine3.24-dev@sha256:3ffdd8dc0c28a0a12871b3762f45aa5deb104cbe931948b681af78fb256dae03
 ```
 
-Exact-head n8n evidence was produced through the frozen source graph/hardening stage:
+Required graph-pruned state remains:
 
 ```text
-frozen source commit/tree = VERIFIED
-Snowflake/TOML exclusive closure = PROVEN
-snowflake-sdk@2.1.0 = REMOVED
- toml@3.0.0 = REMOVED
-shared dependencies = PRESERVED
-fast-uri 3.1.6 = APPLIED
-package delta evidence = PRODUCED
+snowflake-sdk@2.1.0 = ABSENT
+toml@3.0.0 = ABSENT
+shared_non_snowflake_removed = []
+fast-uri = 3.1.6
+NODES_EXCLUDE retains executeCommand/localFileTrigger/emailSend/snowflake
 ```
 
-The uploaded n8n evidence stops before `apk-evidence` / hardened runtime-image evidence is created. The permanent CI then fails in the hardened-runtime build/security step.
-
-Docker's current DHI documentation requires authentication to `dhi.io` even for DHI Community image pulls (`docker login dhi.io`). The current workflow intentionally contains no registry credential and no production secret is committed.
-
-Required owner capability:
-
-```text
-provide read-only Docker/DHI registry credentials through GitHub Actions secrets
-so the frozen immutable DHI base can be pulled in CI,
-OR obtain an explicit Reviewer-approved runtime-base alternative.
-```
-
-Credentials must never be pasted into source or committed to the repository.
+The established sole nodemailer residual HIGH contract remains unchanged; no second residual CRITICAL/HIGH exception is authorized.
 
 ---
 
-## 6. Governance blocker changed from plan capability to owner configuration
+## 5. Governance remains final owner gate
 
-Live repository state now reports:
+Current repository capability is public, but final main protection is still pending.
 
-```text
-visibility = public
-main protected = false
-rulesets = []
-merge commit = enabled
-squash merge = enabled
-rebase merge = enabled
-auto merge = disabled
-```
-
-The previous private-repository plan-capability blocker is therefore resolved. Governance remains a final manual owner configuration task, not a plan blocker.
-
-Required final governance remains exactly:
+Required final state after the technical required-gate is green:
 
 ```text
 main protected = TRUE
@@ -252,67 +221,37 @@ rebase merge disabled
 auto merge disabled
 ```
 
-The available GitHub integration can verify repository/ruleset state but does not expose the administration mutation needed to configure this final protection state.
+The available GitHub integration does not expose the repository-administration mutation needed to perform this configuration, so this remains a manual owner action.
 
 ---
 
-## 7. Consolidated terminal blocker
-
-FAZ 7.1 is not being stopped for YAML, shell, ordinary test harness, hosted-runner mechanics, or routine n8n reselection. Those loops are closed.
-
-The remaining blocking package is:
+## 6. Current terminal state
 
 ```text
-A. REVIEWER SECURITY/DESIGN REOPEN
-   Application Debian bookworm family cannot currently satisfy terminal CRITICAL=0
-   because required inherited packages remain unfixed in bookworm.
-
-B. OWNER REGISTRY AUTH CAPABILITY
-   Frozen n8n DHI base requires authenticated dhi.io pull before runtime/security
-   evidence can complete.
-
-C. OWNER GOVERNANCE CONFIGURATION
-   Public-repo capability now exists, but final main protection/ruleset and merge
-   settings remain unconfigured. Perform only after the technical required-gate is green.
+application Trixie candidate = GREEN
+source-boundary = PASS
+static-contracts = PASS
+FAZ6 replay = PASS (417)
+container-validation = PASS
+n8n-validation = BLOCKED ONLY BY MISSING DHI_USERNAME/DHI_TOKEN
+faz7 / required-gate = BLOCKED ONLY BY n8n-validation
+main governance = OWNER CONFIGURATION PENDING AFTER TECHNICAL GREEN
 ```
 
 Forbidden workarounds remain:
 
 ```text
-weaken faz7 / required-gate
-suppress or blanket-ignore CVEs
-create SiteScore-authored VEX to hide findings
-switch CI provider
-use self-hosted runner
-commit registry credentials
-silently change frozen application/business semantics
-change frozen n8n workflow JSON
-ordinary moving-latest n8n rebase
-advance to FAZ 7.2
+weaken required-gate
+scanner suppression / blanket CVE ignore
+SiteScore-authored VEX waiver
+anonymous or weaker runtime-base fallback
+moving-latest n8n restart
+frozen application/business semantic change
+frozen n8n workflow JSON change
+self-hosted/alternative CI
+credential commit
 merge without Reviewer READY_TO_LOCK + literal user LOCK
-```
-
----
-
-## 8. Live state
-
-```text
-PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
-base = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-head = f531d0612961bfe099ef9f1e1429dd2c0b9a435e
-changed files = 25
-exact-head run = 34608218961
-hosted Actions execution = RESTORED
-source-boundary = PASS
-static-contracts = PASS
-FAZ6 frozen replay = PASS (417)
-application functional/regression harness = PASS
-application terminal security gate = BLOCKED BY UNFIXED BOOKWORM CRITICALS
-n8n source hardening/prune evidence = PASS THROUGH PRE-RUNTIME STAGE
-n8n hardened runtime evidence = BLOCKED BY DHI REGISTRY AUTH
-main protection = OFF
-rulesets = NONE
-repo visibility = PUBLIC
+advance to FAZ 7.2
 ```
 
 ```text
