@@ -1,7 +1,7 @@
 ARG SOURCE_REVISION=unknown
 ARG SOURCE_VERSION=unknown
 
-FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS builder
+FROM python:3.11.16-slim-trixie@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72 AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -24,7 +24,7 @@ RUN mkdir -p /wheels \
  && /opt/venv/bin/pip install --require-hashes -r /locks/runtime-requirements.lock \
  && /opt/venv/bin/pip install --no-deps /wheels/*.whl
 
-FROM python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS runtime-base
+FROM python:3.11.16-slim-trixie@sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72 AS runtime-base
 
 ARG SOURCE_REVISION
 ARG SOURCE_VERSION
