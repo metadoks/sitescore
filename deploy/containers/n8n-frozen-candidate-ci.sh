@@ -172,12 +172,16 @@ cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n
 trap 'docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
 curl -fsS http://127.0.0.1:15678/healthz >/dev/null
-curl -fsS http://127.0.0.1:15678/types/nodes.json -o "$OUT/node-types.json"
+for _ in $(seq 1 120); do
+  curl -fsS http://127.0.0.1:15678/types/nodes.json -o "$OUT/node-types.json" >/dev/null 2>&1 || true
+  grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json" 2>/dev/null && break
+  sleep .5
+done
+grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.snowflake "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.emailSend "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.executeCommand "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.localFileTrigger "$OUT/node-types.json"
-grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json"
 docker stop -t 5 "$cid" >/dev/null
 trap - EXIT
 vol="sitescore-frozen-import-${GITHUB_RUN_ID}"
