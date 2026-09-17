@@ -108,8 +108,7 @@ popd >/dev/null
 cat > /tmp/sitescore-n8n-base.Dockerfile <<'EOF'
 ARG DHI_REF
 FROM ${DHI_REF} AS evidence
-RUN apk add --no-cache busybox-binsh && \
-    apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontconfig && \
+RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontconfig && \
     update-ms-fonts && fc-cache -f && apk del .build-deps-fonts && \
     find /usr/share/fonts/truetype/msttcorefonts/ -type l -exec unlink {} \; && \
     apk add --no-cache openssh graphicsmagick tini tzdata ca-certificates libc6-compat librdkafka && \
