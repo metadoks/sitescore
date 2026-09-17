@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: TRIXIE_CANDIDATE_BOUND_DHI_OWNER_SECRET_ACTION_CONFIRMED
-IMPLEMENTER_ACTION: AFTER_OWNER_SECRETS_RERUN_EXACT_HEAD_AND_COMPLETE_TO_TERMINAL_HANDOFF
+REVIEWER_STATE: N8N_BUSYBOX_BINSH_MECHANICAL_REMEDIATION_AUTHORIZED
+IMPLEMENTER_ACTION: REMOVE_REDUNDANT_BUSYBOX_BINSH_INSTALL_ONLY_THEN_COMPLETE_EXACT_HEAD_TO_TERMINAL_HANDOFF
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -24,14 +24,14 @@ PR: #34
 OBSERVED_HEAD_SHA: 1a01ec7de87692fc5d12b8520357d41a5d4dd14e
 REVIEWED_HEAD_SHA: NONE
 LIVE_FAZ7_RUN: 35156778651
-LIVE_CONTAINER_VALIDATION_JOB: 104997997537
-LIVE_N8N_VALIDATION_JOB: 104997997597
+LIVE_CONTAINER_VALIDATION_JOB: 105159839286
+LIVE_N8N_VALIDATION_JOB: 105159800082
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71-APP-BASE-001: TRIXIE_CANDIDATE_IMPLEMENTED_SECURITY_RESULT_PENDING
-OPS71-N8N-DHI-001: OWNER_ACTION_REQUIRED_MISSING_REPOSITORY_SECRETS
-OPS71-N8N-VULN-001: CONTINUE_FROZEN_2_37_10_AFTER_DHI_AUTH
+OPS71-APP-BASE-001: RESOLVED_GREEN_EXACT_HEAD
+OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
+OPS71-N8N-VULN-001: MECHANICAL_BUSYBOX_BINSH_PACKAGE_CONFLICT_REMEDIATION_AUTHORIZED
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -53,41 +53,84 @@ READY_TO_LOCK: NO
 
 ## 1. Exact-head state
 
-Live PR #34 has advanced to exact head:
+Live PR #34 remains on exact head:
 
 ```text
 1a01ec7de87692fc5d12b8520357d41a5d4dd14e
 ```
 
-PR remains OPEN / DRAFT / MERGEABLE / UNMERGED. No user LOCK exists.
-
-Exact-head run:
+Latest exact-head rerun remains run:
 
 ```text
 run = 35156778651
 source-boundary = PASS
 static-contracts = PASS
 FAZ6 Commerce replay = PASS (417)
-container-validation = IN_PROGRESS at last Reviewer observation
-n8n-validation = FAIL only at DHI authentication precondition
+container-validation = PASS
+n8n-validation = FAIL
+required-gate = FAIL only because n8n-validation failed
 ```
 
-The n8n failure is no longer an ambiguous registry/build failure. The permanent workflow now contains the authorized fail-closed DHI login step, and the exact job log proves:
+The historical DHI owner-secret blocker is now RESOLVED. Exact job `105159800082` proves the permanent DHI authentication step passed and the frozen DHI digest was successfully pulled.
+
+The n8n job then completed the exact frozen 2.37.10 source build and Snowflake/TOML pruning successfully:
 
 ```text
-DHI_USERNAME = empty
-DHI_TOKEN = empty
-error = DHI_USERNAME secret is required
-exit = 44
+n8n source build = PASS
+snowflake-sdk@2.1.0 = REMOVED
+toml@3.0.0 = REMOVED
+shared_non_snowflake_removed = []
+version_changes = []
 ```
 
-Therefore:
+The first failing operation is later, while assembling the hardened DHI runtime base:
 
 ```text
-OPS71-N8N-DHI-001: OWNER_ACTION_REQUIRED_MISSING_REPOSITORY_SECRETS
+apk add --no-cache busybox-binsh
+
+installed/base busybox:
+  busybox-1.38.0_git20260724-r5
+
+repository busybox-binsh candidate:
+  busybox-binsh-1.37.0_git20260817-r33
+  requires busybox=1.37.0_git20260817-r33
+
+result:
+  package solver conflict
+  exit code = 1
 ```
 
-This is not a new design/security decision. Do not change n8n, registry, runtime base, workflow bytes, or security policy to work around missing credentials.
+This is a MECHANICAL IMPLEMENTATION DEFECT, not a new security/design blocker. The build command itself is already executing under `/bin/sh` before the attempted `busybox-binsh` installation, so the explicit installation is redundant for this exact DHI base.
+
+Reviewer decision:
+
+```text
+OPS71-N8N-VULN-001:
+MECHANICAL_BUSYBOX_BINSH_PACKAGE_CONFLICT_REMEDIATION_AUTHORIZED
+
+NEW_DESIGN_DECISION_REQUIRED: NO
+EMERGENCY_SECURITY_REOPEN: NO
+```
+
+Authorized remediation is narrowly bounded:
+
+```text
+REMOVE ONLY:
+apk add --no-cache busybox-binsh && \\
+
+KEEP UNCHANGED:
+frozen n8n 2.37.10 identity
+frozen DHI runtime digest
+Snowflake/TOML pruning
+libcrypto3/libssl3/libexpat exact security pins
+openssh/graphicsmagick removal
+NODES_EXCLUDE contract
+security thresholds
+workflow hashes
+application/business behavior
+```
+
+Do not replace the DHI base, do not pin a mismatched BusyBox family, and do not weaken the security gate. Implementer is authorized to perform this mechanical edit and continue directly to terminal CI without another Reviewer round trip unless a true design/security blocker appears.
 
 ---
 
@@ -132,34 +175,23 @@ The first fully green exact Trixie candidate becomes frozen. Do not chase later 
 
 ---
 
-## 3. Owner action — required now
+## 3. DHI owner action is resolved
 
-Repository Actions secrets must contain exactly the credential references already wired by the permanent workflow:
-
-```text
-DHI_USERNAME
-DHI_TOKEN
-```
-
-Requirements:
+Repository Actions credentials are now present and the exact-head rerun proves:
 
 ```text
-registry = dhi.io
-credential purpose = read-only/minimum-required image pull
-repository source secret values = FORBIDDEN
-logs/artifacts/docs secret values = FORBIDDEN
-password-stdin login = REQUIRED/PREFERRED
+Authenticate frozen DHI runtime registry = PASS
+dhi.io token exchange = PASS
+frozen DHI metadata/pull = PASS
 ```
 
-The owner must add the two values in GitHub repository Actions secrets. Do not paste either value into chat, source code, PR text, docs, artifacts, or logs.
-
-After those two secrets exist, Implementer is authorized and required to rerun the exact-head n8n/required CI path (or produce a new mechanically necessary head if Trixie evidence requires it) and continue without another Reviewer round trip.
-
-If valid credentials are present but the exact frozen DHI digest is still denied due to entitlement, return only:
+Therefore:
 
 ```text
-OPS71-N8N-DHI-001: PLAN_OR_ENTITLEMENT_BLOCKED
+OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 ```
+
+No further owner credential action is required for the current frozen candidate. Do not expose, rotate, commit, print, or otherwise alter the credentials as part of this mechanical remediation.
 
 ---
 
@@ -203,7 +235,7 @@ credential commit
 
 ## 5. Terminal completion contract
 
-After DHI secrets are configured, Implementer must continue to one terminal handoff and not return for ordinary mechanics:
+Implementer must now apply the single authorized BusyBox mechanical remediation and continue to one terminal handoff without returning for ordinary mechanics:
 
 ```text
 [ ] application Trixie vulnerability policy GREEN
