@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: N8N_AUTH_PROTECTED_NODE_TYPES_MECHANICAL_REMEDIATION_AUTHORIZED
-IMPLEMENTER_ACTION: REPLACE_UNAUTHENTICATED_TYPES_HTTP_PROBE_WITH_OFFICIAL_EXPORT_NODES_RUNTIME_INVENTORY_THEN_COMPLETE_TERMINAL_CI
+REVIEWER_STATE: BOUNDED_SECURITY_REMEDIATION_REOPEN_AUTHORIZED
+IMPLEMENTER_ACTION: EXECUTE_ONE_CONSOLIDATED_UPSTREAM_ALIGNED_N8N_SECURITY_REMEDIATION_THEN_TERMINAL_CI
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,17 +21,17 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: 1992bdd8f74a736ba7ee129d4d89a0c011386a76
+OBSERVED_HEAD_SHA: f1420f40de52db19dd947ec67411202ee8c9ab71
 REVIEWED_HEAD_SHA: NONE
-LIVE_FAZ7_RUN: 35399578554
-LIVE_CONTAINER_VALIDATION_JOB: 105776153359
-LIVE_N8N_VALIDATION_JOB: 105776153483
+LIVE_FAZ7_RUN: 35403633443
+LIVE_CONTAINER_VALIDATION_JOB: 105788708557
+LIVE_N8N_VALIDATION_JOB: 105788708568
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
 OPS71-APP-BASE-001: RESOLVED_GREEN_EXACT_HEAD
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: MECHANICAL_AUTH_PROTECTED_NODE_TYPES_EVIDENCE_REMEDIATION_AUTHORIZED
+OPS71-N8N-VULN-001: BOUNDED_SECURITY_REMEDIATION_REOPEN_AUTHORIZED
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -49,6 +49,330 @@ READY_FOR_REVIEW: NO
 READY_TO_LOCK: NO
 ```
 
+
+
+---
+
+## 0B. Superseding Reviewer security decision — bounded remediation reopen
+
+### Trigger
+
+Exact-head security artifact:
+
+```text
+head = f1420f40de52db19dd947ec67411202ee8c9ab71
+run = 35403633443
+n8n-validation job = 105788708568
+artifact = faz7-n8n-final-evidence-f1420f40de52db19dd947ec67411202ee8c9ab71
+artifact id = 10572440379
+artifact sha256 = 5aa75bbb3db7efee196ee52e2753db3e12b3a4a36fe6bdcbc4cb52cdbf03fb36
+```
+
+The mechanical runtime-evidence issues are resolved. The terminal gate now exposes
+real inherited/remediable security findings:
+
+```text
+CISA KEV = 0
+BLOCKING_CRITICAL = 2
+OS_HIGH = 10
+OTHER_HIGH = 24
+NEW_HIGH = 0
+```
+
+The two CRITICAL findings are both `libcurl 8.21.0-r0` and have a scanner-fixed
+version `8.22.0-r0`.
+
+This satisfies the terminal-closure emergency security reopen condition. The
+Reviewer therefore authorizes ONE consolidated security remediation pass.
+Routine moving-latest n8n reselection remains prohibited.
+
+### Frozen application/n8n identity that MUST NOT change
+
+```text
+n8n version = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+workflow hashes = unchanged
+application/business semantics = unchanged
+Snowflake/TOML pruning = unchanged
+```
+
+### A. Upstream-aligned Node/DHI security-base refresh — AUTHORIZED
+
+Reviewer verified current n8n upstream master uses:
+
+```text
+builder:
+node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
+
+DHI base:
+dhi.io/node:26.7.0-alpine3.24-dev@sha256:4b494d89fb26c950ce97865acf45b480dc7a6868fdc2b81c2d66599702eeac3f
+
+upstream runtime reference:
+n8nio/base:26.7.0@sha256:33687300c4e94dc00f42ec79ae15082ae07330ecd82ae1167125905b65908ff8
+```
+
+The frozen n8n 2.37.10 source MAY be rebuilt on this exact upstream-aligned
+Node 26.7.0 / Alpine 3.24 toolchain/base pair. This is a security-base refresh,
+not a moving n8n release rebase.
+
+Required proof:
+
+```text
+Node major remains 26
+Alpine remains 3.24
+linux/amd64
+all base references immutable by digest
+n8n --version = 2.37.10
+source commit/tree unchanged
+full runtime/workflow/import/export smoke PASS
+SBOM + Grype regenerated
+```
+
+First run the final scan after this base refresh BEFORE adding further OS package
+surgery. The refresh is expected to absorb the libcurl and bundled-npm findings
+where upstream base packaging has already moved.
+
+### B. OS package remediation — targeted only
+
+If the refreshed exact DHI base still contains remediable CRITICAL/HIGH Alpine
+packages, Implementer MAY update only the specifically affected runtime package
+families from the same Alpine 3.24 repositories.
+
+Rules:
+
+```text
+NO blanket apk upgrade
+NO distro change
+NO third-party repository
+NO manual copied libraries
+NO scanner ignore/suppression
+NO SiteScore-authored VEX
+```
+
+For each targeted package, record before/resolved-after version and repository
+source in evidence. If repository resolution is used during discovery, freeze
+the first green resolved versions into deterministic build evidence/lock.
+
+Known priority:
+
+```text
+libcurl >= 8.22.0-r0 or vendor-backported fixed equivalent
+pcre2 = fixed/backported Alpine 3.24 build if available
+zlib = fixed/backported Alpine 3.24 build if available
+```
+
+CVE-2026-89157 is 32-bit-specific; the product target is linux/amd64. It may be
+classified in the separate Reviewer risk record as architecture-not-affected
+ONLY with the raw finding retained and external advisory evidence recorded.
+Do not encode that as a SiteScore-authored VEX.
+
+CVE-2026-89161 remains remediation-required if a fixed/backported package exists.
+
+For CVE-2026-85091, if no fixed Alpine 3.24 package exists at the final exact-head
+snapshot, the raw scanner finding MUST remain visible and may be classified only
+as:
+
+```text
+REVIEWER_ACCEPTED_UPSTREAM_UNFIXED_RESIDUAL
+```
+
+with all of:
+
+```text
+CISA KEV = 0
+severity/reachability note
+upstream/vendor no-fix evidence
+owner = FAZ7 security review
+expiry/re-review trigger = package fix publication OR before public launch
+```
+
+This is an explicit risk record, not a VEX assertion and not scanner suppression.
+
+### C. npm dependency remediation — upstream-aligned first
+
+Reviewer verified current n8n upstream master already carries these security
+versions/policies:
+
+```text
+fast-uri = 3.1.6
+ip-address@10 = 10.3.1
+brace-expansion@5 = 5.0.9
+js-yaml = 4.3.2
+multer = ^2.3.0
+```
+
+Implementer MAY backport these exact upstream-aligned dependency changes into the
+frozen 2.37.10 build graph, regenerate the lock deterministically, and prove no
+unrelated version churn.
+
+Important artifact observation:
+
+```text
+brace-expansion 5.0.8 finding path = /usr/lib/node_modules/npm/...
+ip-address 10.2.0 finding path = /usr/lib/node_modules/npm/...
+```
+
+Those two findings are bundled-npm/base-image findings, not proof that the
+frozen n8n graph override failed. Prefer the Node/DHI refresh to remediate them.
+If they remain only in bundled npm and npm is not required by the final SiteScore
+runtime, removal of bundled npm/npm-cli from the FINAL runtime image is authorized
+only after proving:
+
+```text
+n8n startup PASS
+n8n export:nodes PASS
+both frozen workflow imports PASS
+order-paid/recovery runtime smokes PASS
+no SiteScore production contract requires community-node installation
+```
+
+Do not remove Node itself or pnpm/build tooling from build stages merely to hide
+findings.
+
+### D. Additional patch/minor backports with fixes
+
+Current scanner fixes include:
+
+```text
+@xmldom/xmldom 0.8.14 -> 0.8.15
+js-yaml 4.3.1 -> 4.3.2
+multer 2.2.0 -> 2.3.0
+```
+
+`@xmldom/xmldom 0.8.15` is authorized ONLY if production-graph proof shows
+every direct parent/range remains compatible and no peer-contract conflict is
+introduced.
+
+For every local npm backport:
+
+```text
+pnpm why --prod evidence
+parent-range proof
+lock diff limited to required closure
+no unrelated package version change
+n8n source files unchanged
+full runtime/workflow smoke PASS
+```
+
+### E. Tiptap and Nodemailer — no unauthorized major/family leap
+
+Current n8n upstream master still retains:
+
+```text
+@tiptap/core = 3.27.0
+nodemailer = 8.0.10
+@xmldom/xmldom = 0.8.14
+```
+
+Therefore:
+
+```text
+DO NOT locally force nodemailer 9.x
+DO NOT partially bump only @tiptap/core to 3.30.5 while its exact peer family remains 3.27.0
+DO NOT apply source patches to n8n/tiptap/nodemailer
+```
+
+The two exact nodemailer HIGH advisories may remain as Reviewer-accepted residual
+risk ONLY if the established containment proof remains true:
+
+```text
+n8n-nodes-base.emailSend = excluded
+frozen workflows contain no emailSend
+no SMTP/N8N_EMAIL_MODE/N8N_SMTP transport configured
+editor/admin/API not publicly exposed
+no alternate workflow path exposes arbitrary nodemailer message construction
+raw Grype findings remain visible
+risk record lists BOTH exact advisory IDs and fixed-version triggers
+re-review before public launch or on upstream n8n adoption
+```
+
+Allowed nodemailer residual IDs for this checkpoint only:
+
+```text
+GHSA-p6gq-j5cr-w38f
+GHSA-2x7j-588g-ccc2
+```
+
+The `@tiptap/core` HIGH may remain only if Implementer proves it is confined to
+the non-public editor/UI surface and frozen automation workflows/public webhook
+paths do not execute the vulnerable Markdown attribute parser. Record the exact
+advisory `GHSA-j95f-988m-3j2f`, raw finding, containment, and re-review trigger.
+No generic Tiptap-family waiver is authorized.
+
+If that reachability/containment proof cannot be made, stop with ONE consolidated
+security blocker rather than performing an unreviewed Tiptap family upgrade.
+
+### F. Final security gate after this pass
+
+The final exact-head report MUST preserve raw scanner output and separately show
+the dispositioned policy result.
+
+Required:
+
+```text
+CISA KEV = 0
+CRITICAL actionable = 0
+remediable OS HIGH = 0
+fast-uri vulnerable findings = 0
+Snowflake/TOML findings = 0
+no NEW undispositioned HIGH
+no scanner suppression
+no blanket ignore
+no SiteScore-authored VEX
+```
+
+Only exact, documented residuals explicitly authorized above may survive, with
+raw findings retained:
+
+```text
+nodemailer:
+  GHSA-p6gq-j5cr-w38f
+  GHSA-2x7j-588g-ccc2
+
+optional only with proof:
+  GHSA-j95f-988m-3j2f (@tiptap/core editor-only containment)
+  CVE-2026-89157 (amd64 architecture-not-affected)
+  CVE-2026-85091 (upstream-unfixed residual)
+```
+
+No other HIGH/CRITICAL residual is authorized.
+
+### G. Anti-loop instruction
+
+Implementer is authorized to perform the base refresh, targeted package fixes,
+graph-proven npm backports, evidence/risk-record updates and all resulting
+mechanical CI repairs in ONE continuation.
+
+Do not stop for:
+
+```text
+Dockerfile syntax
+lock regeneration
+pnpm/yaml mechanics
+artifact path issues
+test harness timing
+scanner evidence formatting
+package-version discovery within the bounds above
+```
+
+Stop only for:
+
+```text
+a fixed dependency requires a parent-major/source change outside this authority
+a remaining CRITICAL has no bounded remediation
+a remaining HIGH is outside the exact residual list above
+DHI entitlement/auth fails
+final GitHub owner-governance action
+```
+
+Next Implementer handoff must be terminal:
+
+```text
+IMPLEMENTER_STATE: READY_FOR_REVIEW
+```
+
+or one consolidated true blocker.
 
 ---
 
