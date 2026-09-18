@@ -21,11 +21,11 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: 044cd95aadf170e44e7ee8d823e7735509a4539f
+OBSERVED_HEAD_SHA: 1992bdd8f74a736ba7ee129d4d89a0c011386a76
 REVIEWED_HEAD_SHA: NONE
-LIVE_FAZ7_RUN: 35288901923
-LIVE_CONTAINER_VALIDATION_JOB: 105427240606
-LIVE_N8N_VALIDATION_JOB: 105427240300
+LIVE_FAZ7_RUN: 35399578554
+LIVE_CONTAINER_VALIDATION_JOB: 105776153359
+LIVE_N8N_VALIDATION_JOB: 105776153483
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
@@ -322,3 +322,27 @@ FAZ_7_2_STARTED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+
+### Live superseding observation — 2026-09-19
+
+Current PR #34 exact head has advanced to:
+
+```text
+1992bdd8f74a736ba7ee129d4d89a0c011386a76
+run = 35399578554
+```
+
+Current exact-head state:
+
+```text
+source-boundary       = PASS
+static-contracts      = PASS
+container-validation = PASS
+faz6-commerce-replay  = PASS
+DHI authentication   = PASS
+n8n-validation        = IN_PROGRESS
+required-gate         = pending n8n-validation
+```
+
+The delta from the prior observed head is confined to `deploy/containers/n8n-frozen-candidate-ci.sh`; current commit only extends the bounded node-types readiness wait for n8n migrations. No frozen application or workflow JSON change is introduced. No new design/security decision is required while this exact-head run is active.
