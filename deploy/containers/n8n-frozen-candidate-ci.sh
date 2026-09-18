@@ -172,19 +172,28 @@ cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n
 trap 'docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
 curl -fsS http://127.0.0.1:15678/healthz >/dev/null
-for _ in $(seq 1 1200); do
-  curl -fsS http://127.0.0.1:15678/healthz/readiness >/dev/null 2>&1 && break
-  sleep .5
-done
-curl -fsS http://127.0.0.1:15678/healthz/readiness >/dev/null
-curl -fsS http://127.0.0.1:15678/types/nodes.json -o "$OUT/node-types.json"
+docker stop -t 5 "$cid" >/dev/null
+trap - EXIT
+
+export_cid="sitescore-n8n-export-${GITHUB_RUN_ID}"
+docker rm -f "$export_cid" >/dev/null 2>&1 || true
+docker create --name "$export_cid" --tmpfs /tmp:rw,nosuid,nodev \
+  -e N8N_USER_FOLDER=/tmp/n8n \
+  -e N8N_ENCRYPTION_KEY=ci-only-frozen-key-000000000000000000000 \
+  -e N8N_DIAGNOSTICS_ENABLED=false \
+  -e N8N_PERSONALIZATION_ENABLED=false \
+  "$N8N_CANDIDATE_IMAGE" export:nodes --output=/tmp/node-types.json >/dev/null
+trap 'docker rm -f "$export_cid" >/dev/null 2>&1 || true' EXIT
+docker start -a "$export_cid" | tee "$OUT/export-nodes-runtime.log"
+test "$(docker inspect "$export_cid" --format '{{.State.ExitCode}}')" = 0
+docker cp "$export_cid:/tmp/node-types.json" "$OUT/node-types.json"
+docker rm "$export_cid" >/dev/null
+trap - EXIT
 grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.snowflake "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.emailSend "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.executeCommand "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.localFileTrigger "$OUT/node-types.json"
-docker stop -t 5 "$cid" >/dev/null
-trap - EXIT
 vol="sitescore-frozen-import-${GITHUB_RUN_ID}"
 docker volume create "$vol" >/dev/null
 trap 'docker volume rm -f "$vol" >/dev/null 2>&1 || true' EXIT
