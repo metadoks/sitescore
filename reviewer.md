@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: EXACT_HEAD_TERMINAL_RUN_IN_PROGRESS
-IMPLEMENTER_ACTION: NO_NEW_CHANGE_UNLESS_CURRENT_EXACT_HEAD_RUN_REVEALS_TRUE_BLOCKER
+REVIEWER_STATE: N8N_AUTH_PROTECTED_NODE_TYPES_MECHANICAL_REMEDIATION_AUTHORIZED
+IMPLEMENTER_ACTION: REPLACE_UNAUTHENTICATED_TYPES_HTTP_PROBE_WITH_OFFICIAL_EXPORT_NODES_RUNTIME_INVENTORY_THEN_COMPLETE_TERMINAL_CI
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -31,7 +31,7 @@ OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
 OPS71-APP-BASE-001: RESOLVED_GREEN_EXACT_HEAD
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: FINAL_EXACT_HEAD_SECURITY_GATE_IN_PROGRESS
+OPS71-N8N-VULN-001: MECHANICAL_AUTH_PROTECTED_NODE_TYPES_EVIDENCE_REMEDIATION_AUTHORIZED
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -48,6 +48,112 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 READY_FOR_REVIEW: NO
 READY_TO_LOCK: NO
 ```
+
+
+---
+
+## 0A. Superseding Reviewer decision — authenticated type-file root cause
+
+Exact-head run:
+
+```text
+head = 1992bdd8f74a736ba7ee129d4d89a0c011386a76
+run = 35399578554
+n8n-validation job = 105776153483
+```
+
+Result:
+
+```text
+source-boundary       = PASS
+static-contracts      = PASS
+container-validation = PASS
+faz6-commerce-replay  = PASS
+DHI authentication   = PASS
+hardened n8n image build = PASS
+n8n-validation        = FAIL at node-type runtime evidence
+required-gate         = FAIL only because n8n-validation failed
+```
+
+Uploaded final evidence artifact:
+
+```text
+artifact id = 10570901495
+artifact sha256 = b26ccbe06134adf20562c694ced09f611eae4509095ce9e74f7ca4b6d8dccc72
+```
+
+Evidence proves n8n itself completed migrations, registered the JS task runner, reported version 2.37.10, completed workflow dependency indexing, and exposed the editor. The captured unauthenticated `/types/nodes.json` body remained:
+
+```text
+n8n is starting up. Please wait
+```
+
+Reviewer verified the exact frozen upstream source commit
+`5542b8b6419cb6925cca8f11b270c9bfbe09d85e`:
+
+- `packages/cli/src/server.ts` explicitly wraps
+  `/types/nodes.json`, `/types/credentials.json`, and `/types/node-versions.json`
+  in `AuthService.createAuthMiddleware(...)`.
+- Therefore an unauthenticated `curl /types/nodes.json` is not a valid terminal runtime inventory contract for this frozen release.
+- The same exact frozen source provides the official command
+  `n8n export:nodes --output <path>`, implemented by
+  `packages/cli/src/commands/export/nodes.ts`, which loads node types through
+  `LoadNodesAndCredentials`.
+
+Classification:
+
+```text
+CLASSIFICATION: MECHANICAL_EVIDENCE_IMPLEMENTATION_DEFECT
+NEW_DESIGN_DECISION_REQUIRED: NO
+EMERGENCY_SECURITY_REOPEN: NO
+N8N_CANDIDATE_RESELECTION_REQUIRED: NO
+```
+
+Authorized remediation is narrow:
+
+```text
+REMOVE:
+unauthenticated /types/nodes.json polling as the node inventory proof
+
+KEEP:
+healthz/startup runtime smoke
+frozen n8n 2.37.10 identity
+frozen DHI runtime digest
+Snowflake/TOML pruning
+NODES_EXCLUDE
+all existing security thresholds
+workflow hashes
+application/business semantics
+
+ADD/USE:
+official frozen-runtime command:
+n8n export:nodes --output <temporary evidence path>
+
+PROVE FROM EXPORTED INVENTORY:
+n8n-nodes-base.httpRequest = PRESENT
+n8n-nodes-base.snowflake = ABSENT
+n8n-nodes-base.emailSend = ABSENT
+n8n-nodes-base.executeCommand = ABSENT
+n8n-nodes-base.localFileTrigger = ABSENT
+```
+
+The export must execute from the final hardened candidate image with the frozen
+`NODES_EXCLUDE` environment in force. The evidence path/output may be temporary
+or artifact-only. Do not create an owner account, do not bypass authentication,
+do not weaken authentication, and do not expose editor/admin/API surfaces merely
+to read type files.
+
+The prior wait-time increases were diagnostic mechanics only; do not increase
+the HTTP polling timeout again. Continue directly to one exact-head terminal CI
+run after this replacement.
+
+Next Implementer handoff remains terminal-only:
+
+```text
+IMPLEMENTER_STATE: READY_FOR_REVIEW
+```
+
+or a true design/security/owner-governance blocker.
 
 ---
 
