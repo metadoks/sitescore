@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: N8N_BUSYBOX_BINSH_MECHANICAL_REMEDIATION_AUTHORIZED
-IMPLEMENTER_ACTION: REMOVE_REDUNDANT_BUSYBOX_BINSH_INSTALL_ONLY_THEN_COMPLETE_EXACT_HEAD_TO_TERMINAL_HANDOFF
+REVIEWER_STATE: EXACT_HEAD_TERMINAL_RUN_IN_PROGRESS
+IMPLEMENTER_ACTION: NO_NEW_CHANGE_UNLESS_CURRENT_EXACT_HEAD_RUN_REVEALS_TRUE_BLOCKER
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,17 +21,17 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: 1a01ec7de87692fc5d12b8520357d41a5d4dd14e
+OBSERVED_HEAD_SHA: 044cd95aadf170e44e7ee8d823e7735509a4539f
 REVIEWED_HEAD_SHA: NONE
-LIVE_FAZ7_RUN: 35156778651
-LIVE_CONTAINER_VALIDATION_JOB: 105159839286
-LIVE_N8N_VALIDATION_JOB: 105159800082
+LIVE_FAZ7_RUN: 35288901923
+LIVE_CONTAINER_VALIDATION_JOB: 105427240606
+LIVE_N8N_VALIDATION_JOB: 105427240300
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
 OPS71-APP-BASE-001: RESOLVED_GREEN_EXACT_HEAD
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: MECHANICAL_BUSYBOX_BINSH_PACKAGE_CONFLICT_REMEDIATION_AUTHORIZED
+OPS71-N8N-VULN-001: FINAL_EXACT_HEAD_SECURITY_GATE_IN_PROGRESS
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -48,6 +48,33 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 READY_FOR_REVIEW: NO
 READY_TO_LOCK: NO
 ```
+
+---
+
+## 0. Live reviewer observation — exact head 044cd95
+
+Live PR #34 has advanced beyond the prior handoff to exact head:
+
+```text
+044cd95aadf170e44e7ee8d823e7735509a4539f
+run = 35288901923
+```
+
+The delta from `1a01ec7de87692fc5d12b8520357d41a5d4dd14e` is confined to `deploy/containers/n8n-frozen-candidate-ci.sh`; no frozen application or n8n workflow JSON path changed.
+
+Current exact-head jobs observed by Reviewer:
+
+```text
+source-boundary       = PASS
+static-contracts      = PASS
+container-validation = PASS
+faz6-commerce-replay  = PASS
+DHI authentication   = PASS
+n8n-validation        = IN_PROGRESS at frozen source-build/hardening/security gate
+required-gate         = pending n8n-validation
+```
+
+No new design/security decision is required at this observation point. Do not introduce further code churn unless this exact-head run produces a concrete terminal failure requiring remediation.
 
 ---
 
