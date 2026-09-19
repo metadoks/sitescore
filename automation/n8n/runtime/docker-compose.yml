@@ -1,0 +1,29 @@
+services:
+  n8n:
+    image: n8nio/n8n:2.33.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?required}
+      N8N_HOST: ${N8N_HOST:-0.0.0.0}
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:?required}
+      N8N_USE_WORKFLOW_PUBLICATION_SERVICE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      EXECUTIONS_DATA_SAVE_ON_ERROR: "none"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: "none"
+      COMMERCE_N8N_INGRESS_SECRET: ${COMMERCE_N8N_INGRESS_SECRET:?required}
+      COMMERCE_AUTOMATION_API_KEY: ${COMMERCE_AUTOMATION_API_KEY:?required}
+      SITESCORE_COMMERCE_AUTOMATION_BASE_URL: ${SITESCORE_COMMERCE_AUTOMATION_BASE_URL:?required}
+      SITESCORE_N8N_POLL_SECONDS: ${SITESCORE_N8N_POLL_SECONDS:-15}
+      SITESCORE_N8N_MAX_POLLS: ${SITESCORE_N8N_MAX_POLLS:-60}
+    volumes:
+      - sitescore_n8n_data:/home/node/.n8n
+
+volumes:
+  sitescore_n8n_data:

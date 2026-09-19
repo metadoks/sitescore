@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitescore-commerce"
+version = "0.6.0"
+description = "SiteScore commerce, payment, fulfillment, delivery, recovery, reconciliation, and orchestration authority"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.140.0",
+  "pydantic==2.13.4",
+  "SQLAlchemy==2.0.51",
+  "alembic==1.18.5",
+  "psycopg[binary]==3.3.4",
+  "stripe==15.4.0",
+  "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest==8.4.2",
+]
+
+[project.scripts]
+sitescore-commerce-dispatch-paid-outbox = "sitescore_commerce.dispatcher:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.setuptools.packages.find]
+where = ["src"]

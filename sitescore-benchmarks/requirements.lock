@@ -1,0 +1,3 @@
+sitescore-spatial==0.1.0
+sitescore-metrics==0.1.0
+# No new direct third-party dependency. Shapely/pyproj remain transitive through locked SiteScore packages.
