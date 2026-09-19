@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLICATION_CORRECTIVE_REQUIRED
-IMPLEMENTER_ACTION: APPLY_SINGLE_BOUNDED_PUBLISH_WORKFLOW_PARITY_CORRECTIVE_THEN_RETURN_READY_FOR_REVIEW
+REVIEWER_STATE: POST_LOCK_PUBLISH_POLICY_PARITY_CORRECTIVE_REQUIRED
+IMPLEMENTER_ACTION: APPLY_SINGLE_PUBLISH_POLICY_PARITY_CORRECTIVE_AND_COMPLETE_7_1_ONLY
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 
@@ -411,6 +411,83 @@ FAZ_7_2_STARTED = NO
 ```
 
 No FAZ 7.2 work is authorized in this chat.
+
+---
+
+## POST-LOCK PUBLISH CORRECTIVE — EXACT SCOPE
+
+Post-LOCK publish run `35465322918` completed with **FAILURE** at exactly one step:
+
+```text
+Generate application SBOM and enforce vulnerability policy on published digests
+API_VULNERABILITY_BLOCKERS=1
+BLOCKER ('CVE-2026-82049','HIGH','python','3.11.16',['3.14.0b1'])
+exit code = 42
+```
+
+All preceding publication operations passed, including exact-main checkout, GHCR authentication, application image publication, frozen n8n rebuild/validation/publication, and published digest resolution.
+
+Reviewer determination:
+
+```text
+NEW_SECURITY_BLOCKER = NO
+DESIGN_DECISION_REQUIRED = NO
+THRESHOLD_WEAKENING = NO
+ROOT_CAUSE = POST_LOCK_PUBLISH_POLICY_PARITY_DEFECT
+```
+
+The exact same raw finding is already independently reviewed and accepted in the permanent PR CI under:
+
+```text
+CVE-2026-82049
+package = python
+version = 3.11.16
+severity = HIGH
+classification =
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+Permanent PR CI already requires:
+- exact id/package/version match,
+- CISA KEV check first,
+- reachability containment evidence,
+- exact residual count,
+- all other CRITICAL and actionable HIGH findings remain blockers.
+
+The publish workflow currently uses an older generic rule:
+
+```text
+CRITICAL => blocker
+HIGH with any scanner fix version => blocker
+```
+
+and therefore incorrectly interprets Grype's unrelated `3.14.0b1` fix suggestion as an actionable Python 3.11-series fix.
+
+Authorized corrective is **only**:
+
+1. modify `.github/workflows/faz7-publish-images.yml` application published-digest scan policy so the exact CVE-2026-82049 / python / 3.11.16 residual receives the same classification and constraints as `.github/workflows/faz7-container-ci.yml`;
+2. retain CISA KEV-first blocking semantics;
+3. retain all other CRITICAL and actionable HIGH blocking semantics;
+4. do not add generic ignores, scanner suppression, SiteScore VEX, wildcard Python exceptions, dependency upgrades, image/base changes, or product semantic changes;
+5. ensure both API and Commerce published-digest scans require the exact residual once and zero other blockers;
+6. rerun through protected-main PR/merge governance;
+7. after merge, require `faz7-publish-images` SUCCESS including n8n published-image identity, SBOM, provenance, Cosign signatures/attestations, and immutable publication evidence.
+
+Current already-published application digests from failed run:
+
+```text
+API = sha256:389ab3e3ad0b8b5a8ece0136f75f5505cbb2164b589f2e4030455cd955ca9243
+Commerce = sha256:204b9fcf4658c8a54c967ecceee37aea2ca92da0042ef263934fb72a7112420e
+```
+
+No FAZ 7.2 work is authorized. This is a FAZ 7.1 post-LOCK corrective only.
+
+```text
+OPS71-PUBLISH-POLICY-001: MECHANICAL_POLICY_PARITY_CORRECTIVE_REQUIRED
+FAZ_7_1_LOCKED_VERIFIED: NO
+FAZ_7_2_STARTED: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+```
 
 ---
 
