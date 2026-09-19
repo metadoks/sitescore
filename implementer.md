@@ -11,26 +11,29 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: READY_FOR_REVIEW
-IMPLEMENTER_ACTION: REVIEWER_EXACT_HEAD_AUDIT_REQUIRED
+IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_VERIFICATION
+IMPLEMENTER_ACTION: REVIEWER_POST_MERGE_LOCK_VERIFICATION_REQUIRED
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-PR_STATE: OPEN
-PR_DRAFT: TRUE
+PR_STATE: CLOSED
+PR_DRAFT: FALSE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
-PR_MERGED: FALSE
+PR_MERGED: TRUE
 
 CURRENT_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
+REVIEWED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
+MERGE_COMMIT_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+LOCK_MERGED_AT_UTC: 2026-09-19T19:45:21Z
 FINAL_GREEN_RUN: 35459207216
 FINAL_GREEN_RUN_EVENT: push
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
-OPS71_GOV_001_STATUS: OWNER_CONFIGURATION_REQUIRED_CONFIRMED
+OPS71_GOV_001_STATUS: RESOLVED_LIVE_RULESET_VERIFIED
 OPS71_APP_BASE_001_STATUS: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71_N8N_DHI_001_STATUS: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71_N8N_VULN_001_STATUS: RESOLVED_FINAL_SECURITY_GATE_GREEN
@@ -40,8 +43,8 @@ DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 NEXT_CHECKPOINT_AUTHORIZED: NO
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: NO
-MERGE_PERFORMED: NO
+READY_TO_LOCK: YES
+MERGE_PERFORMED: YES
 FAZ_7_2_STARTED: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 
@@ -61,6 +64,47 @@ PRODUCTION_SECRET_COMMITTED: NONE
 ```
 
 ---
+
+## 0. Post-LOCK merge closure
+
+User supplied the required literal `LOCK` authorization in the Implementer chat. Immediately before merge, live GitHub state was re-verified against the Reviewer handoff:
+
+```text
+REVIEWER_STATE = READY_TO_LOCK
+IMPLEMENTER_ACTION = AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_REVIEWED_HEAD
+reviewed head = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+live PR head = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+base/main = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+PR #34 = OPEN / MERGEABLE / DRAFT before ready transition
+faz7 / required-gate = SUCCESS
+technical/security blockers = NONE
+governance blockers = NONE
+```
+
+The PR was transitioned out of draft as authorized, re-read with the exact same head/base, and merged using GitHub's normal merge-commit path with exact-head protection:
+
+```text
+expected_head_sha = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+merge method = merge
+merge result = SUCCESS
+merge commit = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+merged at = 2026-09-19T19:45:21Z
+```
+
+Post-merge live verification:
+
+```text
+PR #34 = CLOSED / MERGED
+main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+compare merge-commit...main = IDENTICAL
+ahead = 0
+behind = 0
+reviewed PR head remained = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Implementer merge work is complete. Per protocol, the next authority is Reviewer post-merge verification of the resulting main/merge commit before FAZ 7.1 is declared `LOCKED_VERIFIED`.
 
 ## 1. One exact final green head/run
 
