@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: TECHNICAL_READY_GOVERNANCE_PARTIALLY_VERIFIED_BRANCH_PROTECTION_READBACK_REQUIRED
-IMPLEMENTER_ACTION: NO_CODE_CHANGE_AWAIT_BRANCH_PROTECTION_EVIDENCE_ONLY
+REVIEWER_STATE: READY_TO_LOCK
+IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_REVIEWED_HEAD
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -40,14 +40,14 @@ OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71-N8N-VULN-001: RESOLVED_FINAL_SECURITY_GATE_GREEN
-OPS71-GOV-001: OWNER_REPORTS_CONFIGURED_MERGE_SETTINGS_VERIFIED_BRANCH_PROTECTION_READBACK_REQUIRED
+OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 TECHNICAL_READY_FOR_LOCK_GATE: YES
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: NO
+READY_TO_LOCK: YES
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -55,39 +55,60 @@ PUBLIC_LAUNCH_AUTHORIZED: NO
 
 ---
 
-## 0. Governance verification update
+## 0. Final governance verification — PASS
 
-Owner reports the authorized GitHub governance configuration has been applied.
-Reviewer live repository readback now confirms:
+Reviewer live-read the GitHub branch and repository rules after owner configuration.
 
 ```text
+main protected = TRUE
+protection enabled = TRUE
+active repository ruleset = main
+ruleset id = 23707380
+target = refs/heads/main
+enforcement = active
+
+pull request required = TRUE
+required approving review count = 0
+required status check = required-gate
+GitHub UI/check identity = faz7 / required-gate
+strict required status checks = TRUE
+
+deletion rule = ACTIVE / BLOCKED
+non-fast-forward rule = ACTIVE / FORCE PUSH BLOCKED
+bypass actors = []
+current_user_can_bypass = never
+
 allow_merge_commit = TRUE
 allow_squash_merge = FALSE
 allow_rebase_merge = FALSE
 allow_auto_merge = FALSE
 ```
 
-PR #34 exact head remains:
+The ruleset's pull-request rule advertises merge/squash/rebase method capability, but repository-level settings disable squash and rebase, so the effective allowed repository merge path is merge commit only.
+
+Exact reviewed PR state remains:
 
 ```text
-f54e3c25a0aca26782b94bb427a14744c6b6fa14
-OPEN / DRAFT / MERGEABLE / UNMERGED
+PR #34 = OPEN / DRAFT / MERGEABLE / UNMERGED
+reviewed head = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+main = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+faz7 / required-gate = SUCCESS
+technical/security blockers = NONE
+governance blockers = NONE
 ```
 
-The currently available GitHub connector does not expose a branch-protection/ruleset read endpoint, so Reviewer cannot independently read back the remaining branch rule fields from the connected API in this chat. Therefore READY_TO_LOCK is not issued yet solely because the following must still be evidenced directly from GitHub UI/readback:
+Reviewer decision:
 
 ```text
-main protected = TRUE
-pull request required = TRUE
-required check = faz7 / required-gate
-strict/up-to-date = TRUE
-force pushes blocked
-deletions blocked
-bypass/admin disabled where supported
+OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
+READY_TO_LOCK: YES
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: NO
+MERGE: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
 ```
 
-No code change, CI rerun, security reopen, or Implementer work is required.
-
+The Implementer must not change the reviewed head before merge. After the user sends literal `LOCK` in the Implementer chat, the Implementer may transition PR #34 out of draft if required and perform a normal merge commit for exact head `f54e3c25a0aca26782b94bb427a14744c6b6fa14`. Reviewer will then verify the resulting main SHA/tree/parents before marking FAZ 7.1 LOCKED_VERIFIED.
 ---
 
 ## 1. Independent exact-head Reviewer audit
