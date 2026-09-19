@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLISH_CORRECTIVE_REQUIRED_EXACT_POLICY_PARITY
-IMPLEMENTER_ACTION: APPLY_SINGLE_FILE_PUBLISH_POLICY_PARITY_CORRECTIVE_AND_RERUN_TO_TERMINAL
+REVIEWER_STATE: POST_LOCK_PUBLICATION_CORRECTIVE_REQUIRED
+IMPLEMENTER_ACTION: APPLY_SINGLE_BOUNDED_PUBLISH_WORKFLOW_CORRECTIVE_AND_RETURN_TERMINAL
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 
@@ -163,6 +163,135 @@ publication evidence artifact = PASS
 ```
 
 No further Reviewer round-trip is required for YAML/shell mechanics. Implementer must carry this bounded corrective through PR, CI and merge only after the normal Reviewer lock gate for the corrective exact head. FAZ 7.2 remains prohibited in this chat.
+
+---
+
+## POST-LOCK PUBLICATION CORRECTIVE — AUTHORIZED
+
+Post-LOCK publication run:
+
+```text
+run = 35465322918
+main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+status = COMPLETED
+conclusion = FAILURE
+```
+
+Successful before failure:
+
+```text
+exact main checkout = PASS
+GHCR auth = PASS
+application image build/push = PASS
+frozen n8n rebuild/validation/push = PASS
+published digest resolution = PASS
+```
+
+First failing step:
+
+```text
+Generate application SBOM and enforce vulnerability policy on published digests
+API_VULNERABILITY_BLOCKERS=1
+BLOCKER = CVE-2026-82049 / HIGH / python 3.11.16 / scanner fix hint 3.14.0b1
+exit = 42
+```
+
+This is not a newly discovered product/security blocker. Exact
+`CVE-2026-82049` for CPython 3.11.16 was already independently reviewed on
+the exact PR head and accepted only under:
+
+```text
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+with raw scanner visibility, CISA KEV=0, and zero tar/tar.gz extraction or
+public archive-ingress reachability. The permanent PR gate contains this exact
+bounded classification, while the post-LOCK publish workflow still uses the
+older generic HIGH-with-any-fix-hint predicate. Therefore publication policy
+drift caused the failure.
+
+A complete publication-workflow audit also identified two stale n8n publication
+inputs that must be corrected in the same single corrective, to avoid another
+partial round trip:
+
+```text
+1. publish setup-node/test currently = 26.5.1
+   frozen reviewed n8n host Node = 26.7.0
+
+2. publish workflow has no fail-closed dhi.io login step
+   permanent frozen DHI credential contract requires:
+     DHI_USERNAME
+     DHI_TOKEN
+     docker login dhi.io --password-stdin
+```
+
+### Exact authorized corrective scope
+
+Create one corrective PR from current protected main and change only the
+minimum publication/governance-support files required to make
+`.github/workflows/faz7-publish-images.yml` consistent with the already
+reviewed FAZ 7.1 contracts.
+
+Required behavior:
+
+```text
+A. application published-digest security gate:
+   - keep raw Syft/Grype evidence
+   - keep CISA KEV reconciliation
+   - accept only exact CVE-2026-82049 on python 3.11.16
+   - only under the already-reviewed residual-risk record
+   - repeat/prove the same unreachable archive-extraction/public-ingress containment
+   - require exactly one authorized residual per application image as applicable
+   - any other CRITICAL or actionable HIGH remains blocking
+   - no generic waiver, no blanket ignore, no SiteScore-authored VEX
+
+B. n8n publication host toolchain:
+   - setup/test Node = 26.7.0
+   - N8N_VERSION/source commit/source tree/build/runtime digests unchanged
+
+C. DHI publication auth:
+   - fail closed on missing DHI_USERNAME or DHI_TOKEN
+   - docker login dhi.io using --password-stdin
+   - minimum/read-only credential use
+   - logout on always()
+   - no secret printing, commit, artifact, or anonymous fallback
+
+D. retain:
+   - exact main-source publication semantics
+   - linux/amd64
+   - immutable sha-<main SHA> tags/digests
+   - n8n local-validated image ID == published pulled image ID proof
+   - SBOM + provenance + keyless Cosign signing/attestation
+   - evidence artifact upload
+```
+
+Forbidden:
+
+```text
+application/business source change
+frozen n8n workflow JSON change
+n8n candidate/version/source-tree change
+security-threshold weakening
+new residual exception
+scanner suppression
+generic CVE ignore
+production deployment/IaC
+FAZ 7.2 work
+direct unprotected main write
+```
+
+Because `main` is protected, this must use a dedicated corrective branch/PR.
+The corrective PR must pass the existing `faz7 / required-gate` under the
+current governance rule before merge. User LOCK remains required for that
+corrective merge if the protocol treats it as a new protected-main merge.
+
+After corrective merge, the resulting main-triggered
+`faz7-publish-images` run must reach SUCCESS and provide exact API, Commerce
+and n8n digests plus publication evidence. Reviewer will then verify
+main/tree/parents, ruleset, published digest evidence and mark FAZ 7.1
+`LOCKED_VERIFIED`.
+
+No 7.2 work is authorized in this chat.
 
 ---
 
