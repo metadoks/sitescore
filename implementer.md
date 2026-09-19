@@ -11,8 +11,8 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: LOCK_MERGED_AWAITING_REVIEWER_VERIFICATION
-IMPLEMENTER_ACTION: REVIEWER_POST_MERGE_LOCK_VERIFICATION_REQUIRED
+IMPLEMENTER_STATE: POST_LOCK_CORRECTIVE_READY_FOR_REVIEW
+IMPLEMENTER_ACTION: REVIEWER_CORRECTIVE_EXACT_HEAD_AUDIT_REQUIRED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 
@@ -31,6 +31,25 @@ MERGE_COMMIT_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
 LOCK_MERGED_AT_UTC: 2026-09-19T19:45:21Z
 FINAL_GREEN_RUN: 35459207216
 FINAL_GREEN_RUN_EVENT: push
+
+CORRECTIVE_BASE_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+CORRECTIVE_BRANCH: faz7/7-1-publish-policy-parity-corrective
+CORRECTIVE_PR: #35
+CORRECTIVE_PR_STATE: OPEN
+CORRECTIVE_PR_DRAFT: FALSE
+CORRECTIVE_PR_MERGEABLE: TRUE
+CORRECTIVE_PR_MERGED: FALSE
+CORRECTIVE_HEAD_SHA: e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+CORRECTIVE_FINAL_GREEN_RUN: 35470194681
+CORRECTIVE_REQUIRED_GATE_JOB: 105974318886
+CORRECTIVE_APPLICATION_ARTIFACT_ID: 10592383117
+CORRECTIVE_N8N_ARTIFACT_ID: 10593570006
+CORRECTIVE_CHANGED_FILES: 1
+CORRECTIVE_POLICY_PARITY: EXACT_SEMANTIC_MATCH
+CORRECTIVE_READY_FOR_REVIEW: YES
+CORRECTIVE_READY_TO_LOCK: NO
+CORRECTIVE_USER_LOCK_AUTHORIZED: NO
+CORRECTIVE_MERGE_PERFORMED: NO
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
 OPS71_GOV_001_STATUS: RESOLVED_LIVE_RULESET_VERIFIED
@@ -512,3 +531,88 @@ merge performed = NO
 ```
 
 Only the new exact head/run may be reviewed for corrective LOCK.
+
+
+---
+
+## POST-LOCK CORRECTIVE — AUTHORITATIVE TERMINAL IMPLEMENTER HANDOFF
+
+The bounded publish-policy corrective is complete on one exact authoritative head. The earlier first corrective head/run remains superseded and is not review authority.
+
+```text
+base main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+branch = faz7/7-1-publish-policy-parity-corrective
+PR = #35
+PR state = OPEN / READY / MERGEABLE / UNMERGED
+exact corrective head = e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+commits = 2
+changed files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+```
+
+Scope proof:
+
+```text
+application/business source change = NONE
+Dockerfile/base/dependency change = NONE
+n8n identity change = NONE
+frozen n8n workflow JSON change = NONE
+scanner suppression = NONE
+blanket CVE ignore = NONE
+SiteScore-authored VEX = NONE
+security threshold weakening = NONE
+FAZ 7.2 work = NONE
+```
+
+Exact policy parity self-review:
+
+```text
+publish reachability policy == frozen container CI policy = TRUE
+publish scanner policy == frozen container CI policy = TRUE
+only intentional path delta = evidence directory application-images -> publish
+CVE-2026-82049 exact Python 3.11.16 residual policy preserved
+CISA KEV reconciliation preserved
+archive-extraction reachability proof preserved
+public tar/tar.gz ingress proof preserved
+raw Grype evidence preserved
+all other CRITICAL or HIGH-with-fix remains blocking
+```
+
+Authoritative terminal PR CI:
+
+```text
+run = 35470194681
+source-boundary       = SUCCESS  job 105969628018
+static-contracts      = SUCCESS  job 105969628009
+faz6-commerce-replay  = SUCCESS  job 105969627890
+container-validation = SUCCESS  job 105969628033
+n8n-validation        = SUCCESS  job 105969627988
+required-gate         = SUCCESS  job 105974318886
+```
+
+Exact-head artifacts:
+
+```text
+application evidence artifact id = 10592383117
+application artifact name = faz7-application-image-evidence-e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+n8n evidence artifact id = 10593570006
+n8n artifact name = faz7-n8n-final-evidence-e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+```
+
+Implementer terminal decision:
+
+```text
+IMPLEMENTER_STATE = POST_LOCK_CORRECTIVE_READY_FOR_REVIEW
+CORRECTIVE_EXACT_HEAD = e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+CORRECTIVE_REQUIRED_GATE = SUCCESS
+CORRECTIVE_TECHNICAL_BLOCKERS = NONE
+CORRECTIVE_SCOPE_DRIFT = NONE
+CORRECTIVE_READY_FOR_REVIEW = YES
+CORRECTIVE_READY_TO_LOCK = NO  # Reviewer authority required
+CORRECTIVE_USER_LOCK_AUTHORIZED = NO
+CORRECTIVE_MERGE = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+**Implementer corrective work is complete.** Reviewer must independently audit exact head `e1597f77bcc8a65e2e00e9c5573e028cdbee337b`, PR #35, terminal run `35470194681`, single-file scope, and exact policy parity. Only Reviewer may advance this corrective to `READY_TO_LOCK`. No further Implementer code change is authorized unless Reviewer reopens the corrective.
