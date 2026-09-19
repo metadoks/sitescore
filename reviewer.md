@@ -12,10 +12,10 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLISH_POLICY_PARITY_REMEDIATION_AUTHORIZED
-IMPLEMENTER_ACTION: APPLY_EXACT_PUBLISH_POLICY_PARITY_FIX_THEN_COMPLETE_POST_LOCK_PUBLICATION
+REVIEWER_STATE: POST_LOCK_PUBLICATION_CORRECTIVE_REQUIRED
+IMPLEMENTER_ACTION: CREATE_BOUNDED_7_1_PUBLICATION_CORRECTIVE_PR_FROM_CURRENT_MAIN_AND_COMPLETE_TO_READY_FOR_REVIEW
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: YES
+USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
@@ -1021,6 +1021,199 @@ READY_FOR_REVIEW: YES
 READY_TO_LOCK: NO
 USER_LOCK_AUTHORIZED: NO
 MERGE: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
+```
+
+
+---
+
+## POST-LOCK PUBLICATION CORRECTIVE — AUTHORITATIVE REVIEWER DECISION
+
+The first post-LOCK publication run is terminal and failed:
+
+```text
+workflow = faz7-publish-images
+run = 35465322918
+head/main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+status = COMPLETED
+conclusion = FAILURE
+failed step = Generate application SBOM and enforce vulnerability policy on published digests
+```
+
+Everything before that point passed:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validation = PASS
+n8n frozen runtime/security gate = PASS
+n8n workflow/runtime/recovery proofs = PASS
+published digest resolution = PASS
+```
+
+Resolved partial published digests from the failed run:
+
+```text
+API = sha256:389ab3e3ad0b8b5a8ece0136f75f5505cbb2164b589f2e4030455cd955ca9243
+Commerce = sha256:204b9fcf4658c8a54c967ecceee37aea2ca92da0042ef263934fb72a7112420e
+n8n registry manifest = sha256:64281333061b995883e2877aa07057c3a3b66575017810705a67a9d9e85be28e
+n8n validated local image identity = sha256:095a63519813b5fea1f742fc41e13635c93e727a9684459eee456141100a5db7
+```
+
+These sha-3abbbd97... package versions are PARTIAL / NON-AUTHORITATIVE because the publication workflow did not reach published-image SBOM completion, provenance, Cosign signing/attestation, or immutable evidence upload. They MUST NOT be used as FAZ 7.2 deployment inputs.
+
+### Root cause — publication policy drift, not a new vulnerability
+
+The failed published API image reports exactly:
+
+```text
+CVE-2026-82049
+severity = HIGH
+package = python
+version = 3.11.16
+fix versions reported by Grype = [3.14.0b1]
+```
+
+This is the exact application residual already independently reviewed and accepted on the final PR head as:
+
+```text
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+Permanent PR CI already proves, for both API and Commerce:
+
+```text
+CISA KEV = 0
+exact CVE-2026-82049 residual present once
+source tar/tar.gz extraction paths = NONE
+runtime extraction paths = NONE
+public tar ingress tokens = NONE
+all other policy blockers = 0
+```
+
+The publish workflow still contains the older generic rule:
+
+```text
+CRITICAL => block
+HIGH + any fix version => block
+```
+
+and therefore incorrectly re-blocks the already-authorized exact residual merely because Grype lists the unrelated Python 3.14.0b1 beta as a fix.
+
+This is a deterministic policy-alignment defect in the publication workflow. It is NOT:
+- a newly disclosed vulnerability,
+- a new reachable security condition,
+- a contract/design change,
+- authority to weaken the scanner,
+- authority for a blanket CVE ignore.
+
+A second publication drift is also present:
+
+```text
+publish host setup = Node 26.5.1
+final frozen n8n builder/runtime family = Node 26.7.0
+```
+
+The first publication run's n8n rebuild still passed, but the host setup is stale and must be aligned in the same corrective to avoid carrying contradictory release evidence.
+
+### Bounded corrective authorization
+
+Create a new FAZ 7.1 corrective branch/PR from exact current main:
+
+```text
+base main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+allowed permanent file change =
+.github/workflows/faz7-publish-images.yml
+```
+
+No other permanent path is authorized.
+
+Required corrective changes:
+
+1. Align publication host Node setup and explicit version assertion from 26.5.1 to exact 26.7.0.
+
+2. Replace the published API/Commerce generic vulnerability classifier with the SAME exact application security policy already accepted in permanent container-validation:
+   - keep raw Syft SPDX + raw Grype evidence,
+   - fetch/check current CISA KEV,
+   - require the committed residual-risk record and immutable Trixie base identity,
+   - re-run the source/runtime/public-ingress reachability containment proof,
+   - permit only exact `CVE-2026-82049 / HIGH / python / 3.11.16` under classification `REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX`,
+   - require that exact residual exactly once for each API and Commerce image,
+   - block any KEV match,
+   - block every CRITICAL,
+   - block every other fixable HIGH,
+   - emit published-image security summary evidence.
+
+3. Do NOT alter:
+   - application/business source,
+   - Python/base-image identity,
+   - frozen n8n 2.37.10 source commit/tree,
+   - n8n workflow JSON bytes,
+   - n8n hardening/pruning logic,
+   - vulnerability thresholds beyond the already-authorized exact residual,
+   - Cosign/SBOM/provenance design,
+   - GitHub governance/ruleset,
+   - cloud/IaC/deployment state.
+
+4. Keep permanent Actions dependencies full-SHA pinned.
+
+### Corrective acceptance / terminal closure
+
+Implementer must complete the corrective PR to one terminal handoff:
+
+```text
+changed permanent files = exactly .github/workflows/faz7-publish-images.yml
+faz7 / required-gate on corrective PR exact head = PASS
+source-boundary = PASS
+static-contracts = PASS
+container-validation = PASS
+n8n-validation = PASS
+FAZ6 replay = PASS
+frozen app/workflow source diff = NONE
+security threshold weakening = NONE
+```
+
+Then Reviewer independently audits the exact corrective head.
+
+Because the previous literal LOCK was consumed by PR #34, a NEW literal user `LOCK` is required before the corrective PR may merge.
+
+After corrective merge, the automatically triggered `faz7-publish-images` run on the new main must reach:
+
+```text
+application publish = PASS
+n8n rebuild/validate/publish = PASS
+digest resolution = PASS
+published application SBOM/security policy = PASS
+published n8n exact-image/SBOM proof = PASS
+provenance = PASS
+Cosign signatures = PASS
+SBOM attestations = PASS
+provenance attestations = PASS
+immutable publication evidence artifact = PASS
+overall workflow = SUCCESS
+```
+
+Only then Reviewer will record:
+
+```text
+FAZ_7_1_STATUS: LOCKED_VERIFIED
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+```
+
+FAZ 7.2 remains explicitly out of scope for this chat and must start only in a new conversation.
+
+Control state:
+
+```text
+OPS71-PUBLISH-001: BOUNDED_POST_LOCK_CORRECTIVE_REQUIRED
+CONTRACT_CHANGE_REQUIRED: 0
+DESIGN_DECISION_REVIEW_REQUIRED: 0
+SECURITY_REOPEN_REQUIRED: 0
+READY_TO_LOCK: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
 FAZ_7_2_STARTED: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
