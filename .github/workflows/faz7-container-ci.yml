@@ -476,10 +476,10 @@ jobs:
           docker system prune -af || true
           df -h /
 
-      - name: Setup exact Node 26.5.1
+      - name: Setup exact Node 26.7.0
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          node-version: '26.5.1'
+          node-version: '26.7.0'
 
       - name: Authenticate frozen DHI runtime registry
         env:
@@ -496,7 +496,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test "$(node --version)" = v26.5.1
+          test "$(node --version)" = v26.7.0
           set -a
           . deploy/containers/n8n-image.lock
           set +a

@@ -40,7 +40,7 @@ with urllib.request.urlopen(req, timeout=30) as r:
     rel=json.load(r)
 if rel.get('tag_name') != tag or rel.get('draft') or rel.get('prerelease'):
     raise SystemExit(f'exact frozen n8n release metadata invalid: {rel.get("tag_name")}')
-ctx={'selected_version':os.environ['N8N_VERSION'],'release_id':rel['id'],'tag':rel['tag_name'],'published_at':rel.get('published_at'),'cutoff_date':os.environ['N8N_CUTOFF_DATE'],'source_commit':os.environ['N8N_SOURCE_COMMIT'],'source_tree':os.environ['N8N_SOURCE_TREE'],'official_image':os.environ['N8N_OFFICIAL_IMAGE'],'official_amd64_digest':os.environ['N8N_OFFICIAL_AMD64_DIGEST'],'dhi_ref':os.environ['N8N_DHI_RUNTIME_BASE'],'builder_image':os.environ['N8N_BUILDER_IMAGE']}
+ctx={'selected_version':os.environ['N8N_VERSION'],'release_id':rel['id'],'tag':rel['tag_name'],'published_at':rel.get('published_at'),'cutoff_date':os.environ['N8N_CUTOFF_DATE'],'source_commit':os.environ['N8N_SOURCE_COMMIT'],'source_tree':os.environ['N8N_SOURCE_TREE'],'official_image':os.environ['N8N_OFFICIAL_IMAGE'],'official_amd64_digest':os.environ['N8N_OFFICIAL_AMD64_DIGEST'],'dhi_ref':os.environ['N8N_DHI_RUNTIME_BASE'],'builder_image':os.environ['N8N_BUILDER_IMAGE'],'security_base_upstream_ref':os.environ['N8N_SECURITY_BASE_UPSTREAM_REF'],'upstream_runtime_reference':os.environ['N8N_UPSTREAM_RUNTIME_REFERENCE']}
 json.dump(ctx,open(os.path.join(out,'source-context.json'),'w'),indent=2,sort_keys=True)
 print(json.dumps(ctx,indent=2,sort_keys=True))
 PY
@@ -57,11 +57,23 @@ test "$(git -C "$SRC" rev-parse HEAD^{tree})" = "$N8N_SOURCE_TREE"
 cp "$SRC/docker/images/n8n/Dockerfile" "$OUT/upstream-n8n-Dockerfile"
 cp "$SRC/docker/images/n8n-base/Dockerfile" "$OUT/upstream-n8n-base-Dockerfile"
 cp "$SRC/.github/workflows/build-base-image.yml" "$OUT/upstream-build-base-image.yml"
-grep -F "$N8N_BUILDER_IMAGE" "$SRC/docker/images/n8n/Dockerfile"
-grep -F "$N8N_DHI_RUNTIME_BASE" "$SRC/.github/workflows/build-base-image.yml"
+grep -F 'ARG BUILDER_IMAGE=node:26.5.1-alpine3.24@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36' "$SRC/docker/images/n8n/Dockerfile"
+grep -F 'dhi.io/node:26.5.1-alpine3.24-dev@sha256:c4062f85acd1ca91ffb7d15048dcc5f15a922d630e65eb3c3c0dcdcef6ea36d8' "$SRC/.github/workflows/build-base-image.yml"
 grep -F 'fast-uri: 3.1.5' "$SRC/pnpm-workspace.yaml"
 grep -F 'ip-address@10: 10.3.1' "$SRC/pnpm-workspace.yaml"
 grep -F 'brace-expansion@5: 5.0.9' "$SRC/pnpm-workspace.yaml"
+
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_SECURITY_BASE_UPSTREAM_REF}/docker/images/n8n/Dockerfile" -o "$OUT/upstream-security-n8n-Dockerfile"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_SECURITY_BASE_UPSTREAM_REF}/.github/workflows/build-base-image.yml" -o "$OUT/upstream-security-build-base-image.yml"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_SECURITY_BASE_UPSTREAM_REF}/pnpm-workspace.yaml" -o "$OUT/upstream-security-pnpm-workspace.yaml"
+grep -F "$N8N_BUILDER_IMAGE" "$OUT/upstream-security-n8n-Dockerfile"
+grep -F "$N8N_UPSTREAM_RUNTIME_REFERENCE" "$OUT/upstream-security-n8n-Dockerfile"
+grep -F "$N8N_DHI_RUNTIME_BASE" "$OUT/upstream-security-build-base-image.yml"
+grep -F 'fast-uri: 3.1.6' "$OUT/upstream-security-pnpm-workspace.yaml"
+grep -F 'ip-address@10: 10.3.1' "$OUT/upstream-security-pnpm-workspace.yaml"
+grep -F 'brace-expansion@5: 5.0.9' "$OUT/upstream-security-pnpm-workspace.yaml"
+grep -F 'js-yaml: 4.3.2' "$OUT/upstream-security-pnpm-workspace.yaml"
+grep -F 'multer: ^2.3.0' "$OUT/upstream-security-pnpm-workspace.yaml"
 
 pushd "$SRC" >/dev/null
 cp pnpm-workspace.yaml "$OUT/pnpm-workspace.stable.yaml"
@@ -138,7 +150,7 @@ docker rm "$eid" >/dev/null
 docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
 docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'cat /lib/apk/db/installed' > "$OUT/final-installed.raw"
 test "$(docker image inspect "$N8N_HARDENED_BASE_IMAGE" --format '{{.Architecture}}')" = amd64
-test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --version')" = v26.5.1
+test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --version')" = v26.7.0
 ! docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'command -v apk >/dev/null'
 python - <<'PY'
 import os
