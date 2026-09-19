@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: TECHNICAL_READY_OWNER_GOVERNANCE_REQUIRED
-IMPLEMENTER_ACTION: NO_CODE_CHANGE_OWNER_GOVERNANCE_ONLY
+REVIEWER_STATE: TECHNICAL_READY_GOVERNANCE_PARTIALLY_VERIFIED_BRANCH_PROTECTION_READBACK_REQUIRED
+IMPLEMENTER_ACTION: NO_CODE_CHANGE_AWAIT_BRANCH_PROTECTION_EVIDENCE_ONLY
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -40,7 +40,7 @@ OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71-N8N-VULN-001: RESOLVED_FINAL_SECURITY_GATE_GREEN
-OPS71-GOV-001: OWNER_CONFIGURATION_REQUIRED_CONFIRMED
+OPS71-GOV-001: OWNER_REPORTS_CONFIGURED_MERGE_SETTINGS_VERIFIED_BRANCH_PROTECTION_READBACK_REQUIRED
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -52,6 +52,41 @@ NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## 0. Governance verification update
+
+Owner reports the authorized GitHub governance configuration has been applied.
+Reviewer live repository readback now confirms:
+
+```text
+allow_merge_commit = TRUE
+allow_squash_merge = FALSE
+allow_rebase_merge = FALSE
+allow_auto_merge = FALSE
+```
+
+PR #34 exact head remains:
+
+```text
+f54e3c25a0aca26782b94bb427a14744c6b6fa14
+OPEN / DRAFT / MERGEABLE / UNMERGED
+```
+
+The currently available GitHub connector does not expose a branch-protection/ruleset read endpoint, so Reviewer cannot independently read back the remaining branch rule fields from the connected API in this chat. Therefore READY_TO_LOCK is not issued yet solely because the following must still be evidenced directly from GitHub UI/readback:
+
+```text
+main protected = TRUE
+pull request required = TRUE
+required check = faz7 / required-gate
+strict/up-to-date = TRUE
+force pushes blocked
+deletions blocked
+bypass/admin disabled where supported
+```
+
+No code change, CI rerun, security reopen, or Implementer work is required.
 
 ---
 
