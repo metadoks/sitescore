@@ -11,8 +11,8 @@ FILE_OWNER: REVIEWER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-REVIEWER_STATE: BOUNDED_SECURITY_REMEDIATION_REOPEN_AUTHORIZED
-IMPLEMENTER_ACTION: EXECUTE_ONE_CONSOLIDATED_UPSTREAM_ALIGNED_N8N_SECURITY_REMEDIATION_THEN_TERMINAL_CI
+REVIEWER_STATE: FINAL_BOUNDED_SECURITY_CLOSURE_AUTHORIZED
+IMPLEMENTER_ACTION: COMPLETE_ADM_ZIP_PATCH_GIT_CAPABILITY_PRUNE_AND_EXACT_PYTHON_RESIDUAL_THEN_TERMINAL_CI
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,17 +21,17 @@ EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
 EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-OBSERVED_HEAD_SHA: f1420f40de52db19dd947ec67411202ee8c9ab71
+OBSERVED_HEAD_SHA: 9601b9704d743dd5b34fee4ee727698a74d9cab5
 REVIEWED_HEAD_SHA: NONE
-LIVE_FAZ7_RUN: 35403633443
-LIVE_CONTAINER_VALIDATION_JOB: 105788708557
-LIVE_N8N_VALIDATION_JOB: 105788708568
+LIVE_FAZ7_RUN: 35448352107
+LIVE_CONTAINER_VALIDATION_JOB: 105911101555
+LIVE_N8N_VALIDATION_JOB: 105911101243
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-GOV-001: MANUAL_OWNER_CONFIGURATION_AUTHORIZED_PENDING
-OPS71-APP-BASE-001: RESOLVED_GREEN_EXACT_HEAD
+OPS71-APP-BASE-001: EXACT_CVE_RESIDUAL_REACHABILITY_PROOF_AUTHORIZED
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: BOUNDED_SECURITY_REMEDIATION_REOPEN_AUTHORIZED
+OPS71-N8N-VULN-001: FINAL_BOUNDED_SECURITY_CLOSURE_AUTHORIZED
 
 FAZ71_CANDIDATE_CUTOFF_DATE: 2026-09-07
 FAZ71_N8N_CANDIDATE_VERSION: 2.37.10
@@ -50,6 +50,316 @@ READY_TO_LOCK: NO
 ```
 
 
+
+
+---
+
+## 0C. Superseding Reviewer decision — final bounded security closure
+
+### Exact live state
+
+```text
+head = 9601b9704d743dd5b34fee4ee727698a74d9cab5
+run = 35448352107
+
+source-boundary       = PASS
+static-contracts      = PASS
+faz6-commerce-replay  = PASS
+container-validation = FAIL only at application security scan
+n8n-validation        = FAIL only at final two HIGH findings
+required-gate         = FAIL because of the two failed security jobs
+```
+
+Security remediation already achieved:
+
+```text
+n8n CRITICAL: 2 -> 0
+n8n raw HIGH: 25 -> 7
+CISA KEV: 0
+new undispositioned HIGH: 0
+libcurl fixed to 8.22.0-r0
+fast-uri vulnerable finding: 0
+brace-expansion vulnerable finding: 0
+ip-address vulnerable finding: 0
+Snowflake/TOML findings: 0
+```
+
+No moving-latest n8n release rebase is authorized. Frozen n8n remains 2.37.10
+with exact source commit/tree already recorded.
+
+### A. adm-zip GHSA-7q85-xj36-vmfc — PATCH BACKPORT AUTHORIZED
+
+Current graph evidence:
+
+```text
+adm-zip = 0.6.0
+parent path = epub2@3.0.2 -> adm-zip
+advisory = GHSA-7q85-xj36-vmfc / CVE-2026-77301
+fixed version = 0.6.1
+```
+
+The advisory is a HIGH uncontrolled-memory-allocation/DoS issue and upstream
+adm-zip 0.6.1 is the published fixed version.
+
+Implementer is authorized to move ONLY:
+
+```text
+adm-zip 0.6.0 -> 0.6.1
+```
+
+using the existing frozen build-graph override mechanism.
+
+Required evidence:
+
+```text
+pnpm why --prod adm-zip
+direct parent/range or override-compatibility proof
+lock diff limited to adm-zip required closure
+no unrelated version churn
+compiled/runtime adm-zip = 0.6.1
+GHSA-7q85-xj36-vmfc finding = 0
+n8n source commit/tree unchanged
+full export/import/workflow runtime smokes PASS
+```
+
+No epub2 parent-major change and no n8n source patch is authorized.
+
+### B. pcre2 CVE-2026-89161 — REMOVE UNUSED GIT CAPABILITY, DO NOT WAIVE
+
+Evidence from the exact hardened image shows:
+
+```text
+pcre2 10.47-r1 is required by runtime package git
+the final image world contains git
+frozen SiteScore workflows contain no n8n-nodes-base.git
+frozen SiteScore workflows contain no n8n-nodes-base.gitTool
+Alpine 3.24/edge currently exposes pcre2 10.47-r1
+upstream PCRE2 fixes CVE-2026-89161 in 10.48
+```
+
+Therefore the safer bounded resolution is unused-capability pruning rather than
+inventing an Alpine package waiver or importing a foreign/manual library.
+
+Authorized:
+
+```text
+add to NODES_EXCLUDE:
+  n8n-nodes-base.git
+  n8n-nodes-base.gitTool
+
+remove runtime package:
+  git
+
+allow apk dependency cleanup to remove:
+  pcre2
+  git-init-template
+  and only dependencies proven exclusive to removed git capability
+```
+
+Required proof:
+
+```text
+frozen workflows contain neither Git nor Git Tool node
+export:nodes:
+  n8n-nodes-base.git = ABSENT
+  n8n-nodes-base.gitTool = ABSENT
+  httpRequest and all frozen-required nodes remain PRESENT
+
+runtime package inventory:
+  git = ABSENT
+  pcre2 = ABSENT
+  CVE-2026-89161 = ABSENT
+  CVE-2026-89157 = ABSENT
+
+shared_non_git_runtime_removed = []
+or an explicit machine-derived list proving every removed package is
+Git-exclusive and not required by frozen runtime/workflows
+```
+
+After removal, all existing n8n version/import/order/recovery runtime smokes must
+still pass.
+
+Forbidden:
+
+```text
+manual pcre2 library copy
+Alpine edge repository mixing
+third-party package repository
+scanner ignore
+SiteScore-authored VEX
+CVE-2026-89161 residual waiver
+```
+
+If Git capability pruning breaks a frozen workflow/runtime dependency, stop with
+one true blocker; do not silently restore pcre2 as a residual.
+
+### C. Application CVE-2026-82049 — EXACT TEMPORARY RESIDUAL AUTHORIZED
+
+Correction to Implementer handoff wording:
+
+The actual API and Commerce runtime Dockerfiles and immutable base lock are:
+
+```text
+python:3.11.16-slim-trixie
+sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72
+DEBIAN_SUITE=trixie
+```
+
+The workflow-level `PYTHON_IMAGE=python:3.11.16-slim-bookworm...` is a CI
+helper/replay image and is NOT the scanned API/Commerce runtime base.
+
+CVE-2026-82049 concerns CPython `tarfile` extraction filters and crafted tar
+archives involving hard links to symlinks.
+
+Reviewer live repository search against the frozen application source found:
+
+```text
+tarfile = no application-source matches
+extractall = no application-source matches
+shutil.unpack_archive = no application-source matches
+zipfile = used for GTFS ZIP parsing, not tarfile extraction
+```
+
+Python upstream status at this decision point:
+
+```text
+Python 3.11.16 is the current 3.11 security release
+CVE-2026-82049 was disclosed after 3.11.16
+the upstream issue is gh-157190
+main and 3.13 fixes exist
+3.12 backport is still open
+no published fixed 3.11.x release is available
+scanner's 3.14.0b1 suggestion is NOT an acceptable same-series production upgrade
+```
+
+Therefore this ONE application finding may be treated as an exact,
+reachability-constrained residual rather than forcing Python 3.14 beta or
+patching CPython locally.
+
+Authorized residual ID only:
+
+```text
+CVE-2026-82049
+package = CPython 3.11.16
+classification = REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+Implementer must create/update a dedicated application security residual record
+and CI evidence proving:
+
+```text
+raw Grype finding remains visible
+CISA KEV = 0
+runtime application source contains no:
+  import tarfile
+  from tarfile
+  tarfile.extract
+  extractall
+  shutil.unpack_archive
+
+no public API route accepts tar/tar.gz archive extraction
+no runtime smoke invokes tarfile extraction
+API 114 PASS
+report 24 PASS
+Commerce 416 PASS + exactly one authorized deselect
+FAZ6 Commerce replay 417 PASS
+```
+
+Expiry/re-review trigger:
+
+```text
+FIRST OF:
+- a fixed Python 3.11.x security release becomes available
+- CPython merges/publishes a 3.11 backport suitable for the official runtime
+- application introduces any tar/tar.gz ingestion/extraction path
+- before PUBLIC_LAUNCH authorization
+```
+
+At that trigger this residual automatically reopens; it is not a permanent
+waiver.
+
+Forbidden:
+
+```text
+Python 3.14 beta migration
+local CPython source patch in this checkpoint
+scanner suppression/ignore
+generic Python-HIGH waiver
+SiteScore-authored VEX
+```
+
+### D. Existing exact n8n residual set remains bounded
+
+The previously authorized exact residuals remain permitted only with their
+existing containment/evidence:
+
+```text
+nodemailer:
+  GHSA-p6gq-j5cr-w38f
+  GHSA-2x7j-588g-ccc2
+
+@tiptap/core:
+  GHSA-j95f-988m-3j2f
+
+zlib:
+  CVE-2026-85091
+```
+
+pcre2 residuals are expected to DISAPPEAR entirely after Git capability pruning.
+
+No additional HIGH/CRITICAL residual is authorized.
+
+### E. Final exact-head security acceptance
+
+After this one consolidated continuation:
+
+```text
+CISA KEV = 0
+actionable CRITICAL = 0
+actionable/remediable OS HIGH = 0
+adm-zip GHSA-7q85-xj36-vmfc = 0
+pcre2 CVE-2026-89161 = 0
+pcre2 CVE-2026-89157 = 0
+fast-uri/brace-expansion/ip-address/Snowflake/TOML findings = 0
+NEW_UNDISPOSITIONED_HIGH = 0
+
+application residuals:
+  ONLY CVE-2026-82049 under the exact temporary record above
+
+n8n residuals:
+  ONLY the exact previously authorized nodemailer/tiptap/zlib records
+```
+
+All raw scanner reports remain preserved. No threshold weakening.
+
+### F. Anti-loop / next handoff
+
+Implementer is authorized to complete all mechanical consequences of:
+
+```text
+adm-zip 0.6.1 lock regeneration
+Git capability exclusion
+git/pcre2 runtime package pruning
+residual-risk record generation
+CI evidence classification
+artifact formatting
+runtime/static smoke repairs caused only by these exact changes
+```
+
+without another Reviewer round trip.
+
+Next Implementer handoff must be either:
+
+```text
+IMPLEMENTER_STATE: READY_FOR_REVIEW
+```
+
+with one exact final green head/run,
+
+or ONE consolidated true blocker outside the authority above.
+
+Final GitHub owner-governance configuration remains a separate last gate after
+technical required-gate GREEN.
 
 ---
 
