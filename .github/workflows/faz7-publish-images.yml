@@ -122,13 +122,13 @@ jobs:
           roots=[Path(x) for x in ('sitescore-api','sitescore-commerce','sitescore-app','sitescore-core','sitescore-report') if Path(x).exists()]
           runtime_roots=[Path('deploy/containers/runtime')]
           extraction_patterns={
-              'import_tarfile':re.compile(r'(^|\\n)\\s*import\\s+tarfile\\b'),
-              'from_tarfile':re.compile(r'(^|\\n)\\s*from\\s+tarfile\\b'),
-              'tarfile_extract':re.compile(r'\\btarfile\\s*\\.\\s*extract\\w*\\s*\\('),
-              'extractall':re.compile(r'\\bextractall\\s*\\('),
-              'shutil_unpack_archive':re.compile(r'\\bshutil\\s*\\.\\s*unpack_archive\\s*\\('),
+              'import_tarfile':re.compile(r'(^|\n)\s*import\s+tarfile\b'),
+              'from_tarfile':re.compile(r'(^|\n)\s*from\s+tarfile\b'),
+              'tarfile_extract':re.compile(r'\btarfile\s*\.\s*extract\w*\s*\('),
+              'extractall':re.compile(r'\bextractall\s*\('),
+              'shutil_unpack_archive':re.compile(r'\bshutil\s*\.\s*unpack_archive\s*\('),
           }
-          archive_ingress=re.compile(r'application/x-tar|application/gzip|\\.tar\\.gz|\\.tgz|["\\']\\.tar["\\']',re.I)
+          archive_ingress=re.compile(r'application/x-tar|application/gzip|\.tar\.gz|\.tgz|["\']\.tar["\']',re.I)
           def scan(paths,patterns):
               hits=[]
               for root in paths:
@@ -148,7 +148,7 @@ jobs:
                   text=p.read_text(errors='ignore')
                   if archive_ingress.search(text): ingress.append(str(p))
           evidence={'source_extraction_matches':source_hits,'runtime_smoke_extraction_matches':runtime_hits,'public_tar_ingress_token_matches':sorted(set(ingress))}
-          Path('deploy/containers/artifacts/publish/cve-2026-82049-reachability.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\\n')
+          Path('deploy/containers/artifacts/publish/cve-2026-82049-reachability.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
           if source_hits or runtime_hits or ingress:
               raise SystemExit('CVE-2026-82049 reachability containment proof failed')
           PY
@@ -189,7 +189,7 @@ jobs:
               if severity=='CRITICAL' or (severity=='HIGH' and fixes):
                   blockers.append((vid,severity,artifact.get('name'),artifact.get('version'),fixes,'ACTIONABLE'))
           summary={'image':name,'CISA_KEV_MATCHES':kev_matches,'authorized_residuals':residuals,'policy_blockers':blockers}
-          pathlib.Path(f'deploy/containers/artifacts/publish/{name}.security-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\\n')
+          pathlib.Path(f'deploy/containers/artifacts/publish/{name}.security-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
           print(f'{name.upper()}_CISA_KEV_MATCHES={len(kev_matches)}')
           print(f'{name.upper()}_AUTHORIZED_CVE_2026_82049={len(residuals)}')
           print(f'{name.upper()}_POLICY_BLOCKERS={len(blockers)}')
