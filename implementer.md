@@ -438,3 +438,51 @@ and exact green run 35459207216.
 Owner governance configuration remains pending and must be live-read back
 before READY_TO_LOCK can ever be issued.
 ```
+
+---
+
+## Post-LOCK publish policy parity corrective — in progress
+
+Reviewer authorized a single-file corrective after post-LOCK publication run `35465322918` failed only because the publish workflow still used the older generic application vulnerability policy.
+
+Corrective implementation state:
+
+```text
+base main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+branch = faz7/7-1-publish-policy-parity-corrective
+PR = #35
+corrective head = f58160e9bc97581a026b0b871f108e6879ab8fe1
+changed files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+merge performed = NO
+FAZ 7.2 started = NO
+```
+
+The publish workflow now mirrors the already-frozen permanent application security policy for published API/Commerce digests:
+
+```text
+exact authorized residual = CVE-2026-82049 / python 3.11.16 only
+classification = REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+CISA KEV reconciliation = required
+archive-extraction reachability proof = required
+public tar/tar.gz ingress proof = required
+raw Grype finding = preserved
+all other CRITICAL or HIGH-with-fix = blocking
+exact residual count = 1 per API/Commerce image
+```
+
+No application/business source, Dockerfile/base/dependency, n8n identity, frozen workflow JSON, scanner suppression, blanket ignore, VEX, threshold weakening, or FAZ 7.2 change was made.
+
+Corrective PR CI:
+
+```text
+run = 35469603489
+source-boundary = SUCCESS
+static-contracts = IN_PROGRESS
+faz6-commerce-replay = IN_PROGRESS
+n8n-validation = IN_PROGRESS
+container-validation = QUEUED
+required-gate = PENDING
+```
+
+Per Reviewer protocol, this corrective must not merge until the exact corrective head receives the normal Reviewer READY_TO_LOCK gate and a literal user LOCK for that corrective merge.
