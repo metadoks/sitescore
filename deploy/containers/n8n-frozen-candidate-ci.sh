@@ -476,21 +476,51 @@ python -m pytest -q "$GITHUB_WORKSPACE/automation/n8n/tests" | tee "$OUT/static-
 grep -E '12 passed' "$OUT/static-tests.txt"
 python - <<'PY'
 from pathlib import Path
-import difflib, os, re
-root=Path(os.environ['GITHUB_WORKSPACE']); out=root/'deploy/containers/artifacts/n8n-final'; paths=[root/'automation/n8n/tests/runtime_smoke.sh',root/'automation/n8n/tests/recovery_schedule_runtime_smoke.sh',root/'automation/n8n/tests/recovery_replay_runtime_smoke.sh']
+import difflib, os
+root=Path(os.environ['GITHUB_WORKSPACE'])
+out=root/'deploy/containers/artifacts/n8n-final'
+paths=[
+    root/'automation/n8n/tests/runtime_smoke.sh',
+    root/'automation/n8n/tests/recovery_schedule_runtime_smoke.sh',
+    root/'automation/n8n/tests/recovery_replay_runtime_smoke.sh',
+]
 for p in paths:
     text=p.read_text()
-    patched=text.replace('IMAGE="n8nio/n8n:2.33.4"','IMAGE="sitescore-n8n-frozen:2.37.10"').replace('docker pull "$IMAGE" >/dev/null\n','').replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.10"')
-    digest_pattern=r'DIGEST="\$\(docker image inspect "\$IMAGE" --format \'\{\{index \.RepoDigests 0\}\}\'\)"'
-    patched,n_digest=re.subn(digest_pattern,'DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"; test -n "$DIGEST"',patched,count=1)
-    case_pattern=r';?\s*case "\$DIGEST" in n8nio/n8n@sha256:\*\) ;; \*\) exit 1;; esac'
-    patched,n_case=re.subn(case_pattern,'',patched,count=1)
-    if n_digest != 1 or n_case != 1 or 'RepoDigests' in patched:
-        raise SystemExit(f'failed to patch immutable-image identity in {p}: digest={n_digest} case={n_case}')
+    lines=text.splitlines()
+    patched=[]
+    skip_case=False
+    digest_replaced=0
+    case_removed=0
+    pull_removed=0
+    for line in lines:
+        if line.strip()=='docker pull "$IMAGE" >/dev/null':
+            pull_removed += 1
+            continue
+        if 'DIGEST="$(docker image inspect "$IMAGE" --format' in line and 'RepoDigests' in line:
+            prefix=line.split('DIGEST=',1)[0]
+            if '; case "$DIGEST" in ' in line:
+                patched.append(prefix+'DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"; test -n "$DIGEST"')
+                case_removed += 1
+            else:
+                patched.append(prefix+'DIGEST="$(docker image inspect "$IMAGE" --format \'{{.Id}}\')"')
+                patched.append(prefix+'test -n "$DIGEST"')
+                skip_case=True
+            digest_replaced += 1
+            continue
+        if skip_case and line.strip().startswith('case "$DIGEST" in '):
+            case_removed += 1
+            skip_case=False
+            continue
+        patched.append(line.replace('IMAGE="n8nio/n8n:2.33.4"','IMAGE="sitescore-n8n-frozen:2.37.10"').replace('test "$VERSION" = "2.33.4"','test "$VERSION" = "2.37.10"'))
+    patched_text='\n'.join(patched)+'\n'
+    if digest_replaced != 1 or case_removed != 1 or 'RepoDigests' in patched_text:
+        raise SystemExit(f'failed to patch immutable-image identity in {p}: digest={digest_replaced} case={case_removed}')
+    if 'IMAGE="sitescore-n8n-frozen:2.37.10"' not in patched_text or 'test "$VERSION" = "2.37.10"' not in patched_text:
+        raise SystemExit(f'failed to patch frozen image/version in {p}')
     q=p.with_name('.faz7-'+p.name)
-    q.write_text(patched)
+    q.write_text(patched_text)
     q.chmod(0o755)
-    (out/(p.name+'.faz7.patch')).write_text(''.join(difflib.unified_diff(text.splitlines(True),patched.splitlines(True),fromfile=str(p),tofile=str(q))))
+    (out/(p.name+'.faz7.patch')).write_text(''.join(difflib.unified_diff(text.splitlines(True),patched_text.splitlines(True),fromfile=str(p),tofile=str(q))))
 PY
 trap 'rm -f "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_schedule_runtime_smoke.sh "$GITHUB_WORKSPACE"/automation/n8n/tests/.faz7-recovery_replay_runtime_smoke.sh' EXIT
 bash "$GITHUB_WORKSPACE/automation/n8n/tests/.faz7-runtime_smoke.sh" | tee "$OUT/order-paid-runtime-smoke.txt"
