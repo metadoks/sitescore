@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: MERGE_VERIFIED_POST_LOCK_PUBLICATION_IN_PROGRESS
-IMPLEMENTER_ACTION: NO_CODE_CHANGE_AWAIT_POST_LOCK_PUBLISH_COMPLETION
+REVIEWER_STATE: POST_LOCK_PUBLISH_CORRECTIVE_REQUIRED_EXACT_POLICY_PARITY
+IMPLEMENTER_ACTION: APPLY_SINGLE_FILE_PUBLISH_POLICY_PARITY_CORRECTIVE_AND_RERUN_TO_TERMINAL
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 
@@ -47,11 +47,122 @@ DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 TECHNICAL_READY_FOR_LOCK_GATE: YES
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: YES
+READY_TO_LOCK: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## POST-LOCK PUBLISH CORRECTIVE — AUTHORIZED
+
+The merged FAZ 7.1 exact head and governance remain valid. Post-LOCK publication run `35465322918` reached terminal FAILURE only at:
+
+```text
+Generate application SBOM and enforce vulnerability policy on published digests
+job = 105956479419
+exit = 42
+```
+
+Everything before that point passed, including:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validation = PASS
+frozen n8n runtime/security gate = PASS
+n8n publish = PASS
+published digest resolution = PASS
+
+published API digest =
+sha256:389ab3e3ad0b8b5a8ece0136f75f5505cbb2164b589f2e4030455cd955ca9243
+
+published Commerce digest =
+sha256:204b9fcf4658c8a54c967ecceee37aea2ca92da0042ef263934fb72a7112420e
+
+published n8n digest =
+sha256:64281333061b995883e2877aa07057c3a3b66575017810705a67a9d9e85be28e
+```
+
+Failure evidence:
+
+```text
+API_VULNERABILITY_BLOCKERS=1
+CVE-2026-82049
+severity=HIGH
+package=python
+version=3.11.16
+scanner fix candidate=[3.14.0b1]
+```
+
+This is NOT a new security finding and NOT a new design decision. The exact same finding was already independently reviewed and accepted on the final PR candidate as:
+
+```text
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+The permanent PR validation workflow already contains the required bounded policy:
+
+```text
+CVE-2026-82049 exact Python 3.11.16 residual only
+CISA KEV reconciliation required
+application/source/runtime archive-extraction reachability proof required
+public tar/tar.gz ingress proof required
+raw Grype finding remains visible
+exact residual count required
+all other CRITICAL or HIGH-with-fix remains blocking
+```
+
+The post-LOCK publication workflow failed because it still uses the older generic policy and does not mirror this exact accepted residual classification.
+
+Reviewer authorizes one post-LOCK corrective only:
+
+```text
+base = current main 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+scope = .github/workflows/faz7-publish-images.yml ONLY
+
+required change:
+make published API/Commerce image security validation enforce the same exact
+CVE-2026-82049 residual/KEV/reachability policy already frozen in
+.github/workflows/faz7-container-ci.yml.
+
+FORBIDDEN:
+application/business source changes
+Dockerfile/base/dependency changes
+n8n identity changes
+workflow JSON changes
+scanner suppression
+blanket CVE ignore
+SiteScore-authored VEX
+threshold weakening
+new release candidate selection
+FAZ 7.2 work
+```
+
+The corrective must be made through a protected-main PR. It must preserve the raw published-image Grype evidence and fail closed for every vulnerability other than the exact already-authorized residual.
+
+Acceptance for corrective closure:
+
+```text
+corrective PR required-gate = PASS
+corrective PR changes exactly one file
+corrective merge uses normal merge commit
+post-merge faz7-publish-images = SUCCESS
+API published-image residual = exact CVE-2026-82049 only
+Commerce published-image residual = exact CVE-2026-82049 only
+CISA KEV = 0
+no new policy blockers
+published n8n exact validated digest proof = PASS
+SBOM = PASS
+provenance = PASS
+Cosign signing = PASS
+attestations = PASS
+publication evidence artifact = PASS
+```
+
+No further Reviewer round-trip is required for YAML/shell mechanics. Implementer must carry this bounded corrective through PR, CI and merge only after the normal Reviewer lock gate for the corrective exact head. FAZ 7.2 remains prohibited in this chat.
 
 ---
 
