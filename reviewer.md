@@ -13,7 +13,7 @@ CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
 REVIEWER_STATE: POST_LOCK_PUBLICATION_CORRECTIVE_REQUIRED
-IMPLEMENTER_ACTION: APPLY_SINGLE_BOUNDED_PUBLISH_WORKFLOW_CORRECTIVE_AND_RETURN_TERMINAL
+IMPLEMENTER_ACTION: APPLY_SINGLE_BOUNDED_PUBLISH_WORKFLOW_PARITY_CORRECTIVE_THEN_RETURN_READY_FOR_REVIEW
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: YES
 
@@ -41,6 +41,7 @@ OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71-N8N-VULN-001: RESOLVED_FINAL_SECURITY_GATE_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
+OPS71-PUBLISH-001: MECHANICAL_POLICY_PARITY_DEFECT_CORRECTIVE_AUTHORIZED
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -295,6 +296,124 @@ No 7.2 work is authorized in this chat.
 
 ---
 
+## POST-LOCK PUBLICATION CORRECTIVE DECISION
+
+The first post-LOCK publication run is terminal and failed:
+
+```text
+run = 35465322918
+job = 105956479419
+head/main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+status = COMPLETED
+conclusion = FAILURE
+```
+
+Successful before failure:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validation = PASS
+frozen n8n publish = PASS
+published digest resolution = PASS
+```
+
+Resolved immutable published digests from the failed run:
+
+```text
+API = sha256:389ab3e3ad0b8b5a8ece0136f75f5505cbb2164b589f2e4030455cd955ca9243
+Commerce = sha256:204b9fcf4658c8a54c967ecceee37aea2ca92da0042ef263934fb72a7112420e
+n8n registry manifest = sha256:64281333061b995883e2877aa07057c3a3b66575017810705a67a9d9e85be28e
+n8n validated local image digest = sha256:095a63519813b5fea1f742fc41e13635c93e727a9684459eee456141100a5db7
+```
+
+The first failing step was:
+
+```text
+Generate application SBOM and enforce vulnerability policy on published digests
+API_VULNERABILITY_BLOCKERS=1
+BLOCKER ('CVE-2026-82049', 'HIGH', 'python', '3.11.16', ['3.14.0b1'])
+exit code = 42
+```
+
+Reviewer determination:
+
+```text
+NEW_SECURITY_VULNERABILITY = NO
+NEW_REACHABILITY = NO EVIDENCE
+DESIGN_CHANGE_REQUIRED = NO
+SECURITY_THRESHOLD_WEAKENING_AUTHORIZED = NO
+SCANNER_SUPPRESSION_AUTHORIZED = NO
+SITE_SCORE_VEX_AUTHORIZED = NO
+OPS71-PUBLISH-001 = MECHANICAL_POLICY_PARITY_DEFECT
+```
+
+Reason: permanent PR CI already carries an exact bounded policy for CVE-2026-82049. It requires the raw finding to remain visible, requires package/version exactly python 3.11.16, classifies only that exact HIGH residual, proves no tar/tar.gz extraction/ingress reachability, checks the current CISA KEV feed, and blocks all other CRITICAL or fixed HIGH findings. The publication workflow still uses the older generic rule and therefore contradicts the already-reviewed application security contract.
+
+One additional parity defect is visible in the publication workflow: it sets up Node 26.5.1 while the frozen n8n lock and final validation authority are Node 26.7.0. The n8n publication build succeeded, but permanent publication policy must use the frozen 26.7.0 setup identity.
+
+### Authorized corrective scope
+
+Create one post-LOCK FAZ 7.1 corrective PR from exact current main:
+
+```text
+base = main@3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+scope = .github/workflows/faz7-publish-images.yml ONLY
+```
+
+Required changes only:
+
+1. Replace publication application vulnerability classification with policy parity to the already-reviewed `.github/workflows/faz7-container-ci.yml` application gate:
+   - fetch current CISA KEV;
+   - require the existing residual-risk record/classification;
+   - run the same source/runtime/public-tar reachability containment proof;
+   - allow only exact `CVE-2026-82049 / HIGH / python / 3.11.16` when it is not KEV and containment is clean;
+   - require that exact residual once per application image;
+   - keep raw Grype/SBOM output;
+   - block any KEV, any CRITICAL, and any other HIGH with fix versions.
+2. Change publication Node setup from 26.5.1 to exact 26.7.0 and assert `node --version == v26.7.0` before the frozen n8n build.
+3. Do not alter application/business source, Dockerfiles, dependency locks, frozen n8n identity, workflow JSON, scanner thresholds, governance, IaC, or cloud resources.
+4. Do not add blanket ignores, scanner suppression, local CPython patch, beta Python migration, SiteScore-authored VEX, or generic CVE allowlists.
+
+Required validation before merge:
+
+```text
+faz7 / required-gate = PASS on corrective PR exact head
+source-boundary = PASS
+static-contracts = PASS
+container-validation = PASS
+n8n-validation = PASS
+FAZ6 replay = PASS
+changed files = publish workflow only
+```
+
+Then Implementer must return `READY_FOR_REVIEW`. Reviewer will audit exact corrective head. A NEW literal user `LOCK` is required for the corrective merge because the prior LOCK authorized exact reviewed head `f54e3c25...`, not a new commit.
+
+After corrective merge, the new main-triggered `faz7-publish-images` run must finish SUCCESS including:
+
+```text
+application published digest scan = PASS
+published n8n equivalence/SBOM = PASS
+provenance predicates = PASS
+Cosign signatures = PASS
+SBOM attestations = PASS
+provenance attestations = PASS
+publication evidence artifact = PRESENT
+```
+
+Only then may Reviewer set:
+
+```text
+FAZ_7_1_STATUS = LOCKED_VERIFIED
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+```
+
+No FAZ 7.2 work is authorized in this chat.
+
+---
+
 ## POST-LOCK MERGE VERIFICATION
 
 Reviewer live verification after user-authorized LOCK:
@@ -384,7 +503,7 @@ Reviewer decision:
 
 ```text
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-READY_TO_LOCK: YES
+READY_TO_LOCK: NO
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 MERGE: NO
