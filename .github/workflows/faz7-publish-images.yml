@@ -38,10 +38,10 @@ jobs:
           set -euo pipefail
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Setup exact Node 26.5.1 for frozen n8n build
+      - name: Setup exact Node 26.7.0 for frozen n8n build
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          node-version: '26.5.1'
+          node-version: '26.7.0'
 
       - name: Build and publish immutable linux amd64 application images
         run: |
@@ -69,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test "$(node --version)" = 'v26.5.1'
+          test "$(node --version)" = 'v26.7.0'
           set -a
           . deploy/containers/n8n-image.lock
           set +a
