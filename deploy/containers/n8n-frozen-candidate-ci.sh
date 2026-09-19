@@ -264,7 +264,12 @@ RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontc
     cp /lib/apk/db/installed /security-evidence/installed.before && \
     apk info | sort > /security-evidence/packages.before.txt && \
     apk policy libcurl git pcre2 zlib > /security-evidence/security-packages.policy.before.txt && \
-    (apk del openssh graphicsmagick git 2>&1 | tee /security-evidence/removal.log) && \
+    (apk del openssh graphicsmagick 2>&1 | tee /security-evidence/baseline-removal.log) && \
+    apk info | sort > /security-evidence/packages.pre-git-prune.txt && \
+    cp /etc/apk/world /security-evidence/world.pre-git-prune && \
+    (apk del git git-init-template pcre2 2>&1 | tee /security-evidence/git-removal.log) && \
+    apk info | sort > /security-evidence/packages.post-git-prune.txt && \
+    cp /etc/apk/world /security-evidence/world.post-git-prune && \
     (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' "libcurl=${LIBCURL_TARGET}" 2>&1 | tee /security-evidence/pins.log) && \
     apk policy libcrypto3 libssl3 libexpat libcurl pcre2 zlib > /security-evidence/policy.after.txt && \
     apk info | sort > /security-evidence/packages.after.txt && \
@@ -288,24 +293,26 @@ python - <<'PY'
 import json, os
 from pathlib import Path
 out=Path(os.environ['OUT'])/'apk-evidence'
-before=set((out/'packages.before.txt').read_text().splitlines())
-after=set((out/'packages.after.txt').read_text().splitlines())
-removed=sorted(before-after)
-allowed={'git','git-init-template','pcre2','openssh','graphicsmagick'}
-shared_non_git=sorted(set(removed)-allowed)
+pre=set((out/'packages.pre-git-prune.txt').read_text().splitlines())
+post=set((out/'packages.post-git-prune.txt').read_text().splitlines())
+removed=sorted(pre-post)
+expected={'git','git-init-template','pcre2'}
+shared_non_git=sorted(set(removed)-expected)
+missing=sorted(expected-set(removed))
 evidence={
-    'before_contains_git':'git' in before,
-    'before_contains_pcre2':'pcre2' in before,
+    'pre_git_prune_contains':{name:(name in pre) for name in sorted(expected)},
     'removed_packages':removed,
+    'expected_git_exclusive_removed':sorted(expected),
+    'missing_expected_removals':missing,
     'shared_non_git_runtime_removed':shared_non_git,
 }
 (out/'git-capability-prune.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
-if 'git' not in before or 'pcre2' not in before:
-    raise SystemExit('expected git/pcre2 baseline package missing')
-if 'git' not in removed or 'pcre2' not in removed:
-    raise SystemExit('git capability pruning did not remove git+pcre2')
+if any(name not in pre for name in expected):
+    raise SystemExit('expected explicit git capability packages missing before prune')
+if missing:
+    raise SystemExit('git capability pruning missed packages: '+json.dumps(missing))
 if shared_non_git:
-    raise SystemExit('unexpected shared runtime packages removed: '+json.dumps(shared_non_git))
+    raise SystemExit('unexpected shared runtime packages removed by git prune: '+json.dumps(shared_non_git))
 PY
 docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" --build-arg LIBCURL_TARGET="$N8N_LIBCURL_TARGET" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
 docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'cat /lib/apk/db/installed' > "$OUT/final-installed.raw"
