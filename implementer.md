@@ -39,13 +39,13 @@ CORRECTIVE_PR_STATE: OPEN
 CORRECTIVE_PR_DRAFT: FALSE
 CORRECTIVE_PR_MERGEABLE: TRUE
 CORRECTIVE_PR_MERGED: FALSE
-CORRECTIVE_HEAD_SHA: e1597f77bcc8a65e2e00e9c5573e028cdbee337b
-CORRECTIVE_FINAL_GREEN_RUN: 35470194681
-CORRECTIVE_REQUIRED_GATE_JOB: 105974318886
-CORRECTIVE_APPLICATION_ARTIFACT_ID: 10592383117
-CORRECTIVE_N8N_ARTIFACT_ID: 10593570006
+CORRECTIVE_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
+CORRECTIVE_FINAL_GREEN_RUN: 35474113362
+CORRECTIVE_REQUIRED_GATE_JOB: 105983845465
+CORRECTIVE_APPLICATION_ARTIFACT_ID: 10594027965
+CORRECTIVE_N8N_ARTIFACT_ID: 10594375006
 CORRECTIVE_CHANGED_FILES: 1
-CORRECTIVE_POLICY_PARITY: EXACT_SEMANTIC_MATCH
+CORRECTIVE_POLICY_PARITY: EXACT_SEMANTIC_MATCH_PLUS_NODE_26_7_0
 CORRECTIVE_READY_FOR_REVIEW: YES
 CORRECTIVE_READY_TO_LOCK: NO
 CORRECTIVE_USER_LOCK_AUTHORIZED: NO
@@ -616,3 +616,85 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 **Implementer corrective work is complete.** Reviewer must independently audit exact head `e1597f77bcc8a65e2e00e9c5573e028cdbee337b`, PR #35, terminal run `35470194681`, single-file scope, and exact policy parity. Only Reviewer may advance this corrective to `READY_TO_LOCK`. No further Implementer code change is authorized unless Reviewer reopens the corrective.
+
+
+---
+
+## POST-LOCK CORRECTIVE — FINAL AUTHORITATIVE TERMINAL HANDOFF AFTER REVIEWER NODE PARITY REOPEN
+
+Reviewer subsequently identified one additional mechanical publication drift within the same already-authorized permanent path: publish host Node setup/assertion still used `26.5.1` while the frozen n8n builder/runtime family is `26.7.0`.
+
+The correction was applied only to the authorized file:
+
+```text
+path = .github/workflows/faz7-publish-images.yml
+old host Node = 26.5.1
+new host Node = 26.7.0
+application/business source change = NONE
+Python/base identity change = NONE
+n8n source commit/tree change = NONE
+n8n workflow JSON change = NONE
+n8n hardening/pruning logic change = NONE
+Cosign/SBOM/provenance design change = NONE
+GitHub governance change = NONE
+cloud/deployment state change = NONE
+```
+
+Final authoritative corrective state:
+
+```text
+base main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+branch = faz7/7-1-publish-policy-parity-corrective
+PR = #35
+PR state = OPEN / READY / MERGEABLE / UNMERGED
+exact corrective head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+commits = 3
+changed permanent files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+publish Node host/assertion = 26.7.0
+publish application security policy parity = TRUE
+merge performed = NO
+```
+
+Final exact-head PR CI:
+
+```text
+run = 35474113362
+source-boundary       = SUCCESS  job 105980260645
+static-contracts      = SUCCESS  job 105980260610
+faz6-commerce-replay  = SUCCESS  job 105980260504
+container-validation = SUCCESS  job 105980260713
+n8n-validation        = SUCCESS  job 105980260588
+required-gate         = SUCCESS  job 105983845465
+```
+
+Final exact-head evidence artifacts:
+
+```text
+application artifact id = 10594027965
+application artifact name = faz7-application-image-evidence-fffe943723b230d73d0afa079b736e06c0b3a6a4
+n8n artifact id = 10594375006
+n8n artifact name = faz7-n8n-final-evidence-fffe943723b230d73d0afa079b736e06c0b3a6a4
+```
+
+Final Implementer decision:
+
+```text
+IMPLEMENTER_STATE = POST_LOCK_CORRECTIVE_READY_FOR_REVIEW
+CORRECTIVE_EXACT_HEAD = fffe943723b230d73d0afa079b736e06c0b3a6a4
+CORRECTIVE_REQUIRED_GATE = SUCCESS
+CORRECTIVE_TECHNICAL_BLOCKERS = NONE
+CORRECTIVE_SCOPE_DRIFT = NONE
+CORRECTIVE_NODE_PARITY = 26.7.0 / PASS
+CORRECTIVE_SECURITY_POLICY_PARITY = PASS
+CORRECTIVE_READY_FOR_REVIEW = YES
+CORRECTIVE_READY_TO_LOCK = NO
+CORRECTIVE_USER_LOCK_AUTHORIZED = NO
+CORRECTIVE_MERGE = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+The prior corrective exact head `e1597f77bcc8a65e2e00e9c5573e028cdbee337b` and run `35470194681` are superseded as lock-review authority because Reviewer reopened the bounded corrective for Node host parity. Only `fffe943723b230d73d0afa079b736e06c0b3a6a4` and run `35474113362` are authoritative for the next Reviewer audit.
+
+**Implementer work is complete again. Reviewer must independently audit this exact final corrective head before READY_TO_LOCK may be issued. A new literal user LOCK is still required after Reviewer READY_TO_LOCK because the earlier LOCK was consumed by PR #34.**
