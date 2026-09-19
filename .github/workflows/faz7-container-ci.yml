@@ -353,6 +353,49 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p deploy/containers/artifacts/application-images
+          test -s deploy/containers/application-security-residual-risk-record.md
+          grep -F 'CVE-2026-82049' deploy/containers/application-security-residual-risk-record.md
+          grep -F 'REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX' deploy/containers/application-security-residual-risk-record.md
+          grep -F 'PYTHON_IMAGE_TAG=python:3.11.16-slim-trixie' deploy/containers/base-image.lock
+          grep -F 'PYTHON_IMAGE_DIGEST=sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72' deploy/containers/base-image.lock
+          grep -F 'DEBIAN_SUITE=trixie' deploy/containers/base-image.lock
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          roots=[Path(x) for x in ('sitescore-api','sitescore-commerce','sitescore-app','sitescore-core','sitescore-report') if Path(x).exists()]
+          runtime_roots=[Path('deploy/containers/runtime')]
+          extraction_patterns={
+              'import_tarfile':re.compile(r'(^|\n)\s*import\s+tarfile\b'),
+              'from_tarfile':re.compile(r'(^|\n)\s*from\s+tarfile\b'),
+              'tarfile_extract':re.compile(r'\btarfile\s*\.\s*extract\w*\s*\('),
+              'extractall':re.compile(r'\bextractall\s*\('),
+              'shutil_unpack_archive':re.compile(r'\bshutil\s*\.\s*unpack_archive\s*\('),
+          }
+          archive_ingress=re.compile(r'application/x-tar|application/gzip|\.tar\.gz|\.tgz|["\']\.tar["\']',re.I)
+          def scan(paths,patterns):
+              hits=[]
+              for root in paths:
+                  if not root.exists(): continue
+                  for p in root.rglob('*'):
+                      if not p.is_file() or p.suffix not in {'.py','.sh'}: continue
+                      try: text=p.read_text(errors='ignore')
+                      except Exception: continue
+                      for label,pat in patterns.items():
+                          if pat.search(text): hits.append({'path':str(p),'pattern':label})
+              return hits
+          source_hits=scan(roots,extraction_patterns)
+          runtime_hits=scan(runtime_roots,extraction_patterns)
+          ingress=[]
+          for root in roots:
+              for p in root.rglob('*.py'):
+                  text=p.read_text(errors='ignore')
+                  if archive_ingress.search(text): ingress.append(str(p))
+          evidence={'source_extraction_matches':source_hits,'runtime_smoke_extraction_matches':runtime_hits,'public_tar_ingress_token_matches':sorted(set(ingress))}
+          Path('deploy/containers/artifacts/application-images/cve-2026-82049-reachability.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
+          if source_hits or runtime_hits or ingress:
+              raise SystemExit('CVE-2026-82049 reachability containment proof failed')
+          PY
+          curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o deploy/containers/artifacts/application-images/cisa-kev.json
           syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
           grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
           for name in api commerce; do
@@ -367,21 +410,41 @@ jobs:
             fi
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > "deploy/containers/artifacts/application-images/${name}.spdx.json"
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "deploy/containers/artifacts/application-images/${name}.grype.json"
-            python - "$name" "deploy/containers/artifacts/application-images/${name}.grype.json" <<'PY'
-          import json, sys
-          name, path = sys.argv[1:]
+            python - "$name" "deploy/containers/artifacts/application-images/${name}.grype.json" "deploy/containers/artifacts/application-images/cisa-kev.json" <<'PY'
+          import json, pathlib, sys
+          name, path, kev_path = sys.argv[1:]
           data = json.load(open(path))
-          blockers = []
+          kev = json.load(open(kev_path))
+          kev_ids={str(x.get('cveID')) for x in kev.get('vulnerabilities', []) if x.get('cveID')}
+          blockers=[]; residuals=[]; kev_matches=[]
           for match in data.get('matches', []):
-              vulnerability = match.get('vulnerability') or {}
-              severity = str(vulnerability.get('severity', '')).upper()
-              fixes = (vulnerability.get('fix') or {}).get('versions') or []
-              if severity == 'CRITICAL' or (severity == 'HIGH' and fixes):
-                  artifact = match.get('artifact') or {}
-                  blockers.append((vulnerability.get('id'), severity, artifact.get('name'), artifact.get('version'), fixes))
+              vulnerability=match.get('vulnerability') or {}
+              artifact=match.get('artifact') or {}
+              severity=str(vulnerability.get('severity', '')).upper()
+              fixes=(vulnerability.get('fix') or {}).get('versions') or []
+              vid=str(vulnerability.get('id') or '')
+              ids={vid}
+              for rel in vulnerability.get('relatedVulnerabilities') or []:
+                  if isinstance(rel,dict) and rel.get('id'): ids.add(str(rel['id']))
+              hit=sorted(ids & kev_ids)
+              if hit:
+                  kev_matches.append({'ids':hit,'package':artifact.get('name'),'version':artifact.get('version')})
+                  blockers.append((vid,severity,artifact.get('name'),artifact.get('version'),fixes,'CISA_KEV'))
+                  continue
+              exact=(vid=='CVE-2026-82049' and severity=='HIGH' and artifact.get('name')=='python' and artifact.get('version')=='3.11.16')
+              if exact:
+                  residuals.append({'id':vid,'severity':severity,'package':'python','version':'3.11.16','fixes':fixes,'classification':'REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX'})
+                  continue
+              if severity=='CRITICAL' or (severity=='HIGH' and fixes):
+                  blockers.append((vid,severity,artifact.get('name'),artifact.get('version'),fixes,'ACTIONABLE'))
+          summary={'image':name,'CISA_KEV_MATCHES':kev_matches,'authorized_residuals':residuals,'policy_blockers':blockers}
+          pathlib.Path(f'deploy/containers/artifacts/application-images/{name}.security-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(f'{name.upper()}_CISA_KEV_MATCHES={len(kev_matches)}')
+          print(f'{name.upper()}_AUTHORIZED_CVE_2026_82049={len(residuals)}')
           print(f'{name.upper()}_POLICY_BLOCKERS={len(blockers)}')
-          for blocker in blockers:
-              print('BLOCKER', blocker)
+          for blocker in blockers: print('BLOCKER',blocker)
+          if len(residuals)!=1:
+              raise SystemExit(f'expected exact raw CVE-2026-82049 residual once in {name}, got {len(residuals)}')
           if blockers:
               raise SystemExit(42)
           PY

@@ -29,6 +29,8 @@ test "$(sha256sum "$GITHUB_WORKSPACE/automation/n8n/workflows/sitescore-recovery
 ! grep -R -F 'n8n-nodes-base.snowflake' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -R -F 'n8n-nodes-base.emailSend' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -R -F 'n8n-nodes-base.executeCommand' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F 'n8n-nodes-base.git' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F 'n8n-nodes-base.gitTool' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 
 python - <<'PY'
 import json, os, urllib.parse, urllib.request
@@ -90,6 +92,7 @@ replacements=[
     ('js-yaml: 4.3.1', f"js-yaml: {os.environ['N8N_JS_YAML_TARGET']}"),
     ('multer: ^2.2.0', f"multer: ^{os.environ['N8N_MULTER_TARGET']}"),
     ("'@xmldom/xmldom': 0.8.14", f"'@xmldom/xmldom': {os.environ['N8N_XMLDOM_TARGET']}"),
+    ('adm-zip: 0.6.0', f"adm-zip: {os.environ['N8N_ADM_ZIP_TARGET']}"),
 ]
 for old,new in replacements:
     assert s.count(old)==1, (old,s.count(old))
@@ -106,10 +109,12 @@ grep -F "fast-uri: $N8N_FAST_URI_TARGET" pnpm-workspace.yaml
 grep -F "js-yaml: $N8N_JS_YAML_TARGET" pnpm-workspace.yaml
 grep -F "multer: ^$N8N_MULTER_TARGET" pnpm-workspace.yaml
 grep -F "'@xmldom/xmldom': $N8N_XMLDOM_TARGET" pnpm-workspace.yaml
+grep -F "adm-zip: $N8N_ADM_ZIP_TARGET" pnpm-workspace.yaml
 ! grep -F 'fast-uri@3.1.5' pnpm-lock.yaml
 ! grep -F 'js-yaml@4.3.1' pnpm-lock.yaml
 ! grep -F 'multer@2.2.0' pnpm-lock.yaml
 ! grep -F '@xmldom/xmldom@0.8.14' pnpm-lock.yaml
+! grep -F 'adm-zip@0.6.0' pnpm-lock.yaml
 grep -F "fast-uri@$N8N_FAST_URI_TARGET" pnpm-lock.yaml
 grep -F "js-yaml@$N8N_JS_YAML_TARGET" pnpm-lock.yaml
 python - <<'PY'
@@ -135,6 +140,7 @@ Path(os.environ['OUT'],'multer-resolved-version.txt').write_text(versions[0]+'\n
 print('MULTER_RESOLVED_VERSION='+versions[0])
 PY
 grep -F "@xmldom/xmldom@$N8N_XMLDOM_TARGET" pnpm-lock.yaml
+grep -F "adm-zip@$N8N_ADM_ZIP_TARGET" pnpm-lock.yaml
 CI=true NODE_OPTIONS=--max-old-space-size=7168 pnpm install --frozen-lockfile
 pnpm why --prod --recursive snowflake-sdk --json > "$OUT/pnpm-why-prod-snowflake-sdk.json"
 pnpm why --prod --recursive toml --json > "$OUT/pnpm-why-prod-toml.json"
@@ -144,8 +150,42 @@ pnpm why --prod --recursive brace-expansion --json > "$OUT/pnpm-why-prod-brace-e
 pnpm why --prod --recursive js-yaml --json > "$OUT/pnpm-why-prod-js-yaml.json"
 pnpm why --prod --recursive multer --json > "$OUT/pnpm-why-prod-multer.json"
 pnpm why --prod --recursive @xmldom/xmldom --json > "$OUT/pnpm-why-prod-xmldom.json"
-pnpm why --prod --recursive adm-zip --json > "$OUT/pnpm-why-prod-adm-zip.json" || true
+pnpm why --prod --recursive adm-zip --json > "$OUT/pnpm-why-prod-adm-zip.json"
 pnpm why --prod --recursive @tiptap/core --json > "$OUT/pnpm-why-prod-tiptap-core.json"
+python - <<'PY'
+import json, os
+from pathlib import Path
+target=os.environ['N8N_ADM_ZIP_TARGET']
+rows=[]
+for p in Path('node_modules/.pnpm').rglob('package.json'):
+    try:
+        d=json.loads(p.read_text())
+    except Exception:
+        continue
+    for section in ('dependencies','optionalDependencies'):
+        dep=(d.get(section) or {}).get('adm-zip')
+        if dep:
+            rows.append({
+                'parent':d.get('name'),
+                'parent_version':d.get('version'),
+                'section':section,
+                'declared_range':dep,
+            })
+expected=[r for r in rows if r['parent']=='epub2' and r['parent_version']=='3.0.2']
+if not expected:
+    raise SystemExit('expected epub2@3.0.2 -> adm-zip parent not found')
+unexpected=[r for r in rows if r['parent']!='epub2']
+evidence={
+    'override_target':target,
+    'expected_parent':expected,
+    'other_parents':unexpected,
+    'override_mechanism':'pnpm-workspace override',
+    'epub2_parent_major_change':False,
+}
+Path(os.environ['OUT'],'adm-zip-parent-override-proof.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
+if unexpected:
+    raise SystemExit('unexpected adm-zip production parents: '+json.dumps(unexpected,sort_keys=True))
+PY
 grep -F snowflake-sdk "$OUT/pnpm-why-prod-snowflake-sdk.json"
 grep -F toml "$OUT/pnpm-why-prod-toml.json"
 python - <<'PY'
@@ -201,6 +241,7 @@ if not (parts >= floor and parts[0] == 2):
 print('COMPILED_MULTER_VERSION='+version)
 PY
 grep -R "\"version\": \"$N8N_XMLDOM_TARGET\"" compiled/node_modules/.pnpm/@xmldom+xmldom@$N8N_XMLDOM_TARGET*/node_modules/@xmldom/xmldom/package.json
+grep -R "\"version\": \"$N8N_ADM_ZIP_TARGET\"" compiled/node_modules/.pnpm/adm-zip@$N8N_ADM_ZIP_TARGET*/node_modules/adm-zip/package.json
 grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
 grep -R '"version": "2.1.0"' compiled/node_modules/.pnpm/snowflake-sdk@2.1.0*/node_modules/snowflake-sdk/package.json
 grep -R '"version": "3.0.0"' compiled/node_modules/.pnpm/toml@3.0.0*/node_modules/toml/package.json
@@ -221,10 +262,12 @@ RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontc
     cp /etc/apk/repositories /security-evidence/repositories.before && \
     cp /etc/apk/world /security-evidence/world.before && \
     cp /lib/apk/db/installed /security-evidence/installed.before && \
-    apk policy libcurl pcre2 zlib > /security-evidence/security-packages.policy.before.txt && \
-    (apk del openssh graphicsmagick 2>&1 | tee /security-evidence/removal.log) && \
+    apk info | sort > /security-evidence/packages.before.txt && \
+    apk policy libcurl git pcre2 zlib > /security-evidence/security-packages.policy.before.txt && \
+    (apk del openssh graphicsmagick git 2>&1 | tee /security-evidence/removal.log) && \
     (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' "libcurl=${LIBCURL_TARGET}" 2>&1 | tee /security-evidence/pins.log) && \
     apk policy libcrypto3 libssl3 libexpat libcurl pcre2 zlib > /security-evidence/policy.after.txt && \
+    apk info | sort > /security-evidence/packages.after.txt && \
     cp /etc/apk/repositories /security-evidence/repositories.after && \
     cp /etc/apk/world /security-evidence/world.after && \
     cp /lib/apk/db/installed /security-evidence/installed.after && \
@@ -241,6 +284,29 @@ docker build --platform linux/amd64 --no-cache --target evidence --build-arg DHI
 eid="$(docker create sitescore-n8n-base-pruned:evidence)"
 docker cp "$eid:/security-evidence/." "$OUT/apk-evidence"
 docker rm "$eid" >/dev/null
+python - <<'PY'
+import json, os
+from pathlib import Path
+out=Path(os.environ['OUT'])/'apk-evidence'
+before=set((out/'packages.before.txt').read_text().splitlines())
+after=set((out/'packages.after.txt').read_text().splitlines())
+removed=sorted(before-after)
+allowed={'git','git-init-template','pcre2','openssh','graphicsmagick'}
+shared_non_git=sorted(set(removed)-allowed)
+evidence={
+    'before_contains_git':'git' in before,
+    'before_contains_pcre2':'pcre2' in before,
+    'removed_packages':removed,
+    'shared_non_git_runtime_removed':shared_non_git,
+}
+(out/'git-capability-prune.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
+if 'git' not in before or 'pcre2' not in before:
+    raise SystemExit('expected git/pcre2 baseline package missing')
+if 'git' not in removed or 'pcre2' not in removed:
+    raise SystemExit('git capability pruning did not remove git+pcre2')
+if shared_non_git:
+    raise SystemExit('unexpected shared runtime packages removed: '+json.dumps(shared_non_git))
+PY
 docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" --build-arg LIBCURL_TARGET="$N8N_LIBCURL_TARGET" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
 docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'cat /lib/apk/db/installed' > "$OUT/final-installed.raw"
 test "$(docker image inspect "$N8N_HARDENED_BASE_IMAGE" --format '{{.Architecture}}')" = amd64
@@ -251,7 +317,7 @@ import os
 raw=open(os.path.join(os.environ['OUT'],'final-installed.raw')).read()
 for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.4-r0',f"P:libcurl\nV:{os.environ['N8N_LIBCURL_TARGET']}"):
     if item not in raw: raise SystemExit('required exact runtime pin missing: '+item)
-for item in ('P:openssh\n','P:graphicsmagick\n','P:apk-tools\n'):
+for item in ('P:openssh\n','P:graphicsmagick\n','P:apk-tools\n','P:git\n','P:git-init-template\n','P:pcre2\n'):
     if item in raw: raise SystemExit('forbidden runtime package remains: '+item)
 for item in ('P:tini\n','P:tzdata\n','P:ca-certificates\n','P:librdkafka\n','P:gcompat\n'):
     if item not in raw: raise SystemExit('required runtime package/provider missing: '+item)
@@ -262,7 +328,7 @@ docker build --platform linux/amd64 --build-arg BUILDER_IMAGE="$N8N_BUILDER_IMAG
 popd >/dev/null
 cat > /tmp/sitescore-n8n-contract.Dockerfile <<'EOF'
 FROM sitescore-n8n-pruned-core:frozen
-ENV NODES_EXCLUDE='["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.emailSend","n8n-nodes-base.snowflake"]'
+ENV NODES_EXCLUDE='["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.emailSend","n8n-nodes-base.snowflake","n8n-nodes-base.git","n8n-nodes-base.gitTool"]'
 EOF
 docker build --network=none --platform linux/amd64 -f /tmp/sitescore-n8n-contract.Dockerfile -t "$N8N_CANDIDATE_IMAGE" /tmp
 docker image inspect "$N8N_CANDIDATE_IMAGE" > "$OUT/final-image-inspect.json"
@@ -273,7 +339,7 @@ test -n "$user" && test "$user" != root && test "$user" != 0
 test "$(docker run --rm "$N8N_CANDIDATE_IMAGE" n8n --version | tr -d '\r' | tail -n1)" = "$N8N_VERSION"
 envs="$(docker image inspect "$N8N_CANDIDATE_IMAGE" --format '{{json .Config.Env}}')"
 printf '%s\n' "$envs" > "$OUT/image-env.json"
-for node in n8n-nodes-base.executeCommand n8n-nodes-base.localFileTrigger n8n-nodes-base.emailSend n8n-nodes-base.snowflake; do grep -F "$node" "$OUT/image-env.json"; done
+for node in n8n-nodes-base.executeCommand n8n-nodes-base.localFileTrigger n8n-nodes-base.emailSend n8n-nodes-base.snowflake n8n-nodes-base.git n8n-nodes-base.gitTool; do grep -F "$node" "$OUT/image-env.json"; done
 cid="$(docker run -d --rm --tmpfs /tmp:rw,nosuid,nodev -e N8N_USER_FOLDER=/tmp/n8n -e N8N_ENCRYPTION_KEY=ci-only-frozen-key-000000000000000000000 -e N8N_DIAGNOSTICS_ENABLED=false -e N8N_PERSONALIZATION_ENABLED=false -p 127.0.0.1:15678:5678 "$N8N_CANDIDATE_IMAGE")"
 trap 'docker logs "$cid" > "$OUT/startup-runtime.log" 2>&1 || true; docker stop -t 5 "$cid" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 120); do curl -fsS http://127.0.0.1:15678/healthz >/dev/null 2>&1 && break; sleep .5; done
@@ -301,6 +367,8 @@ grep -Fq n8n-nodes-base.httpRequest "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.emailSend "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.executeCommand "$OUT/node-types.json"
 ! grep -Fq n8n-nodes-base.localFileTrigger "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.git "$OUT/node-types.json"
+! grep -Fq n8n-nodes-base.gitTool "$OUT/node-types.json"
 vol="sitescore-frozen-import-${GITHUB_RUN_ID}"
 docker volume create "$vol" >/dev/null
 trap 'docker volume rm -f "$vol" >/dev/null 2>&1 || true' EXIT
@@ -350,7 +418,6 @@ allowed_ids={
   ('nodemailer','8.0.10','GHSA-P6GQ-J5CR-W38F'),
   ('nodemailer','8.0.10','GHSA-2X7J-588G-CCC2'),
   ('@tiptap/core','3.27.0','GHSA-J95F-988M-3J2F'),
-  ('pcre2','10.47-r1','CVE-2026-89157'),
   ('zlib','1.3.2-r0','CVE-2026-85091'),
 }
 for r in high:
@@ -362,14 +429,12 @@ for r in high:
             matched=(pkg,ver,aid); break
     if matched:
         pkg,ver,aid=matched
-        if pkg=='pcre2' and arch!='amd64':
-            blocking.append(r); continue
-        if pkg in ('pcre2','zlib') and (r.get('fixed_versions') or []):
+        if pkg=='zlib' and (r.get('fixed_versions') or []):
             blocking.append(r); continue
         allowed.append({'package':pkg,'version':ver,'advisory':aid,'reason':'reviewer-authorized exact residual'})
     else:
         blocking.append(r)
-forbidden={n:[r for r in high if r.get('package_name')==n] for n in ('fast-uri','ip-address','brace-expansion','toml','snowflake-sdk')}
+forbidden={n:[r for r in high if r.get('package_name')==n] for n in ('fast-uri','ip-address','brace-expansion','toml','snowflake-sdk','pcre2','adm-zip','git')}
 official_high={(str((m.get('vulnerability') or {}).get('id')),str((m.get('artifact') or {}).get('name'))) for m in official.get('matches',[]) if str((m.get('vulnerability') or {}).get('severity') or '').upper()=='HIGH'}
 new_blocking=[r for r in blocking if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
 os_blocking=[r for r in blocking if r.get('package_type')=='apk']
@@ -394,6 +459,8 @@ PY
 ! grep -R -F n8n-nodes-base.snowflake "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -R -F n8n-nodes-base.executeCommand "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -R -F n8n-nodes-base.localFileTrigger "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.git "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.gitTool "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -Eiq 'SMTP|N8N_EMAIL_MODE|N8N_SMTP' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
 grep -F '127.0.0.1:5678:5678' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
 test -s "$GITHUB_WORKSPACE/deploy/containers/nodemailer-risk-record.md"
