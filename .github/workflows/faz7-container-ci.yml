@@ -1,0 +1,602 @@
+name: faz7
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - faz7/7-1-reproducible-containers-supply-chain-governance
+
+permissions:
+  contents: read
+
+env:
+  BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+  FAZ6_COMMERCE_SHA: ee45e4fdd3d805137387a0fc1198eedf8d461fb2
+  PYTHON_IMAGE: python:3.11.16-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91
+  POSTGRES_IMAGE: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+  VALKEY_IMAGE: valkey/valkey:8.1.10-alpine3.24@sha256:95726b32393eb4214e972149b1d8b1fc7c04ee4d67aae6b65a83ed475f17b7c5
+
+jobs:
+  source-boundary:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source and baseline without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          git fetch --no-tags origin "${BASE_SHA}"
+
+      - name: Enforce frozen source and authorized path boundary
+        run: |
+          set -euo pipefail
+          git diff --check "${BASE_SHA}...${SOURCE_SHA}"
+          git diff --name-only "${BASE_SHA}...${SOURCE_SHA}" | tee /tmp/faz7-changed-files.txt
+          python - <<'PY'
+          from pathlib import Path
+          allowed_exact = {'.dockerignore'}
+          allowed_prefixes = (
+              'deploy/containers/',
+              '.github/workflows/',
+              'docs/FAZ7_1_CONTAINER_SUPPLY_CHAIN_GOVERNANCE.md',
+              'docs/FAZ7_PRODUCTION_RUNTIME_CONTRACT.md',
+              'docs/PRODUCTION_OPERATIONS_HANDOFF.md',
+              'automation/n8n/runtime/docker-compose.yml',
+              'automation/n8n/tests/',
+          )
+          changed = [line.strip() for line in Path('/tmp/faz7-changed-files.txt').read_text().splitlines() if line.strip()]
+          forbidden = [p for p in changed if p not in allowed_exact and not any(p.startswith(prefix) for prefix in allowed_prefixes)]
+          if forbidden:
+              raise SystemExit('unauthorized FAZ 7.1 paths: ' + ', '.join(forbidden))
+          frozen_prefixes = (
+              'sitescore-core/', 'sitescore-data/', 'sitescore-providers/', 'sitescore-spatial/',
+              'sitescore-metrics/', 'sitescore-benchmarks/', 'sitescore-pipeline/', 'sitescore-app/',
+              'sitescore-report/', 'sitescore-api/', 'sitescore-commerce/', 'automation/n8n/workflows/'
+          )
+          frozen = [p for p in changed if p.startswith(frozen_prefixes)]
+          if frozen:
+              raise SystemExit('frozen application/workflow bytes changed: ' + ', '.join(frozen))
+          print('FROZEN_APPLICATION_SOURCE_DIFF=NONE')
+          PY
+
+      - name: Verify frozen n8n workflow byte identities
+        run: |
+          set -euo pipefail
+          test "$(sha256sum automation/n8n/workflows/sitescore-order-paid-v1.json | awk '{print $1}')" = "02000eddd70914e76dc528d6d3f43915c50d3e2909c849393ebc0dfcd398dea1"
+          test "$(sha256sum automation/n8n/workflows/sitescore-recovery-schedule-v1.json | awk '{print $1}')" = "f5409839cec1fa86b6af20f6cd242e71d52dceec8dcdb6cf35fd0b237e4a489c"
+
+      - name: Verify permanent Actions dependencies are full-SHA pinned
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, re
+          workflows = [pathlib.Path('.github/workflows/faz7-container-ci.yml'), pathlib.Path('.github/workflows/faz7-publish-images.yml')]
+          bad = []
+          pattern = re.compile(r'^\s*uses:\s*[^#\s]+@([0-9a-f]{40})\s*$')
+          for path in workflows:
+              for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                  if re.match(r'^\s*uses:\s*', line) and not pattern.match(line):
+                      bad.append(f'{path}:{lineno}:{line.strip()}')
+          if bad:
+              raise SystemExit('unpinned permanent action dependencies: ' + ' | '.join(bad))
+          print('PERMANENT_ACTION_FULL_SHA_PINNING=PASS')
+          PY
+
+  static-contracts:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Run dispatcher supervisor and n8n static suites with hashed test tools
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/repo" -w /repo "$PYTHON_IMAGE" sh -euc '
+            python -m venv /tmp/faz7-tests
+            /tmp/faz7-tests/bin/pip install --require-hashes -r deploy/containers/test-tools.lock >/dev/null
+            /tmp/faz7-tests/bin/python -m pytest deploy/containers/tests/test_dispatcher_supervisor.py -q | tee /tmp/supervisor.txt
+            grep -E "7 passed" /tmp/supervisor.txt
+            /tmp/faz7-tests/bin/python -m pytest automation/n8n/tests -q | tee /tmp/n8n-static.txt
+            grep -E "12 passed" /tmp/n8n-static.txt
+          '
+
+      - name: Verify frozen role command semantics
+        run: |
+          set -euo pipefail
+          grep -F 'exec python -m uvicorn sitescore_api.app:app' deploy/containers/runtime/api-web.sh
+          grep -F -- '--workers 1' deploy/containers/runtime/api-web.sh
+          grep -F 'exec celery -A sitescore_api.tasks:celery_app worker' deploy/containers/runtime/api-worker.sh
+          grep -F 'exec celery -A sitescore_api.tasks:celery_app beat' deploy/containers/runtime/api-beat.sh
+          grep -F '/tmp/' deploy/containers/runtime/api-beat.sh
+          grep -F 'exec python -m uvicorn sitescore_commerce.api:create_app' deploy/containers/runtime/commerce-web.sh
+          grep -F -- '--factory' deploy/containers/runtime/commerce-web.sh
+
+  container-validation:
+    runs-on: ubuntu-24.04
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source and provenance objects without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+          for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
+            git fetch --no-tags origin "$sha"
+          done
+
+      - name: Build linux amd64 runtime and test images
+        run: |
+          set -euo pipefail
+          version="sha-${SOURCE_SHA}"
+          for target in runtime test; do
+            docker buildx build --platform linux/amd64 --load \
+              --target "$target" \
+              --build-arg "SOURCE_REVISION=${SOURCE_SHA}" \
+              --build-arg "SOURCE_VERSION=${version}" \
+              -f deploy/containers/api/Dockerfile \
+              -t "sitescore-api:${target}" .
+            docker buildx build --platform linux/amd64 --load \
+              --target "$target" \
+              --build-arg "SOURCE_REVISION=${SOURCE_SHA}" \
+              --build-arg "SOURCE_VERSION=${version}" \
+              -f deploy/containers/commerce/Dockerfile \
+              -t "sitescore-commerce:${target}" .
+          done
+
+      - name: Prove runtime identity non-root labels and read-only smoke
+        run: |
+          set -euo pipefail
+          for pair in 'sitescore-api:runtime sitescore-api' 'sitescore-commerce:runtime sitescore-commerce'; do
+            set -- $pair
+            image="$1" title="$2"
+            test "$(docker image inspect "$image" --format '{{.Architecture}}')" = amd64
+            test "$(docker image inspect "$image" --format '{{.Config.User}}')" = '10001:10001'
+            test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = 'https://github.com/metadoks/sitescore'
+            test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+            test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "sha-${SOURCE_SHA}"
+            test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "$title"
+            docker run --rm "$image" sh -euc 'test "$(id -u)" -ne 0; test "$(id -g)" -ne 0; test -z "$(find /opt/venv -type f -writable -print -quit)"'
+          done
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-api:runtime \
+            python /opt/sitescore/verify_image_contract.py api
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:runtime \
+            python /opt/sitescore/verify_image_contract.py commerce
+
+      - name: Run exact current API report and Commerce applicable regressions
+        run: |
+          set -euo pipefail
+          pg_cid="$(docker run -d --rm --name faz7-regression-postgres \
+            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \
+            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
+          valkey_cid="$(docker run -d --rm --name faz7-regression-valkey \
+            -p 127.0.0.1:6379:6379 "$VALKEY_IMAGE")"
+          trap 'docker rm -f "$pg_cid" "$valkey_cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 60); do
+            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$pg_cid" pg_isready -U ci -d postgres
+          for _ in $(seq 1 60); do
+            if [ "$(docker exec "$valkey_cid" valkey-cli ping 2>/dev/null || true)" = PONG ]; then break; fi
+            sleep 1
+          done
+          test "$(docker exec "$valkey_cid" valkey-cli ping)" = PONG
+          docker exec "$pg_cid" createdb -U ci api_ci
+          docker exec "$pg_cid" createdb -U ci commerce_ci
+          api_db='postgresql+psycopg://ci:ci@127.0.0.1:5432/api_ci'
+          commerce_db='postgresql+psycopg://ci:ci@127.0.0.1:5432/commerce_ci'
+
+          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \
+            -e SITESCORE_DATABASE_URL="$api_db" sitescore-api:test \
+            alembic -c /testsrc/sitescore-api/alembic.ini upgrade head
+
+          set +e
+          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc \
+            -e SITESCORE_DATABASE_URL="$api_db" \
+            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0 \
+            sitescore-api:test \
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-api/tests > /tmp/api-tests.txt 2>&1
+          api_rc=$?
+          set -e
+          cat /tmp/api-tests.txt
+          test "$api_rc" -eq 0
+          grep -E '114 passed' /tmp/api-tests.txt
+
+          set +e
+          docker run --rm -v "$PWD:/testsrc:ro" -w /testsrc sitescore-api:test \
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-report/tests > /tmp/report-tests.txt 2>&1
+          report_rc=$?
+          set -e
+          cat /tmp/report-tests.txt
+          test "$report_rc" -eq 0
+          grep -E '24 passed' /tmp/report-tests.txt
+
+          cat > /tmp/Dockerfile.commerce-integration <<'EOF'
+          FROM sitescore-api:test
+          USER 0:0
+          ARG DEBIAN_SNAPSHOT=20260916T000000Z
+          COPY deploy/containers/commerce/requirements.lock /locks/commerce-runtime.lock
+          RUN /opt/venv/bin/pip install --require-hashes -r /locks/commerce-runtime.lock \
+           && rm -f /etc/apt/sources.list.d/debian.sources \
+           && printf '%s\n' \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main" \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}/ trixie-security main" \
+                > /etc/apt/sources.list \
+           && apt-get -o Acquire::Check-Valid-Until=false update \
+           && apt-get install -y --no-install-recommends git \
+           && git config --system --add safe.directory /testsrc \
+           && rm -rf /var/lib/apt/lists/*
+          USER 10001:10001
+          EOF
+          docker build --platform linux/amd64 -f /tmp/Dockerfile.commerce-integration -t sitescore-commerce:test-integration .
+
+          set +e
+          docker run --rm --network host -v "$PWD:/testsrc:ro" -w /testsrc/sitescore-commerce \
+            -e PYTHONPATH=/testsrc/sitescore-commerce/src \
+            -e SITESCORE_COMMERCE_DATABASE_URL="$commerce_db" \
+            sitescore-commerce:test-integration \
+            python -m pytest -o addopts='' -q -p no:cacheprovider /testsrc/sitescore-commerce/tests \
+              --deselect tests/test_faz6_final_freeze_gate.py::test_final_candidate_is_based_on_corrective_locked_main_and_permanent_diff_is_audit_only \
+            > /tmp/commerce-tests.txt 2>&1
+          commerce_rc=$?
+          set -e
+          cat /tmp/commerce-tests.txt
+          test "$commerce_rc" -eq 0
+          grep -E '416 passed' /tmp/commerce-tests.txt
+          docker rm -f "$pg_cid" "$valkey_cid" >/dev/null
+          trap - EXIT
+
+      - name: Prove API web worker beat commands and PDF font runtime
+        run: |
+          set -euo pipefail
+          api_cid="$(docker run -d --rm --read-only --tmpfs /tmp:rw,nosuid,nodev -e PORT=8000 -p 127.0.0.1:18080:8000 sitescore-api:runtime)"
+          trap 'docker stop -t 2 "$api_cid" >/dev/null 2>&1 || true' EXIT
+          python - <<'PY'
+          import time, urllib.request
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:18080/openapi.json', timeout=1) as response:
+                      assert response.status == 200
+                      break
+              except Exception:
+                  time.sleep(1)
+          else:
+              raise SystemExit('API web socket did not become ready')
+          PY
+          docker stop -t 2 "$api_cid" >/dev/null
+          trap - EXIT
+          api_env=(
+            -e SITESCORE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1/ci
+            -e SITESCORE_BROKER_URL=redis://127.0.0.1:6379/0
+            -e SITESCORE_API_KEY_PEPPER=ci-only-pepper-00000000000000000000000000000000
+          )
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
+            celery -A sitescore_api.tasks:celery_app worker --help >/dev/null
+          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${api_env[@]}" sitescore-api:runtime \
+            celery -A sitescore_api.tasks:celery_app beat --help >/dev/null
+          set +e
+          docker run --rm --tmpfs /tmp:rw,nosuid,nodev sitescore-api:test python -m pytest -o addopts='' -q /testsrc/sitescore-report/tests/test_visual_report_rendering.py > /tmp/pdf-test.txt 2>&1
+          pdf_rc=$?
+          set -e
+          cat /tmp/pdf-test.txt
+          test "$pdf_rc" -eq 0
+          grep -E 'passed' /tmp/pdf-test.txt
+
+      - name: Prove Commerce web socket and dispatcher supervisor runtime
+        run: |
+          set -euo pipefail
+          commerce_env=(
+            -e COMMERCE_ENV=test
+            -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1:5432/ci
+            -e STRIPE_SECRET_KEY=sk_test_ci_only
+            -e STRIPE_PRICE_LOCATION_REPORT_V1=price_ci123456789
+            -e COMMERCE_SUCCESS_URL_BASE=http://127.0.0.1:8000/success
+            -e COMMERCE_CANCEL_URL_BASE=http://127.0.0.1:8000/cancel
+            -e STRIPE_WEBHOOK_SECRET=whsec_ci_only
+            -e STRIPE_EXPECTED_LIVEMODE=false
+            -e SITESCORE_API_BASE_URL=http://127.0.0.1:8001
+            -e SITESCORE_API_SERVICE_KEY=ssk1_ci.12345678901234567890123456789012
+            -e SITESCORE_API_TARGET_ID=ci
+            -e COMMERCE_AUTOMATION_API_KEY=ci-automation-key-12345678901234567890
+            -e POSTMARK_SERVER_TOKEN=ci-postmark-token-123456
+            -e POSTMARK_FROM_EMAIL=noreply@example.com
+            -e POSTMARK_TEMPLATE_ALIAS=sitescore-report-v1
+            -e COMMERCE_PUBLIC_BASE_URL=http://127.0.0.1:8000
+          )
+          commerce_cid="$(docker run -d --rm --read-only --tmpfs /tmp:rw,nosuid,nodev "${commerce_env[@]}" -e PORT=8000 -p 127.0.0.1:18081:8000 sitescore-commerce:runtime)"
+          trap 'docker stop -t 2 "$commerce_cid" >/dev/null 2>&1 || true' EXIT
+          python - <<'PY'
+          import socket, time
+          for _ in range(30):
+              try:
+                  with socket.create_connection(('127.0.0.1', 18081), timeout=1):
+                      break
+              except OSError:
+                  time.sleep(1)
+          else:
+              raise SystemExit('Commerce web socket did not become ready')
+          PY
+          docker stop -t 2 "$commerce_cid" >/dev/null
+          trap - EXIT
+          dispatcher_cid="$(docker run -d --rm --read-only --tmpfs /tmp:rw,nosuid,nodev sitescore-commerce:runtime python /opt/sitescore/bin/commerce-dispatcher-supervisor.py)"
+          sleep 4
+          docker logs "$dispatcher_cid" 2>&1 | tee /tmp/dispatcher-runtime.log
+          grep -E 'backoff_seconds|sleep_seconds' /tmp/dispatcher-runtime.log
+          docker stop -t 5 "$dispatcher_cid" >/dev/null
+
+      - name: Generate application SBOMs scans and image hygiene evidence
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/containers/artifacts/application-images
+          test -s deploy/containers/application-security-residual-risk-record.md
+          grep -F 'CVE-2026-82049' deploy/containers/application-security-residual-risk-record.md
+          grep -F 'REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX' deploy/containers/application-security-residual-risk-record.md
+          grep -F 'PYTHON_IMAGE_TAG=python:3.11.16-slim-trixie' deploy/containers/base-image.lock
+          grep -F 'PYTHON_IMAGE_DIGEST=sha256:d1053354624536b044162aaab1e418bd000ea35184fb1ae098ab3166b1072e72' deploy/containers/base-image.lock
+          grep -F 'DEBIAN_SUITE=trixie' deploy/containers/base-image.lock
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          roots=[Path(x) for x in ('sitescore-api','sitescore-commerce','sitescore-app','sitescore-core','sitescore-report') if Path(x).exists()]
+          runtime_roots=[Path('deploy/containers/runtime')]
+          extraction_patterns={
+              'import_tarfile':re.compile(r'(^|\n)\s*import\s+tarfile\b'),
+              'from_tarfile':re.compile(r'(^|\n)\s*from\s+tarfile\b'),
+              'tarfile_extract':re.compile(r'\btarfile\s*\.\s*extract\w*\s*\('),
+              'extractall':re.compile(r'\bextractall\s*\('),
+              'shutil_unpack_archive':re.compile(r'\bshutil\s*\.\s*unpack_archive\s*\('),
+          }
+          archive_ingress=re.compile(r'application/x-tar|application/gzip|\.tar\.gz|\.tgz|["\']\.tar["\']',re.I)
+          def scan(paths,patterns):
+              hits=[]
+              for root in paths:
+                  if not root.exists(): continue
+                  for p in root.rglob('*'):
+                      if not p.is_file() or p.suffix not in {'.py','.sh'}: continue
+                      try: text=p.read_text(errors='ignore')
+                      except Exception: continue
+                      for label,pat in patterns.items():
+                          if pat.search(text): hits.append({'path':str(p),'pattern':label})
+              return hits
+          source_hits=scan(roots,extraction_patterns)
+          runtime_hits=scan(runtime_roots,extraction_patterns)
+          ingress=[]
+          for root in roots:
+              for p in root.rglob('*.py'):
+                  text=p.read_text(errors='ignore')
+                  if archive_ingress.search(text): ingress.append(str(p))
+          evidence={'source_extraction_matches':source_hits,'runtime_smoke_extraction_matches':runtime_hits,'public_tar_ingress_token_matches':sorted(set(ingress))}
+          Path('deploy/containers/artifacts/application-images/cve-2026-82049-reachability.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
+          if source_hits or runtime_hits or ingress:
+              raise SystemExit('CVE-2026-82049 reachability containment proof failed')
+          PY
+          curl --fail --location --silent --show-error https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json -o deploy/containers/artifacts/application-images/cisa-kev.json
+          syft_image="$(awk -F= '$1=="SYFT_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          grype_image="$(awk -F= '$1=="GRYPE_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
+          for name in api commerce; do
+            image="sitescore-${name}:runtime"
+            docker history --no-trunc "$image" > "deploy/containers/artifacts/application-images/${name}.history.txt"
+            docker image inspect "$image" > "deploy/containers/artifacts/application-images/${name}.inspect.json"
+            if grep -E -i '(STRIPE_SECRET_KEY=|STRIPE_WEBHOOK_SECRET=|SITESCORE_API_KEY_PEPPER=|POSTMARK_SERVER_TOKEN=|OPENAI_API_KEY=|SITESCORE_COMMERCE_DATABASE_URL=|SITESCORE_DATABASE_URL=|SITESCORE_BROKER_URL=)' \
+                "deploy/containers/artifacts/application-images/${name}.history.txt" \
+                "deploy/containers/artifacts/application-images/${name}.inspect.json"; then
+              echo "secret-bearing image metadata detected for ${name}" >&2
+              exit 1
+            fi
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$syft_image" "$image" -o spdx-json > "deploy/containers/artifacts/application-images/${name}.spdx.json"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$grype_image" "$image" -o json > "deploy/containers/artifacts/application-images/${name}.grype.json"
+            python - "$name" "deploy/containers/artifacts/application-images/${name}.grype.json" "deploy/containers/artifacts/application-images/cisa-kev.json" <<'PY'
+          import json, pathlib, sys
+          name, path, kev_path = sys.argv[1:]
+          data = json.load(open(path))
+          kev = json.load(open(kev_path))
+          kev_ids={str(x.get('cveID')) for x in kev.get('vulnerabilities', []) if x.get('cveID')}
+          blockers=[]; residuals=[]; kev_matches=[]
+          for match in data.get('matches', []):
+              vulnerability=match.get('vulnerability') or {}
+              artifact=match.get('artifact') or {}
+              severity=str(vulnerability.get('severity', '')).upper()
+              fixes=(vulnerability.get('fix') or {}).get('versions') or []
+              vid=str(vulnerability.get('id') or '')
+              ids={vid}
+              for rel in vulnerability.get('relatedVulnerabilities') or []:
+                  if isinstance(rel,dict) and rel.get('id'): ids.add(str(rel['id']))
+              hit=sorted(ids & kev_ids)
+              if hit:
+                  kev_matches.append({'ids':hit,'package':artifact.get('name'),'version':artifact.get('version')})
+                  blockers.append((vid,severity,artifact.get('name'),artifact.get('version'),fixes,'CISA_KEV'))
+                  continue
+              exact=(vid=='CVE-2026-82049' and severity=='HIGH' and artifact.get('name')=='python' and artifact.get('version')=='3.11.16')
+              if exact:
+                  residuals.append({'id':vid,'severity':severity,'package':'python','version':'3.11.16','fixes':fixes,'classification':'REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX'})
+                  continue
+              if severity=='CRITICAL' or (severity=='HIGH' and fixes):
+                  blockers.append((vid,severity,artifact.get('name'),artifact.get('version'),fixes,'ACTIONABLE'))
+          summary={'image':name,'CISA_KEV_MATCHES':kev_matches,'authorized_residuals':residuals,'policy_blockers':blockers}
+          pathlib.Path(f'deploy/containers/artifacts/application-images/{name}.security-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(f'{name.upper()}_CISA_KEV_MATCHES={len(kev_matches)}')
+          print(f'{name.upper()}_AUTHORIZED_CVE_2026_82049={len(residuals)}')
+          print(f'{name.upper()}_POLICY_BLOCKERS={len(blockers)}')
+          for blocker in blockers: print('BLOCKER',blocker)
+          if len(residuals)!=1:
+              raise SystemExit(f'expected exact raw CVE-2026-82049 residual once in {name}, got {len(residuals)}')
+          if blockers:
+              raise SystemExit(42)
+          PY
+          done
+
+      - name: Upload application supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-application-image-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: deploy/containers/artifacts/application-images/
+
+  faz6-commerce-replay:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact frozen FAZ6 Commerce base and provenance objects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "${FAZ6_COMMERCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${FAZ6_COMMERCE_SHA}"
+          for sha in 0e370940ee5c8c1253db72fa7e33078fb4ef3b2c 8a4e358709ae7a662bf079722db042fb6e319ffd af3b9567d644f6bcf0410af704dd7d86de41b5ce 719a17c4359524337f57298252a59ccb89dcd0aa 8027239b4b168e98e8ee16e15787366632017156 3ed6f6e323fdf4e3b0ef63e8c083d4f978e12628 acc213ac52f980789164d9fedcd4e18deeefcf75 64887a560c4af492312e726f990363fc5010345d 7b0b63eb3f4a9fbd74a0bfd92ef793c7d7522fba 1f22c4a09c08c2803c746b87a20209d7fdf6c574 bdf43a891ca14941ba2f2c4f115e4a15bec0015a 4ed902dd9ebf230dcb983392705ab0d95bb0c846 287367ce8eb708efce0ebae0a2f9c90d681cce01 813e3436bc3f899a774c853a6a81ba7924b54c42 df4e3181712e7f426f8f1752628952a620c98f05; do
+            git fetch --no-tags origin "$sha"
+          done
+
+      - name: Replay frozen FAZ6 Commerce 417-pass baseline
+        run: |
+          set -euo pipefail
+          pg_cid="$(docker run -d --rm --name faz6-replay-postgres \
+            -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=postgres \
+            -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE")"
+          trap 'docker rm -f "$pg_cid" >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 60); do
+            if docker exec "$pg_cid" pg_isready -U ci -d postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$pg_cid" pg_isready -U ci -d postgres
+          docker exec "$pg_cid" createdb -U ci commerce_ci
+          set +e
+          docker run --rm --network host -v "$PWD:/repo" -w /repo \
+            -e SITESCORE_COMMERCE_DATABASE_URL=postgresql+psycopg://ci:ci@127.0.0.1:5432/commerce_ci \
+            "$PYTHON_IMAGE" sh -euc '
+              rm -f /etc/apt/sources.list.d/debian.sources
+              printf "%s\n" \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260821T000000Z/ bookworm main" \
+                "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260821T000000Z/ bookworm-security main" > /etc/apt/sources.list
+              apt-get -o Acquire::Check-Valid-Until=false update >/dev/null
+              apt-get install -y --no-install-recommends git >/dev/null
+              git config --global --add safe.directory /repo
+              python -m venv /tmp/faz6-commerce
+              /tmp/faz6-commerce/bin/pip install \
+                ./sitescore-core ./sitescore-data ./sitescore-providers ./sitescore-spatial \
+                ./sitescore-metrics ./sitescore-benchmarks ./sitescore-pipeline ./sitescore-app \
+                ./sitescore-report ./sitescore-api "./sitescore-commerce[test]" >/dev/null
+              /tmp/faz6-commerce/bin/python -m pytest -o addopts="" -q -p no:cacheprovider sitescore-commerce/tests
+            ' > /tmp/faz6-replay.txt 2>&1
+          replay_rc=$?
+          set -e
+          cat /tmp/faz6-replay.txt
+          test "$replay_rc" -eq 0
+          grep -E '417 passed' /tmp/faz6-replay.txt
+          docker rm -f "$pg_cid" >/dev/null
+          trap - EXIT
+
+  n8n-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source without third-party action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Free runner disk for frozen n8n source build
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Setup exact Node 26.7.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '26.7.0'
+
+      - name: Authenticate frozen DHI runtime registry
+        env:
+          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${DHI_USERNAME:-}" || { echo 'DHI_USERNAME secret is required' >&2; exit 44; }
+          test -n "${DHI_TOKEN:-}" || { echo 'DHI_TOKEN secret is required' >&2; exit 44; }
+          printf '%s' "$DHI_TOKEN" | docker login dhi.io --username "$DHI_USERNAME" --password-stdin >/dev/null
+
+      - name: Execute frozen n8n 2.37.10 source build hardening and security gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v26.7.0
+          set -a
+          . deploy/containers/n8n-image.lock
+          set +a
+          corepack enable
+          corepack prepare "pnpm@${N8N_PNPM_VERSION}" --activate
+          test "$(pnpm --version)" = "$N8N_PNPM_VERSION"
+          bash deploy/containers/n8n-frozen-candidate-ci.sh
+
+      - name: Upload n8n final supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: faz7-n8n-final-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: deploy/containers/artifacts/n8n-final/
+
+      - name: Logout frozen DHI runtime registry
+        if: always()
+        run: docker logout dhi.io >/dev/null 2>&1 || true
+
+  required-gate:
+    name: required-gate
+    if: always()
+    needs: [source-boundary, static-contracts, container-validation, faz6-commerce-replay, n8n-validation]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every mandatory FAZ7 upstream gate
+        env:
+          SOURCE_BOUNDARY: ${{ needs.source-boundary.result }}
+          STATIC_CONTRACTS: ${{ needs.static-contracts.result }}
+          CONTAINER_VALIDATION: ${{ needs.container-validation.result }}
+          FAZ6_COMMERCE_REPLAY: ${{ needs.faz6-commerce-replay.result }}
+          N8N_VALIDATION: ${{ needs.n8n-validation.result }}
+        run: |
+          set -euo pipefail
+          printf 'source-boundary=%s\nstatic-contracts=%s\ncontainer-validation=%s\nfaz6-commerce-replay=%s\nn8n-validation=%s\n' "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"
+          for result in "$SOURCE_BOUNDARY" "$STATIC_CONTRACTS" "$CONTAINER_VALIDATION" "$FAZ6_COMMERCE_REPLAY" "$N8N_VALIDATION"; do
+            test "$result" = success
+          done

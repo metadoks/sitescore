@@ -1,0 +1,8 @@
+fontconfig=2.15.0-2.3
+fonts-dejavu-core=2.37-8
+libffi8=3.4.8-2
+libjpeg62-turbo=1:2.1.5-4
+libopenjp2-7=2.5.3-2.1~deb13u2
+libpango-1.0-0=1.56.3-1
+libpangoft2-1.0-0=1.56.3-1
+libharfbuzz-subset0=10.2.0-1+deb13u1
