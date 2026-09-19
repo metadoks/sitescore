@@ -113,10 +113,27 @@ grep -F "'@xmldom/xmldom': $N8N_XMLDOM_TARGET" pnpm-workspace.yaml
 grep -F "fast-uri@$N8N_FAST_URI_TARGET" pnpm-lock.yaml
 grep -F "js-yaml@$N8N_JS_YAML_TARGET" pnpm-lock.yaml
 python - <<'PY'
-import os, re
+import os
 from pathlib import Path
-text=Path('pnpm-lock.yaml').read_text()
-versions=sorted(set(re.findall(r'(?m)^  multer@(\\d+\\.\\d+\\.\\d+):
+prefix='  multer@'
+versions=[]
+for line in Path('pnpm-lock.yaml').read_text().splitlines():
+    if not (line.startswith(prefix) and line.endswith(':')):
+        continue
+    version=line[len(prefix):-1]
+    parts=version.split('.')
+    if len(parts)==3 and all(part.isdigit() for part in parts):
+        versions.append(version)
+versions=sorted(set(versions))
+if len(versions)!=1:
+    raise SystemExit(f'unexpected multer lock versions: {versions}')
+parts=tuple(map(int,versions[0].split('.')))
+floor=tuple(map(int,os.environ['N8N_MULTER_TARGET'].split('.')))
+if not (parts >= floor and parts[0] == 2):
+    raise SystemExit(f'multer resolved outside authorized range: {versions[0]}')
+Path(os.environ['OUT'],'multer-resolved-version.txt').write_text(versions[0]+'\n')
+print('MULTER_RESOLVED_VERSION='+versions[0])
+PY
 grep -F "@xmldom/xmldom@$N8N_XMLDOM_TARGET" pnpm-lock.yaml
 CI=true NODE_OPTIONS=--max-old-space-size=7168 pnpm install --frozen-lockfile
 pnpm why --prod --recursive snowflake-sdk --json > "$OUT/pnpm-why-prod-snowflake-sdk.json"
