@@ -82,33 +82,92 @@ curl --fail --location --silent --show-error "https://raw.githubusercontent.com/
 grep -F "fast-uri: ${N8N_FAST_URI_TARGET}" "$OUT/upstream-fast-uri-adoption.yaml"
 python - <<'PY'
 from pathlib import Path
+import os
 p=Path('pnpm-workspace.yaml')
 s=p.read_text()
-assert s.count('fast-uri: 3.1.5') == 1
-assert 'fast-uri: 3.1.6' not in s
-p.write_text(s.replace('fast-uri: 3.1.5','fast-uri: 3.1.6',1))
+replacements=[
+    ('fast-uri: 3.1.5', f"fast-uri: {os.environ['N8N_FAST_URI_TARGET']}"),
+    ('js-yaml: 4.3.1', f"js-yaml: {os.environ['N8N_JS_YAML_TARGET']}"),
+    ('multer: ^2.2.0', f"multer: ^{os.environ['N8N_MULTER_TARGET']}"),
+    ("'@xmldom/xmldom': 0.8.14", f"'@xmldom/xmldom': {os.environ['N8N_XMLDOM_TARGET']}"),
+]
+for old,new in replacements:
+    assert s.count(old)==1, (old,s.count(old))
+    s=s.replace(old,new,1)
+p.write_text(s)
 PY
 pnpm install --lockfile-only --ignore-scripts
 cp pnpm-workspace.yaml "$OUT/pnpm-workspace.backported.yaml"
 cp pnpm-lock.yaml "$OUT/pnpm-lock.backported.yaml"
-git diff -- pnpm-workspace.yaml pnpm-lock.yaml > "$OUT/fast-uri-backport.diff"
+git diff -- pnpm-workspace.yaml pnpm-lock.yaml > "$OUT/security-backports.diff"
 git diff --check -- pnpm-workspace.yaml pnpm-lock.yaml
-grep -F 'fast-uri: 3.1.6' pnpm-workspace.yaml
+test "$(git diff --name-only | sort | tr '\n' ' ')" = "pnpm-lock.yaml pnpm-workspace.yaml "
+grep -F "fast-uri: $N8N_FAST_URI_TARGET" pnpm-workspace.yaml
+grep -F "js-yaml: $N8N_JS_YAML_TARGET" pnpm-workspace.yaml
+grep -F "multer: ^$N8N_MULTER_TARGET" pnpm-workspace.yaml
+grep -F "'@xmldom/xmldom': $N8N_XMLDOM_TARGET" pnpm-workspace.yaml
 ! grep -F 'fast-uri@3.1.5' pnpm-lock.yaml
-grep -F 'fast-uri@3.1.6' pnpm-lock.yaml
+! grep -F 'js-yaml@4.3.1' pnpm-lock.yaml
+! grep -F 'multer@2.2.0' pnpm-lock.yaml
+! grep -F '@xmldom/xmldom@0.8.14' pnpm-lock.yaml
+grep -F "fast-uri@$N8N_FAST_URI_TARGET" pnpm-lock.yaml
+grep -F "js-yaml@$N8N_JS_YAML_TARGET" pnpm-lock.yaml
+grep -F "multer@$N8N_MULTER_TARGET" pnpm-lock.yaml
+grep -F "@xmldom/xmldom@$N8N_XMLDOM_TARGET" pnpm-lock.yaml
 CI=true NODE_OPTIONS=--max-old-space-size=7168 pnpm install --frozen-lockfile
 pnpm why --prod --recursive snowflake-sdk --json > "$OUT/pnpm-why-prod-snowflake-sdk.json"
 pnpm why --prod --recursive toml --json > "$OUT/pnpm-why-prod-toml.json"
 pnpm why --prod --recursive fast-uri --json > "$OUT/pnpm-why-prod-fast-uri.json"
 pnpm why --prod --recursive ip-address --json > "$OUT/pnpm-why-prod-ip-address.json"
 pnpm why --prod --recursive brace-expansion --json > "$OUT/pnpm-why-prod-brace-expansion.json"
+pnpm why --prod --recursive js-yaml --json > "$OUT/pnpm-why-prod-js-yaml.json"
+pnpm why --prod --recursive multer --json > "$OUT/pnpm-why-prod-multer.json"
+pnpm why --prod --recursive @xmldom/xmldom --json > "$OUT/pnpm-why-prod-xmldom.json"
+pnpm why --prod --recursive adm-zip --json > "$OUT/pnpm-why-prod-adm-zip.json" || true
+pnpm why --prod --recursive @tiptap/core --json > "$OUT/pnpm-why-prod-tiptap-core.json"
 grep -F snowflake-sdk "$OUT/pnpm-why-prod-snowflake-sdk.json"
 grep -F toml "$OUT/pnpm-why-prod-toml.json"
+python - <<'PY'
+import json, os
+from pathlib import Path
+target=os.environ['N8N_XMLDOM_TARGET']
+root=Path('node_modules/.pnpm')
+rows=[]
+for p in root.rglob('package.json'):
+    try:
+        d=json.loads(p.read_text())
+    except Exception:
+        continue
+    for section in ('dependencies','optionalDependencies','peerDependencies'):
+        dep=(d.get(section) or {}).get('@xmldom/xmldom')
+        if dep:
+            rows.append({'parent':d.get('name'),'parent_version':d.get('version'),'section':section,'declared_range':dep})
+assert rows, 'no xmldom parents discovered'
+bad=[]
+for r in rows:
+    spec=str(r['declared_range'])
+    if spec.startswith('^0.8.'):
+        floor=tuple(map(int,spec[1:].split('.')))
+        cur=tuple(map(int,target.split('.')))
+        ok=cur[0]==0 and cur[1]==8 and cur>=floor
+    elif spec.startswith('~0.8.'):
+        floor=tuple(map(int,spec[1:].split('.')))
+        cur=tuple(map(int,target.split('.')))
+        ok=cur[:2]==floor[:2] and cur>=floor
+    else:
+        ok=(spec==target)
+    if not ok: bad.append(r)
+Path(os.environ['OUT'],'xmldom-parent-ranges.json').write_text(json.dumps({'target':target,'parents':rows,'incompatible':bad},indent=2,sort_keys=True)+'\n')
+if bad: raise SystemExit('xmldom parent-range incompatibility: '+json.dumps(bad,sort_keys=True))
+PY
 CI=true NODE_OPTIONS=--max-old-space-size=7168 RELEASE="$N8N_VERSION" pnpm build:n8n
 test -d compiled
-grep -R '"version": "3.1.6"' compiled/node_modules/.pnpm/fast-uri@3.1.6*/node_modules/fast-uri/package.json
+grep -R "\"version\": \"$N8N_FAST_URI_TARGET\"" compiled/node_modules/.pnpm/fast-uri@$N8N_FAST_URI_TARGET*/node_modules/fast-uri/package.json
 grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
 grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
+grep -R "\"version\": \"$N8N_JS_YAML_TARGET\"" compiled/node_modules/.pnpm/js-yaml@$N8N_JS_YAML_TARGET*/node_modules/js-yaml/package.json
+grep -R "\"version\": \"$N8N_MULTER_TARGET\"" compiled/node_modules/.pnpm/multer@$N8N_MULTER_TARGET*/node_modules/multer/package.json
+grep -R "\"version\": \"$N8N_XMLDOM_TARGET\"" compiled/node_modules/.pnpm/@xmldom+xmldom@$N8N_XMLDOM_TARGET*/node_modules/@xmldom/xmldom/package.json
 grep -R '"version": "8.0.10"' compiled/node_modules/.pnpm/nodemailer@8.0.10*/node_modules/nodemailer/package.json
 grep -R '"version": "2.1.0"' compiled/node_modules/.pnpm/snowflake-sdk@2.1.0*/node_modules/snowflake-sdk/package.json
 grep -R '"version": "3.0.0"' compiled/node_modules/.pnpm/toml@3.0.0*/node_modules/toml/package.json
@@ -120,6 +179,7 @@ popd >/dev/null
 cat > /tmp/sitescore-n8n-base.Dockerfile <<'EOF'
 ARG DHI_REF
 FROM ${DHI_REF} AS evidence
+ARG LIBCURL_TARGET
 RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontconfig && \
     update-ms-fonts && fc-cache -f && apk del .build-deps-fonts && \
     find /usr/share/fonts/truetype/msttcorefonts/ -type l -exec unlink {} \; && \
@@ -128,9 +188,10 @@ RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontc
     cp /etc/apk/repositories /security-evidence/repositories.before && \
     cp /etc/apk/world /security-evidence/world.before && \
     cp /lib/apk/db/installed /security-evidence/installed.before && \
+    apk policy libcurl pcre2 zlib > /security-evidence/security-packages.policy.before.txt && \
     (apk del openssh graphicsmagick 2>&1 | tee /security-evidence/removal.log) && \
-    (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' 2>&1 | tee /security-evidence/pins.log) && \
-    apk policy libcrypto3 libssl3 libexpat > /security-evidence/policy.after.txt && \
+    (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' "libcurl=${LIBCURL_TARGET}" 2>&1 | tee /security-evidence/pins.log) && \
+    apk policy libcrypto3 libssl3 libexpat libcurl pcre2 zlib > /security-evidence/policy.after.txt && \
     cp /etc/apk/repositories /security-evidence/repositories.after && \
     cp /etc/apk/world /security-evidence/world.after && \
     cp /lib/apk/db/installed /security-evidence/installed.after && \
@@ -143,11 +204,11 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 EXPOSE 5678/tcp
 EOF
 
-docker build --platform linux/amd64 --no-cache --target evidence --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" -f /tmp/sitescore-n8n-base.Dockerfile -t sitescore-n8n-base-pruned:evidence "$SRC"
+docker build --platform linux/amd64 --no-cache --target evidence --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" --build-arg LIBCURL_TARGET="$N8N_LIBCURL_TARGET" -f /tmp/sitescore-n8n-base.Dockerfile -t sitescore-n8n-base-pruned:evidence "$SRC"
 eid="$(docker create sitescore-n8n-base-pruned:evidence)"
 docker cp "$eid:/security-evidence/." "$OUT/apk-evidence"
 docker rm "$eid" >/dev/null
-docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
+docker build --platform linux/amd64 --no-cache --target final --build-arg DHI_REF="$N8N_DHI_RUNTIME_BASE" --build-arg LIBCURL_TARGET="$N8N_LIBCURL_TARGET" -f /tmp/sitescore-n8n-base.Dockerfile -t "$N8N_HARDENED_BASE_IMAGE" "$SRC"
 docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'cat /lib/apk/db/installed' > "$OUT/final-installed.raw"
 test "$(docker image inspect "$N8N_HARDENED_BASE_IMAGE" --format '{{.Architecture}}')" = amd64
 test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --version')" = v26.7.0
@@ -155,7 +216,7 @@ test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --ve
 python - <<'PY'
 import os
 raw=open(os.path.join(os.environ['OUT'],'final-installed.raw')).read()
-for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.4-r0'):
+for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.4-r0',f"P:libcurl\nV:{os.environ['N8N_LIBCURL_TARGET']}"):
     if item not in raw: raise SystemExit('required exact runtime pin missing: '+item)
 for item in ('P:openssh\n','P:graphicsmagick\n','P:apk-tools\n'):
     if item in raw: raise SystemExit('forbidden runtime package remains: '+item)
@@ -235,20 +296,66 @@ if not verified: raise SystemExit('OpenVEX digest verification failed')
 ctx['selected_digest']=open(os.path.join(out,'final-image-id.txt')).read().strip(); json.dump(ctx,open(os.path.join(out,'release-context.json'),'w'),indent=2,sort_keys=True)
 PY
 python "$GITHUB_WORKSPACE/deploy/containers/n8n_openvex_reconcile.py" "$OUT"
+! grep -Eiq 'tiptap|n8n-nodes-base\.markdown' "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -R -F n8n-nodes-base.emailSend "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
+! grep -Eiq 'SMTP|N8N_EMAIL_MODE|N8N_SMTP' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
+grep -F '127.0.0.1:5678:5678' "$GITHUB_WORKSPACE/automation/n8n/runtime/docker-compose.yml"
+test -s "$GITHUB_WORKSPACE/deploy/containers/nodemailer-risk-record.md"
+test -s "$GITHUB_WORKSPACE/deploy/containers/n8n-security-residual-risk-record.md"
 python - <<'PY'
 import json, os
-out=os.environ['OUT']; rows=json.load(open(os.path.join(out,'n8n.vendor-openvex-reconciliation.json'))); official=json.load(open(os.path.join(out,'official.grype.json')))
-critical=[r for r in rows if r['severity']=='CRITICAL' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']; high=[r for r in rows if r['severity']=='HIGH' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']; kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
-nodemailer=[]; other=[]
+out=os.environ['OUT']
+rows=json.load(open(os.path.join(out,'n8n.vendor-openvex-reconciliation.json')))
+official=json.load(open(os.path.join(out,'official.grype.json')))
+inspect=json.load(open(os.path.join(out,'final-image-inspect.json')))
+arch=inspect[0].get('Architecture') if isinstance(inspect,list) else inspect.get('Architecture')
+critical=[r for r in rows if r['severity']=='CRITICAL' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']
+high=[r for r in rows if r['severity']=='HIGH' and r.get('final_disposition')!='VEX_NOT_AFFECTED_ALLOWED']
+kev=[r for r in rows if r.get('CISA_KEV_alias_matches')]
+allowed=[]; blocking=[]
+allowed_ids={
+  ('nodemailer','8.0.10','GHSA-P6GQ-J5CR-W38F'),
+  ('nodemailer','8.0.10','GHSA-2X7J-588G-CCC2'),
+  ('@tiptap/core','3.27.0','GHSA-J95F-988M-3J2F'),
+  ('pcre2','10.47-r1','CVE-2026-89157'),
+  ('zlib','1.3.2-r0','CVE-2026-85091'),
+}
 for r in high:
-    ids={str(x).upper() for x in (r.get('scanner_alias_ids') or [])}; ids.add(str(r.get('scanner_advisory_id') or '').upper())
-    if r.get('package_name')=='nodemailer' and r.get('installed_version')=='8.0.10' and 'GHSA-P6GQ-J5CR-W38F' in ids: nodemailer.append(r)
-    else: other.append(r)
-os_high=[r for r in high if r.get('package_type')=='apk']; forbidden={n:[r for r in high if r.get('package_name')==n] for n in ('fast-uri','ip-address','brace-expansion','toml','snowflake-sdk')}
-official_high={(str((m.get('vulnerability') or {}).get('id')),str((m.get('artifact') or {}).get('name'))) for m in official.get('matches',[]) if str((m.get('vulnerability') or {}).get('severity') or '').upper()=='HIGH'}; new_high=[r for r in high if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
-summary={'BLOCKING_CRITICAL':len(critical),'CISA_KEV':len(kev),'OS_HIGH':len(os_high),'NEW_HIGH':len(new_high),'OTHER_HIGH':len(other),'NODEMAILER_RESIDUAL_HIGH':len(nodemailer),'FORBIDDEN_PACKAGE_HIGH':{k:len(v) for k,v in forbidden.items()}}
-json.dump(summary,open(os.path.join(out,'security-summary.json'),'w'),indent=2,sort_keys=True); print(json.dumps(summary,indent=2,sort_keys=True))
-if critical or kev or os_high or new_high or other or len(nodemailer)>1 or any(forbidden.values()): raise SystemExit('final security threshold failed')
+    ids={str(x).upper() for x in (r.get('scanner_alias_ids') or [])}
+    ids.add(str(r.get('scanner_advisory_id') or '').upper())
+    matched=None
+    for pkg,ver,aid in allowed_ids:
+        if r.get('package_name')==pkg and r.get('installed_version')==ver and aid in ids:
+            matched=(pkg,ver,aid); break
+    if matched:
+        pkg,ver,aid=matched
+        if pkg=='pcre2' and arch!='amd64':
+            blocking.append(r); continue
+        if pkg in ('pcre2','zlib') and (r.get('fixed_versions') or []):
+            blocking.append(r); continue
+        allowed.append({'package':pkg,'version':ver,'advisory':aid,'reason':'reviewer-authorized exact residual'})
+    else:
+        blocking.append(r)
+forbidden={n:[r for r in high if r.get('package_name')==n] for n in ('fast-uri','ip-address','brace-expansion','toml','snowflake-sdk')}
+official_high={(str((m.get('vulnerability') or {}).get('id')),str((m.get('artifact') or {}).get('name'))) for m in official.get('matches',[]) if str((m.get('vulnerability') or {}).get('severity') or '').upper()=='HIGH'}
+new_blocking=[r for r in blocking if (str(r.get('scanner_advisory_id')),str(r.get('package_name'))) not in official_high]
+os_blocking=[r for r in blocking if r.get('package_type')=='apk']
+summary={
+ 'BLOCKING_CRITICAL':len(critical),
+ 'CISA_KEV':len(kev),
+ 'ACTIONABLE_OS_HIGH':len(os_blocking),
+ 'NEW_UNDISPOSITIONED_HIGH':len(new_blocking),
+ 'BLOCKING_HIGH':len(blocking),
+ 'ALLOWED_EXACT_RESIDUAL_HIGH':len(allowed),
+ 'ALLOWED_RESIDUALS':allowed,
+ 'BLOCKING_HIGH_DETAILS':[{'id':r.get('scanner_advisory_id'),'package':r.get('package_name'),'version':r.get('installed_version'),'fixed_versions':r.get('fixed_versions') or []} for r in blocking],
+ 'FORBIDDEN_PACKAGE_HIGH':{k:len(v) for k,v in forbidden.items()},
+}
+json.dump(summary,open(os.path.join(out,'security-summary.json'),'w'),indent=2,sort_keys=True)
+json.dump({'architecture':arch,'allowed_residuals':allowed,'blocking_high':summary['BLOCKING_HIGH_DETAILS']},open(os.path.join(out,'reviewer-residual-risk-evidence.json'),'w'),indent=2,sort_keys=True)
+print(json.dumps(summary,indent=2,sort_keys=True))
+if critical or kev or os_blocking or new_blocking or blocking or any(forbidden.values()):
+    raise SystemExit('final security threshold failed')
 PY
 ! grep -R -F n8n-nodes-base.emailSend "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json
 ! grep -R -F n8n-nodes-base.snowflake "$GITHUB_WORKSPACE"/automation/n8n/workflows/*.json

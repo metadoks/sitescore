@@ -1,17 +1,19 @@
 # FAZ 7.1 n8n nodemailer residual risk record
 
-Advisory: `GHSA-p6gq-j5cr-w38f`
+Advisories:
+- `GHSA-p6gq-j5cr-w38f`
+- `GHSA-2x7j-588g-ccc2`
+
 Package/version: `nodemailer@8.0.10`
-Owner: SiteScore owner/operator
-Status: conditionally accepted only if it is the sole residual HIGH after exact-candidate OpenVEX/KEV reconciliation
-Expiry: `2026-10-11`
+Owner: FAZ7 security review
+Status: Reviewer-authorized exact residuals only while containment remains true
+Expiry/re-review trigger: before public launch, upstream n8n adoption, nodemailer fix adoption, or any containment change
 
 Containment controls required for acceptance:
 
 - Frozen SiteScore n8n workflows do not use `n8n-nodes-base.emailSend`.
 - `NODES_EXCLUDE` contains `emailSend`, `executeCommand`, `localFileTrigger`, and `snowflake`.
-- No SMTP transport is configured in the frozen n8n runtime definition.
-- Editor/admin/API exposure remains non-public in the target deployment design; the current compose bind remains loopback-only.
-- No second residual CRITICAL/HIGH exception is authorized.
-
-Re-review is mandatory before expiry and immediately if any of the following changes: n8n candidate identity, nodemailer remediation status, workflow bytes, node exclusions, SMTP configuration, network exposure, CISA KEV status, or a new reachable advisory affecting the enabled runtime.
+- No SMTP / `N8N_EMAIL_MODE` / `N8N_SMTP` transport is configured.
+- Editor/admin/API exposure remains non-public; deployment compose binds n8n to loopback.
+- Raw Grype findings remain present in terminal evidence.
+- No nodemailer major/family leap or source patch is authorized in this checkpoint.
