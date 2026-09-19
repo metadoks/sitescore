@@ -12,10 +12,10 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: READY_TO_LOCK
-IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_REVIEWED_HEAD
+REVIEWER_STATE: MERGE_VERIFIED_POST_LOCK_PUBLICATION_IN_PROGRESS
+IMPLEMENTER_ACTION: NO_CODE_CHANGE_AWAIT_POST_LOCK_PUBLISH_COMPLETION
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
@@ -23,10 +23,10 @@ EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
 
 CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
 PR: #34
-PR_STATE: OPEN
-PR_DRAFT: TRUE
-PR_MERGED: FALSE
-PR_MERGEABLE: TRUE
+PR_STATE: CLOSED
+PR_DRAFT: FALSE
+PR_MERGED: TRUE
+PR_MERGEABLE: FALSE
 
 OBSERVED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
 REVIEWED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
@@ -52,6 +52,49 @@ NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## POST-LOCK MERGE VERIFICATION
+
+Reviewer live verification after user-authorized LOCK:
+
+```text
+PR #34 = CLOSED / MERGED
+reviewed head = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+merge commit = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+main tree = 06f9e3a3a7cb806ad5273e7855b586724bd65f7a
+parent 1 = fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
+parent 2 = f54e3c25a0aca26782b94bb427a14744c6b6fa14
+compare merge-commit...main = IDENTICAL
+ahead = 0
+behind = 0
+main protected = TRUE
+```
+
+Merge integrity PASS. Exact reviewed head was merged by normal merge commit with the expected old-main parent.
+
+Post-LOCK publication workflow is now the sole remaining 7.1 closure activity:
+
+```text
+workflow = faz7-publish-images
+run = 35465322918
+head/main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+status = IN_PROGRESS
+
+checkout exact main = PASS
+GHCR auth = PASS
+Node setup = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validate/publish = IN_PROGRESS
+published digest resolution = PENDING
+published-image security/SBOM = PENDING
+provenance/sign/attestation = PENDING
+publication evidence upload = PENDING
+```
+
+Therefore merge is verified, but FAZ 7.1 is not yet declared LOCKED_VERIFIED until the post-LOCK publication workflow reaches terminal success and immutable published digests/evidence are available. No code change, new implementation, or FAZ 7.2 work is authorized while this run is active.
 
 ---
 
