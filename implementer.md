@@ -486,3 +486,29 @@ required-gate = PENDING
 ```
 
 Per Reviewer protocol, this corrective must not merge until the exact corrective head receives the normal Reviewer READY_TO_LOCK gate and a literal user LOCK for that corrective merge.
+
+
+### Corrective self-review amendment
+
+During exact-policy parity self-review, the first corrective commit was found to have over-escaped Python regex backslashes in the copied reachability block. That head/run is superseded and is NOT authoritative.
+
+```text
+superseded head = f58160e9bc97581a026b0b871f108e6879ab8fe1
+superseded run = 35469603489
+reason = copied regex/backslash semantics were not byte-semantic parity with frozen CI policy
+```
+
+The same authorized single-file scope was corrected by copying the frozen policy block exactly, changing only the evidence artifact directory from `application-images` to `publish`.
+
+```text
+authoritative corrective head = e1597f77bcc8a65e2e00e9c5573e028cdbee337b
+PR = #35
+changed files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+pre-policy semantic parity = TRUE
+scanner-policy semantic parity = TRUE
+new PR run = 35470194681
+merge performed = NO
+```
+
+Only the new exact head/run may be reviewed for corrective LOCK.
