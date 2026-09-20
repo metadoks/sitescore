@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLICATION_POLICY_PARITY_CORRECTIVE_REQUIRED
-IMPLEMENTER_ACTION: APPLY_SINGLE_FILE_PUBLISH_POLICY_PARITY_CORRECTIVE_AND_RETURN_READY_FOR_REVIEW
+REVIEWER_STATE: POST_LOCK_PUBLICATION_POLICY_PARITY_HARDENING_REQUIRED
+IMPLEMENTER_ACTION: APPLY_SINGLE_PUBLISH_POLICY_PARITY_CORRECTION_THEN_COMPLETE_7_1_ONLY
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -1218,3 +1218,160 @@ NEXT_CHECKPOINT_AUTHORIZED: NO
 FAZ_7_2_STARTED: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+
+---
+
+## POST-LOCK PUBLICATION CORRECTIVE REVIEW — AUTHORIZED
+
+Post-LOCK publication run:
+
+```text
+workflow = faz7-publish-images
+run = 35465322918
+head/main = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+status = COMPLETED
+conclusion = FAILURE
+failed job = publish / step 8
+failed step = Generate application SBOM and enforce vulnerability policy on published digests
+```
+
+Successful preceding publication work:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validation/publish = PASS
+published digest resolution = PASS
+```
+
+Published n8n digest observed from the successful publish step:
+
+```text
+ghcr.io/metadoks/sitescore-n8n
+sha256:64281333061b995883e2877aa07057c3a3b66575017810705a67a9d9e85be28e
+```
+
+Exact failure:
+
+```text
+API_VULNERABILITY_BLOCKERS=1
+BLOCKER ('CVE-2026-82049', 'HIGH', 'python', '3.11.16', ['3.14.0b1'])
+exit code = 42
+```
+
+Reviewer finding:
+
+The failure is NOT a new vulnerability, new reachability result, KEV match, or
+security-design reopen. The permanent pre-merge container-validation already
+classifies this exact raw finding under the reviewed residual contract:
+
+```text
+id = CVE-2026-82049
+severity = HIGH
+package = python
+version = 3.11.16
+classification =
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+The pre-merge policy additionally proves:
+
+```text
+CISA KEV match = 0
+source tar/tar.gz extraction matches = []
+runtime extraction matches = []
+public tar ingress token matches = []
+raw Grype finding remains visible
+generic HIGH waiver = NONE
+scanner suppression = NONE
+SiteScore-authored VEX = NONE
+```
+
+The publish workflow is stale relative to that approved policy. Its current
+step 8 uses only:
+
+```text
+CRITICAL => blocker
+HIGH + non-empty scanner fix list => blocker
+```
+
+and therefore treats Grype's cross-series/beta `3.14.0b1` suggestion as if it
+were an approved same-series Python 3.11 remediation. This is a publication
+policy-parity defect.
+
+### Authorized correction — exact narrow scope
+
+Create one corrective branch/PR from current protected main and change ONLY:
+
+```text
+.github/workflows/faz7-publish-images.yml
+```
+
+unless a mechanically necessary test/evidence helper under
+`deploy/containers/**` is strictly required to avoid duplicating the already
+frozen policy logic.
+
+The published-image application security gate must implement the SAME exact
+classification semantics already green in
+`.github/workflows/faz7-container-ci.yml`:
+
+1. Fetch/use CISA KEV evidence and fail if the finding or related vulnerability
+   IDs intersect KEV.
+2. Preserve the raw Grype finding in publication evidence.
+3. Accept only the exact tuple:
+   `CVE-2026-82049 / HIGH / python / 3.11.16`.
+4. Require the existing residual-risk record and exact classification string.
+5. Require the same no-reachability proof for source/runtime/public archive
+   ingress.
+6. Require exactly one authorized residual occurrence per application image
+   where the pre-merge contract expects it.
+7. Keep all other CRITICAL findings blocking.
+8. Keep all other HIGH findings with actionable fixes blocking.
+9. Do not interpret `3.14.0b1` as an approved Python 3.11 same-series fix.
+10. Do not suppress, delete, ignore, or mutate raw scanner output.
+
+Forbidden:
+
+```text
+blanket HIGH ignore
+scanner suppression
+SiteScore-authored VEX
+changing Python/application source
+upgrading to Python beta
+local CPython patch
+weakening pre-merge container-validation
+changing frozen n8n identity/workflows
+changing published image content merely to bypass scanner output
+starting FAZ 7.2
+```
+
+### Corrective acceptance
+
+The correction is complete only when:
+
+```text
+corrective PR exact-head required-gate = SUCCESS
+Reviewer exact-head audit = PASS
+user literal LOCK = YES
+corrective merge = normal merge commit
+main protection/governance remains PASS
+post-merge faz7-publish-images = SUCCESS
+API published digest = recorded
+Commerce published digest = recorded
+n8n published digest = recorded
+published API/Commerce SBOM + security evidence = PASS
+published n8n exact-candidate identity/SBOM = PASS
+provenance predicates = PASS
+Cosign signing = PASS
+SBOM/provenance attestations = PASS
+publication evidence artifact = PRESENT
+FAZ_7_1_LOCKED_VERIFIED = YES
+FAZ_7_2_STARTED = NO
+```
+
+No further Reviewer round-trip is required for ordinary YAML/shell/evidence
+mechanics before the corrective Implementer handoff. The Implementer must
+continue to a terminal corrective `READY_FOR_REVIEW` or return only a true
+new security/design/platform blocker.
