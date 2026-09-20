@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLICATION_POLICY_PARITY_HARDENING_REQUIRED
-IMPLEMENTER_ACTION: APPLY_SINGLE_PUBLISH_POLICY_PARITY_CORRECTION_THEN_COMPLETE_7_1_ONLY
+REVIEWER_STATE: POST_LOCK_PUBLICATION_CORRECTIVE_REQUIRED
+IMPLEMENTER_ACTION: APPLY_SINGLE_BOUNDED_POST_LOCK_PUBLISH_CORRECTIVE_AND_RETURN_READY_FOR_REVIEW
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -608,6 +608,120 @@ FAZ_7_1_STATUS: LOCKED_VERIFIED
 ```
 
 No FAZ 7.2 work is authorized in this chat or by this correction.
+
+---
+
+## POST-LOCK PUBLICATION CORRECTIVE — AUTHORIZED BOUNDED SCOPE
+
+The post-LOCK publication run for merged main is terminal and failed:
+
+```text
+main / merge commit = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+publish workflow = faz7-publish-images
+run = 35465322918
+job = 105956479419
+status = COMPLETED
+conclusion = FAILURE
+```
+
+Successful steps before failure:
+
+```text
+exact main checkout = PASS
+GHCR auth = PASS
+application image build/publish = PASS
+n8n rebuild/validate/publish = PASS
+published digest resolution = PASS
+```
+
+First failing step:
+
+```text
+Generate application SBOM and enforce vulnerability policy on published digests
+API_VULNERABILITY_BLOCKERS=1
+BLOCKER ('CVE-2026-82049', 'HIGH', 'python', '3.11.16', ['3.14.0b1'])
+exit code = 42
+```
+
+This is not a newly discovered vulnerability. The same exact raw finding is already Reviewer-authorized on the exact runtime under:
+
+```text
+CVE-2026-82049
+CPython 3.11.16
+REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+```
+
+The PR/container gate already preserves the raw finding and proves zero CISA KEV, no tar/tar.gz extraction or public archive-ingress path, and zero other policy blockers. The publication workflow incorrectly applies the older generic CRITICAL/HIGH-with-fix rule and therefore diverges from the final reviewed application policy.
+
+Independent audit also found two publication-path drift defects that must be corrected in the same bounded corrective rather than in later rounds:
+
+```text
+publish workflow host Node = 26.5.1   # stale
+final reviewed n8n validation host Node = 26.7.0
+n8n-image.lock builder/runtime authority = 26.7.0
+
+publish workflow DHI auth = absent
+final reviewed DHI policy = fail-closed authenticated pull using DHI_USERNAME/DHI_TOKEN
+```
+
+### Authorized corrective scope
+
+Only the post-LOCK publication workflow and, if mechanically necessary to avoid duplicated policy logic, a narrowly-scoped deploy/containers security-policy helper may change. Frozen application/business source and frozen n8n workflow JSON remain immutable.
+
+Required changes:
+
+1. **Published application security policy parity**
+   - preserve raw Grype output;
+   - require the existing application residual-risk record and exact classification;
+   - fetch/check current CISA KEV evidence;
+   - re-prove the existing tar/tar.gz reachability containment against the exact source being published, or invoke an exact shared helper that proves the same conditions;
+   - classify only exact `CVE-2026-82049 / python / 3.11.16 / HIGH` as the existing Reviewer-authorized temporary residual;
+   - require that exact residual once per API/Commerce image while it remains present;
+   - any KEV match, any CRITICAL, or any other HIGH with a fix remains a blocker;
+   - no scanner suppression, blanket ignore, generic Python HIGH waiver, SiteScore-authored VEX, beta Python migration, or local CPython patch.
+
+2. **n8n host-toolchain parity**
+   - setup Node `26.7.0` in `faz7-publish-images.yml`;
+   - assert `node --version == v26.7.0` before the frozen n8n build;
+   - retain exact frozen n8n 2.37.10 source/lock/security policy.
+
+3. **DHI publication-path authentication parity**
+   - use repository Actions secrets `DHI_USERNAME` and `DHI_TOKEN`;
+   - fail closed if either is missing;
+   - authenticate `dhi.io` with `--password-stdin` before n8n rebuild;
+   - logout with `if: always()`;
+   - no anonymous fallback, alternate base, secret logging, or credential commit.
+
+### Corrective validation contract
+
+The corrective must be a new PR against current protected main. It must not amend or rewrite the already-verified PR #34 merge. Permanent CI must pass on the corrective PR, then Reviewer will audit the exact corrective head and issue a new narrow READY_TO_LOCK if clean.
+
+After user LOCK and merge, the new main-triggered `faz7-publish-images` run must complete SUCCESS with:
+
+```text
+API/Commerce immutable publish = PASS
+n8n exact frozen rebuild/validate/publish = PASS
+published digest resolution = PASS
+application published-digest SBOM/Grype policy = PASS
+CISA KEV = 0
+exact CVE-2026-82049 residual only under existing classification
+published n8n identity/SBOM = PASS
+provenance predicates = PASS
+Cosign keyless signatures = PASS
+SBOM attestations = PASS
+provenance attestations = PASS
+immutable publication evidence upload = PASS
+```
+
+No FAZ 7.2 work is authorized in this chat or corrective.
+
+```text
+FAZ_7_1_LOCKED_VERIFIED: NO
+POST_LOCK_CORRECTIVE_REQUIRED: YES
+READY_TO_LOCK: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+```
 
 ---
 
