@@ -698,3 +698,62 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 The prior corrective exact head `e1597f77bcc8a65e2e00e9c5573e028cdbee337b` and run `35470194681` are superseded as lock-review authority because Reviewer reopened the bounded corrective for Node host parity. Only `fffe943723b230d73d0afa079b736e06c0b3a6a4` and run `35474113362` are authoritative for the next Reviewer audit.
 
 **Implementer work is complete again. Reviewer must independently audit this exact final corrective head before READY_TO_LOCK may be issued. A new literal user LOCK is still required after Reviewer READY_TO_LOCK because the earlier LOCK was consumed by PR #34.**
+
+
+---
+
+## FINAL REVIEWER-CRITERIA SELF-AUDIT — NO ADDITIONAL CODE CHANGE REQUIRED
+
+The latest Reviewer handoff restated ten exact publish-policy requirements. The current exact corrective head already satisfies all ten by using the same frozen application classifier semantics as `.github/workflows/faz7-container-ci.yml`; therefore no additional source commit is required and creating one would only invalidate the terminal green exact-head evidence.
+
+```text
+exact corrective head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+PR = #35
+changed permanent files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+terminal run = 35474113362
+required-gate = SUCCESS / job 105983845465
+```
+
+Reviewer criterion mapping:
+
+```text
+1. CISA KEV + related vulnerability IDs = PASS
+2. raw Grype evidence preserved = PASS
+3. only exact CVE-2026-82049 / HIGH / python / 3.11.16 accepted = PASS
+4. residual-risk record + exact classification string required = PASS
+5. source/runtime/public archive reachability containment proof = PASS
+6. exact authorized residual occurrence count == 1 per API/Commerce image = PASS
+7. all other CRITICAL findings block = PASS
+8. all other HIGH findings with actionable fixes block = PASS
+9. Python 3.14.0b1 is not treated as approved same-series 3.11 remediation = PASS
+10. raw scanner output is not suppressed/deleted/mutated = PASS
+```
+
+The relevant publish classifier is semantically the frozen container-validation classifier with only the evidence directory changed from `application-images` to `publish`. It also checks `relatedVulnerabilities` against CISA KEV, requires exactly one authorized residual per image via `len(residuals) != 1`, and raises on all policy blockers.
+
+Additional previously reopened mechanical drift is also resolved:
+
+```text
+publish host Node = 26.7.0
+explicit node --version assertion = v26.7.0
+frozen n8n builder/runtime family = 26.7.0
+NODE_PARITY = PASS
+```
+
+No additional code change is warranted. The terminal authoritative handoff remains:
+
+```text
+IMPLEMENTER_STATE = POST_LOCK_CORRECTIVE_READY_FOR_REVIEW
+CORRECTIVE_EXACT_HEAD = fffe943723b230d73d0afa079b736e06c0b3a6a4
+CORRECTIVE_RUN = 35474113362
+CORRECTIVE_REQUIRED_GATE = SUCCESS
+CORRECTIVE_TECHNICAL_BLOCKERS = NONE
+CORRECTIVE_SCOPE_DRIFT = NONE
+CORRECTIVE_READY_FOR_REVIEW = YES
+CORRECTIVE_READY_TO_LOCK = NO
+CORRECTIVE_USER_LOCK_AUTHORIZED = NO
+CORRECTIVE_MERGE = NO
+```
+
+Reviewer must now independently audit this exact head. A new literal user `LOCK` remains mandatory only after Reviewer issues exact-head `READY_TO_LOCK`.
