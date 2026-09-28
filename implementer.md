@@ -11,10 +11,10 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: POST_LOCK_CORRECTIVE_READY_FOR_REVIEW
-IMPLEMENTER_ACTION: REVIEWER_CORRECTIVE_EXACT_HEAD_AUDIT_REQUIRED
+IMPLEMENTER_STATE: POST_MERGE_SECURITY_REOPEN_REQUIRED
+IMPLEMENTER_ACTION: REVIEWER_SECURITY_REOPEN_DECISION_REQUIRED
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: YES
+USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
@@ -35,10 +35,10 @@ FINAL_GREEN_RUN_EVENT: push
 CORRECTIVE_BASE_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
 CORRECTIVE_BRANCH: faz7/7-1-publish-policy-parity-corrective
 CORRECTIVE_PR: #35
-CORRECTIVE_PR_STATE: OPEN
+CORRECTIVE_PR_STATE: CLOSED
 CORRECTIVE_PR_DRAFT: FALSE
 CORRECTIVE_PR_MERGEABLE: TRUE
-CORRECTIVE_PR_MERGED: FALSE
+CORRECTIVE_PR_MERGED: TRUE
 CORRECTIVE_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
 CORRECTIVE_FINAL_GREEN_RUN: 35474113362
 CORRECTIVE_REQUIRED_GATE_JOB: 105983845465
@@ -49,20 +49,20 @@ CORRECTIVE_POLICY_PARITY: EXACT_SEMANTIC_MATCH_PLUS_NODE_26_7_0
 CORRECTIVE_READY_FOR_REVIEW: YES
 CORRECTIVE_READY_TO_LOCK: NO
 CORRECTIVE_USER_LOCK_AUTHORIZED: NO
-CORRECTIVE_MERGE_PERFORMED: NO
+CORRECTIVE_MERGE_PERFORMED: YES
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
 OPS71_GOV_001_STATUS: RESOLVED_LIVE_RULESET_VERIFIED
 OPS71_APP_BASE_001_STATUS: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71_N8N_DHI_001_STATUS: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71_N8N_VULN_001_STATUS: RESOLVED_FINAL_SECURITY_GATE_GREEN
+OPS71_N8N_VULN_001_STATUS: SECURITY_REOPEN_REQUIRED_CVE_2026_93990
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 0
+ADDITIONAL_REOPEN_REQUIRED: 1
 NEXT_CHECKPOINT_AUTHORIZED: NO
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: YES
+READY_TO_LOCK: NO
 MERGE_PERFORMED: YES
 FAZ_7_2_STARTED: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -797,3 +797,118 @@ n8n artifact id = 10594375006
 ```
 
 No additional Implementer code change is authorized or necessary. The corrective remains READY_FOR_REVIEW and UNMERGED. Reviewer must independently audit exact head `fffe943723b230d73d0afa079b736e06c0b3a6a4` and may issue `READY_TO_LOCK` only for that exact SHA. A new literal user `LOCK` remains required after such Reviewer authorization.
+
+
+---
+
+## POST-MERGE CORRECTIVE LOCK EXECUTION AND NEW SECURITY REOPEN — 2026-09-28
+
+Reviewer issued exact-head `READY_TO_LOCK: YES` for PR #35 head `fffe943723b230d73d0afa079b736e06c0b3a6a4`. The user then supplied a new literal `LOCK`, which was consumed for this corrective merge.
+
+Exact merge execution:
+
+```text
+PR = #35
+reviewed head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+expected base = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+merge method = normal merge commit
+expected-head protection = fffe943723b230d73d0afa079b736e06c0b3a6a4
+merge result = SUCCESS
+merge commit / new main = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+merge tree = 3e1964663041b802d36749d4f5e5db8d3e658908
+parent 1 = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+parent 2 = fffe943723b230d73d0afa079b736e06c0b3a6a4
+PR #35 = CLOSED / MERGED
+main protected = TRUE
+required status check = required-gate
+```
+
+The automatic post-merge publication run started on the exact new main:
+
+```text
+workflow = faz7-publish-images
+run = 36478260634
+event = push
+head/main = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+job = publish / 109117288504
+final status = COMPLETED
+final conclusion = FAILURE
+```
+
+Publication step state:
+
+```text
+Checkout exact main commit = SUCCESS
+GHCR authentication = SUCCESS
+Setup exact Node 26.7.0 = SUCCESS
+Build and publish immutable linux amd64 application images = SUCCESS
+Rebuild validate and publish exact frozen n8n candidate = FAILURE
+Resolve exact published digests = SKIPPED
+Published application SBOM/security policy = SKIPPED
+Published n8n exact-image/SBOM proof = SKIPPED
+Provenance = SKIPPED
+Cosign signatures/attestations = SKIPPED
+Publication evidence upload = SKIPPED
+publication artifacts = NONE
+```
+
+### New security finding — true reopen
+
+The frozen n8n security gate failed on a newly actionable OS HIGH discovered by the current scanner/vulnerability data:
+
+```text
+CVE = CVE-2026-93990
+severity = HIGH
+package = libexpat
+installed version = 2.8.4-r0
+fixed version = 2.8.5-r0
+package type = apk
+ACTIONABLE_OS_HIGH = 1
+BLOCKING_HIGH = 1
+CISA_KEV = 0
+N8N_ACTIONABLE_GATE = FAIL
+```
+
+The four previously Reviewer-authorized exact residuals remain separately classified and were not the blocker:
+
+```text
+zlib 1.3.2-r0 / CVE-2026-85091
+nodemailer 8.0.10 / GHSA-P6GQ-J5CR-W38F
+nodemailer 8.0.10 / GHSA-2X7J-588G-CCC2
+@tiptap/core 3.27.0 / GHSA-J95F-988M-3J2F
+```
+
+Frozen n8n authority still pins:
+
+```text
+n8n = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+builder = node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
+DHI runtime base = dhi.io/node:26.7.0-alpine3.24-dev@sha256:4b494d89fb26c950ce97865acf45b480dc7a6868fdc2b81c2d66599702eeac3f
+```
+
+This is not the previously corrected publication policy drift and is not an ordinary YAML/evidence mechanical issue. The existing security gate is correctly fail-closed: it detected a fixable apk HIGH and blocked publication before digest finalization/signing/attestation.
+
+Implementer does **not** unilaterally waive the CVE, weaken the threshold, alter the frozen n8n runtime identity, or inject an apk/package remediation, because those actions exceed the currently authorized one-file publication corrective and the Reviewer explicitly required return on a true new security blocker.
+
+Terminal handoff:
+
+```text
+IMPLEMENTER_STATE = POST_MERGE_SECURITY_REOPEN_REQUIRED
+MERGE = COMPLETE / VALID
+MAIN = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+POST_MERGE_PUBLISH_RUN = 36478260634 / FAILURE
+SECURITY_REOPEN = CVE-2026-93990 / libexpat 2.8.4-r0 / fix 2.8.5-r0
+CISA_KEV = 0
+SECURITY_THRESHOLD_WEAKENING = NONE
+SCANNER_SUPPRESSION = NONE
+BLANKET_CVE_IGNORE = NONE
+FAZ_7_1_LOCKED_VERIFIED = NO
+READY_TO_LOCK = NO
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Reviewer must independently audit this post-merge security reopen and authorize the remediation path before any new permanent code/runtime-identity change is made.
