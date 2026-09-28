@@ -11,22 +11,22 @@ FILE_OWNER: IMPLEMENTER CHAT
 CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
-IMPLEMENTER_STATE: POST_MERGE_SECURITY_REOPEN_REQUIRED
-IMPLEMENTER_ACTION: REVIEWER_SECURITY_REOPEN_DECISION_REQUIRED
+IMPLEMENTER_STATE: LIBEXPAT_SECURITY_CORRECTIVE_READY_FOR_REVIEW
+IMPLEMENTER_ACTION: REVIEWER_LIBEXPAT_CORRECTIVE_EXACT_HEAD_AUDIT_REQUIRED
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
-PR: #34
-PR_STATE: CLOSED
+EXPECTED_BASE_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+CODE_BRANCH: faz7/7-1-libexpat-2-8-5-r0-security-corrective
+PR: #36
+PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGEABLE_AT_LAST_CHECK: TRUE
-PR_MERGED: TRUE
+PR_MERGED: FALSE
 
-CURRENT_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
-REVIEWED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
+CURRENT_HEAD_SHA: 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+REVIEWED_HEAD_SHA: PENDING_REVIEWER_AUDIT
 MERGE_COMMIT_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
 LOCK_MERGED_AT_UTC: 2026-09-19T19:45:21Z
 FINAL_GREEN_RUN: 35459207216
@@ -49,17 +49,17 @@ CORRECTIVE_POLICY_PARITY: EXACT_SEMANTIC_MATCH_PLUS_NODE_26_7_0
 CORRECTIVE_READY_FOR_REVIEW: YES
 CORRECTIVE_READY_TO_LOCK: NO
 CORRECTIVE_USER_LOCK_AUTHORIZED: NO
-CORRECTIVE_MERGE_PERFORMED: YES
+CORRECTIVE_MERGE_PERFORMED: NO
 
 OPS71_GHA_EXEC_001_STATUS: RESOLVED_CONFIRMED
 OPS71_GOV_001_STATUS: RESOLVED_LIVE_RULESET_VERIFIED
 OPS71_APP_BASE_001_STATUS: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71_N8N_DHI_001_STATUS: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71_N8N_VULN_001_STATUS: SECURITY_REOPEN_REQUIRED_CVE_2026_93990
+OPS71_N8N_VULN_001_STATUS: LIBEXPAT_2_8_5_R0_CORRECTIVE_GREEN_PENDING_REVIEW
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
-ADDITIONAL_REOPEN_REQUIRED: 1
+ADDITIONAL_REOPEN_REQUIRED: 0
 NEXT_CHECKPOINT_AUTHORIZED: NO
 READY_FOR_REVIEW: YES
 READY_TO_LOCK: NO
@@ -912,3 +912,119 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 Reviewer must independently audit this post-merge security reopen and authorize the remediation path before any new permanent code/runtime-identity change is made.
+
+
+---
+
+## CVE-2026-93990 / LIBEXPAT 2.8.5-r0 CORRECTIVE — TERMINAL IMPLEMENTER HANDOFF
+
+Reviewer authorized the exact bounded remediation after the post-merge n8n security reopen. Implementer changed only the authorized permanent file and completed the corrective to a terminal exact-head green PR.
+
+```text
+base main = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+branch = faz7/7-1-libexpat-2-8-5-r0-security-corrective
+PR = #36
+PR state = OPEN / READY / MERGEABLE / UNMERGED
+exact corrective head = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+commits = 1
+changed permanent files = 1
+changed path = deploy/containers/n8n-frozen-candidate-ci.sh
+additions = 2
+deletions = 2
+```
+
+Authorized code delta only:
+
+```text
+apk pin: libexpat=2.8.4-r0 -> libexpat=2.8.5-r0
+final-installed assertion: P:libexpat / V:2.8.4-r0 -> V:2.8.5-r0
+```
+
+No scope drift:
+
+```text
+n8n version = 2.37.10 unchanged
+n8n source commit/tree = unchanged
+Node/DHI family = 26.7.0 / Alpine 3.24 unchanged
+DHI immutable base digest = unchanged
+libcrypto3/libssl3 pins = unchanged
+libcurl pin = unchanged
+Snowflake/TOML pruning = unchanged
+Git/Git Tool pruning = unchanged
+NODES_EXCLUDE contract = unchanged
+frozen workflow hashes = unchanged
+application/business source bytes = unchanged
+application Python/Trixie identity = unchanged
+published-image policy parity = unchanged
+scanner suppression = NONE
+blanket CVE ignore = NONE
+SiteScore-authored VEX = NONE
+security threshold weakening = NONE
+FAZ 7.2 work = NONE
+```
+
+Exact-head hosted validation:
+
+```text
+run = 36483975872
+source-boundary       = SUCCESS  job 109136217642
+static-contracts      = SUCCESS  job 109136218926
+faz6-commerce-replay  = SUCCESS  job 109136217588
+container-validation = SUCCESS  job 109136217408
+n8n-validation        = SUCCESS  job 109136217778
+required-gate         = SUCCESS  job 109149098728
+```
+
+n8n security/runtime evidence from the exact-head job:
+
+```text
+libexpat package operation = 2.8.5-r0
+runtime installation evidence = libexpat 2.8.5-r0
+CISA_KEV = 0
+ACTIONABLE_OS_HIGH = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 0
+BLOCKING_HIGH_DETAILS = []
+NEW_UNDISPOSITIONED_HIGH = 0
+ALLOWED_EXACT_RESIDUAL_HIGH = 4
+CVE-2026-93990 blocking finding = ABSENT from final threshold summary
+n8n static = 12 PASS
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+```
+
+The raw upstream reconciliation stage still prints its pre-existing aggregate marker `N8N_ACTIONABLE_GATE=FAIL` before the repository's final Reviewer-authorized residual classifier runs. This did not terminate the job. The subsequent fail-closed final classifier reports `ACTIONABLE_OS_HIGH=0`, `BLOCKING_HIGH=0`, `CISA_KEV=0`, and the frozen final runtime/security gate is PASS. This raw intermediate marker is preserved for Reviewer audit rather than suppressed or rewritten.
+
+Exact-head artifacts:
+
+```text
+application evidence artifact id = 10998945741
+application artifact name = faz7-application-image-evidence-2bf60b3af0c1d9f0357e5d7834c61751bd220601
+expired = FALSE
+
+n8n evidence artifact id = 11000008561
+n8n artifact name = faz7-n8n-final-evidence-2bf60b3af0c1d9f0357e5d7834c61751bd220601
+expired = FALSE
+```
+
+Implementer terminal decision:
+
+```text
+IMPLEMENTER_STATE = LIBEXPAT_SECURITY_CORRECTIVE_READY_FOR_REVIEW
+CORRECTIVE_PR = #36
+CORRECTIVE_BASE = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+CORRECTIVE_EXACT_HEAD = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+CORRECTIVE_RUN = 36483975872
+CORRECTIVE_REQUIRED_GATE = SUCCESS
+CORRECTIVE_TECHNICAL_BLOCKERS = NONE
+CORRECTIVE_SCOPE_DRIFT = NONE
+CORRECTIVE_READY_FOR_REVIEW = YES
+CORRECTIVE_READY_TO_LOCK = NO
+CORRECTIVE_USER_LOCK_AUTHORIZED = NO
+CORRECTIVE_MERGE = NO
+FAZ_7_1_LOCKED_VERIFIED = NO
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Reviewer must independently audit exact PR #36 head `2bf60b3af0c1d9f0357e5d7834c61751bd220601`, run `36483975872`, the one-file/two-line scope, and the security evidence. A new literal user `LOCK` is required only after Reviewer issues exact-head `READY_TO_LOCK`.
