@@ -757,3 +757,43 @@ CORRECTIVE_MERGE = NO
 ```
 
 Reviewer must now independently audit this exact head. A new literal user `LOCK` remains mandatory only after Reviewer issues exact-head `READY_TO_LOCK`.
+
+
+---
+
+## LIVE REVALIDATION — 2026-09-28
+
+Implementer revalidated the corrective after an extended idle period. No code or PR-head drift occurred.
+
+```text
+PR = #35
+state = OPEN
+merged = FALSE
+draft = FALSE
+mergeable = TRUE
+base/main SHA = 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+exact corrective head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+changed permanent files = 1
+commits = 3
+```
+
+Exact-head workflow evidence remains terminal green:
+
+```text
+run = 35474113362
+faz6-commerce-replay  = SUCCESS  job 105980260504
+n8n-validation        = SUCCESS  job 105980260588
+static-contracts      = SUCCESS  job 105980260610
+source-boundary       = SUCCESS  job 105980260645
+container-validation = SUCCESS  job 105980260713
+required-gate         = SUCCESS  job 105983845465
+```
+
+Artifacts remain present and unexpired:
+
+```text
+application artifact id = 10594027965
+n8n artifact id = 10594375006
+```
+
+No additional Implementer code change is authorized or necessary. The corrective remains READY_FOR_REVIEW and UNMERGED. Reviewer must independently audit exact head `fffe943723b230d73d0afa079b736e06c0b3a6a4` and may issue `READY_TO_LOCK` only for that exact SHA. A new literal user `LOCK` remains required after such Reviewer authorization.
