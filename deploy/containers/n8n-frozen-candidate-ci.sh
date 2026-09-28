@@ -270,7 +270,7 @@ RUN apk --no-cache add --virtual .build-deps-fonts msttcorefonts-installer fontc
     (apk del git git-init-template pcre2 2>&1 | tee /security-evidence/git-removal.log) && \
     apk info | sort > /security-evidence/packages.post-git-prune.txt && \
     cp /etc/apk/world /security-evidence/world.post-git-prune && \
-    (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.4-r0' "libcurl=${LIBCURL_TARGET}" 2>&1 | tee /security-evidence/pins.log) && \
+    (apk add --no-cache --upgrade 'libcrypto3=3.5.8-r0' 'libssl3=3.5.8-r0' 'libexpat=2.8.5-r0' "libcurl=${LIBCURL_TARGET}" 2>&1 | tee /security-evidence/pins.log) && \
     apk policy libcrypto3 libssl3 libexpat libcurl pcre2 zlib > /security-evidence/policy.after.txt && \
     apk info | sort > /security-evidence/packages.after.txt && \
     cp /etc/apk/repositories /security-evidence/repositories.after && \
@@ -322,7 +322,7 @@ test "$(docker run --rm --entrypoint sh "$N8N_HARDENED_BASE_IMAGE" -c 'node --ve
 python - <<'PY'
 import os
 raw=open(os.path.join(os.environ['OUT'],'final-installed.raw')).read()
-for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.4-r0',f"P:libcurl\nV:{os.environ['N8N_LIBCURL_TARGET']}"):
+for item in ('P:libcrypto3\nV:3.5.8-r0','P:libssl3\nV:3.5.8-r0','P:libexpat\nV:2.8.5-r0',f"P:libcurl\nV:{os.environ['N8N_LIBCURL_TARGET']}"):
     if item not in raw: raise SystemExit('required exact runtime pin missing: '+item)
 for item in ('P:openssh\n','P:graphicsmagick\n','P:apk-tools\n','P:git\n','P:git-init-template\n','P:pcre2\n'):
     if item in raw: raise SystemExit('forbidden runtime package remains: '+item)
