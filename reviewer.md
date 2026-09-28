@@ -12,24 +12,24 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_CORRECTIVE_READY_TO_LOCK
-IMPLEMENTER_ACTION: AWAIT_NEW_LITERAL_USER_LOCK_THEN_MERGE_PR35_EXACT_REVIEWED_HEAD
+REVIEWER_STATE: POST_MERGE_SECURITY_REOPEN_LIBEXPAT_PATCH_AUTHORIZED
+IMPLEMENTER_ACTION: CREATE_BOUNDED_LIBEXPAT_2_8_5_R0_CORRECTIVE_PR_AND_COMPLETE_TO_TERMINAL_HANDOFF
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
-EXPECTED_BASE_TREE_SHA: 06f9e3a3a7cb806ad5273e7855b586724bd65f7a
+EXPECTED_BASE_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+EXPECTED_BASE_TREE_SHA: 3e1964663041b802d36749d4f5e5db8d3e658908
 
-CODE_BRANCH: faz7/7-1-publish-policy-parity-corrective
-PR: #35
-PR_STATE: OPEN
-PR_DRAFT: FALSE
+CODE_BRANCH: PENDING_IMPLEMENTER_LIBEXPAT_SECURITY_CORRECTIVE
+PR: PENDING
+PR_STATE: NOT_CREATED
+PR_DRAFT: N/A
 PR_MERGED: FALSE
-PR_MERGEABLE: TRUE
+PR_MERGEABLE: N/A
 
-OBSERVED_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
-REVIEWED_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
+OBSERVED_HEAD_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+REVIEWED_HEAD_SHA: NONE
 
 FINAL_GREEN_PUSH_RUN: 35459207216
 FINAL_GREEN_PR_RUN: 35459209786
@@ -39,20 +39,149 @@ FINAL_PR_REQUIRED_GATE_JOB: 105944676923
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: RESOLVED_FINAL_SECURITY_GATE_GREEN
+OPS71-N8N-VULN-001: SECURITY_REOPEN_LIBEXPAT_2_8_5_R0_AUTHORIZED
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: RESOLVED_CORRECTIVE_EXACT_HEAD_AUDIT_PASS_PENDING_USER_LOCK
+OPS71-PUBLISH-001: BLOCKED_BY_N8N_SECURITY_GATE_CVE_2026_93990
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-TECHNICAL_READY_FOR_LOCK_GATE: YES
-READY_FOR_REVIEW: YES
-READY_TO_LOCK: YES
+TECHNICAL_READY_FOR_LOCK_GATE: NO
+READY_FOR_REVIEW: NO
+READY_TO_LOCK: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## POST-LOCK SECURITY REOPEN — CVE-2026-93990 / LIBEXPAT PATCH AUTHORIZED
+
+Reviewer live audit after corrective PR #35 merge:
+
+```text
+current main = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+current main tree = 3e1964663041b802d36749d4f5e5db8d3e658908
+PR #35 = CLOSED / MERGED
+PR #35 reviewed head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+merge integrity = PASS
+governance = ACTIVE / PASS
+
+post-merge publish run = 36478260634
+publish job = 109117288504
+status = COMPLETED / FAILURE
+first failing step = Rebuild validate and publish exact frozen n8n candidate
+```
+
+The failure is a real newly surfaced n8n runtime OS vulnerability, not publish-policy drift:
+
+```text
+CISA_KEV = 0
+BLOCKING_CRITICAL = 0
+ACTIONABLE_OS_HIGH = 1
+BLOCKING_HIGH = 1
+NEW_UNDISPOSITIONED_HIGH = 0
+
+CVE = CVE-2026-93990
+package = libexpat
+installed = 2.8.4-r0
+fixed = 2.8.5-r0
+```
+
+The four previously authorized exact residual HIGH findings remain separately dispositioned and are not the blocker.
+
+Repository audit proves the vulnerable exact pin exists only in:
+
+```text
+deploy/containers/n8n-frozen-candidate-ci.sh
+```
+
+and occurs in two semantic locations:
+
+```text
+apk add ... 'libexpat=2.8.4-r0' ...
+final-installed assertion 'P:libexpat\nV:2.8.4-r0'
+```
+
+Reviewer decision:
+
+```text
+SECURITY_REOPEN = AUTHORIZED
+NEW_DESIGN_DECISION_REQUIRED = NO
+N8N_RELEASE_RESELECTION = FORBIDDEN
+DISTRO_CHANGE = FORBIDDEN
+SECURITY_GATE_WEAKENING = FORBIDDEN
+```
+
+Authorized remediation is exactly:
+
+```text
+base = current protected main dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+permanent changed files = exactly 1
+
+deploy/containers/n8n-frozen-candidate-ci.sh:
+  libexpat=2.8.4-r0 -> libexpat=2.8.5-r0
+  final-installed assertion 2.8.4-r0 -> 2.8.5-r0
+```
+
+Keep unchanged:
+
+```text
+n8n = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+Node/DHI family = 26.7.0 / Alpine 3.24
+DHI immutable base digest
+libcrypto3/libssl3 pins
+libcurl pin
+Snowflake/TOML pruning
+Git/Git Tool capability pruning
+NODES_EXCLUDE contract
+frozen workflow hashes
+application/business source bytes
+application Python/Trixie identity
+published-image policy parity
+governance
+```
+
+Forbidden:
+
+```text
+blanket apk upgrade
+edge/third-party repository mixing
+manual libexpat binary copy
+scanner suppression / ignore
+SiteScore-authored VEX
+new residual HIGH exception for CVE-2026-93990
+moving-latest n8n restart
+FAZ 7.2 work
+```
+
+Corrective acceptance:
+
+```text
+changed permanent files = exactly 1
+PR required-gate = SUCCESS on exact corrective head
+API/report/Commerce/FAZ6 replay = existing required PASS baselines
+n8n static/runtime/import/recovery = PASS
+CISA KEV = 0
+BLOCKING_CRITICAL = 0
+ACTIONABLE_OS_HIGH = 0
+BLOCKING_HIGH = 0
+CVE-2026-93990 = ABSENT
+libexpat installed = exactly 2.8.5-r0
+no new undispositioned HIGH
+only previously-authorized exact residual set may remain
+SBOM/Grype/OpenVEX/provenance evidence complete
+scope drift = NONE
+```
+
+Implementer must carry this bounded corrective to terminal `READY_FOR_REVIEW` without returning for ordinary YAML/shell/Docker mechanics. Reviewer will then exact-head audit it. A new literal user `LOCK` will be required before merge. After merge, the new main-triggered `faz7-publish-images` must reach SUCCESS with immutable API/Commerce/n8n digests, published-image SBOM/security evidence, provenance, Cosign signatures/attestations, and publication evidence artifact.
+
+Only after that terminal success may FAZ 7.1 be recorded `LOCKED_VERIFIED`.
+
+FAZ 7.2 remains prohibited in this chat.
 
 ---
 
