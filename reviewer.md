@@ -12,24 +12,24 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_LOCK_PUBLICATION_POLICY_PARITY_CORRECTIVE_REQUIRED
-IMPLEMENTER_ACTION: APPLY_ONE_FILE_PUBLISH_POLICY_PARITY_CORRECTIVE_COMPLETE_TO_READY_FOR_REVIEW
+REVIEWER_STATE: POST_LOCK_CORRECTIVE_READY_TO_LOCK
+IMPLEMENTER_ACTION: AWAIT_NEW_LITERAL_USER_LOCK_THEN_MERGE_PR35_EXACT_REVIEWED_HEAD
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: fff9cb2b2f7fd142f1bdba436acf66f2948bc9b7
-EXPECTED_BASE_TREE_SHA: 2eeeb2f89ab08f52ab1d77f4d373bb06ae93a77b
+EXPECTED_BASE_SHA: 3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+EXPECTED_BASE_TREE_SHA: 06f9e3a3a7cb806ad5273e7855b586724bd65f7a
 
-CODE_BRANCH: faz7/7-1-reproducible-containers-supply-chain-governance
-PR: #34
-PR_STATE: CLOSED
+CODE_BRANCH: faz7/7-1-publish-policy-parity-corrective
+PR: #35
+PR_STATE: OPEN
 PR_DRAFT: FALSE
-PR_MERGED: TRUE
-PR_MERGEABLE: FALSE
+PR_MERGED: FALSE
+PR_MERGEABLE: TRUE
 
-OBSERVED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
-REVIEWED_HEAD_SHA: f54e3c25a0aca26782b94bb427a14744c6b6fa14
+OBSERVED_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
+REVIEWED_HEAD_SHA: fffe943723b230d73d0afa079b736e06c0b3a6a4
 
 FINAL_GREEN_PUSH_RUN: 35459207216
 FINAL_GREEN_PR_RUN: 35459209786
@@ -41,14 +41,14 @@ OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71-N8N-VULN-001: RESOLVED_FINAL_SECURITY_GATE_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: MECHANICAL_POLICY_PARITY_DEFECT_CORRECTIVE_AUTHORIZED
+OPS71-PUBLISH-001: RESOLVED_CORRECTIVE_EXACT_HEAD_AUDIT_PASS_PENDING_USER_LOCK
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 TECHNICAL_READY_FOR_LOCK_GATE: YES
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: NO
+READY_TO_LOCK: YES
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -1489,3 +1489,143 @@ No further Reviewer round-trip is required for ordinary YAML/shell/evidence
 mechanics before the corrective Implementer handoff. The Implementer must
 continue to a terminal corrective `READY_FOR_REVIEW` or return only a true
 new security/design/platform blocker.
+
+
+---
+
+## POST-LOCK CORRECTIVE — FINAL EXACT-HEAD REVIEWER AUDIT
+
+Reviewer independently audited the live corrective state on 2026-09-28.
+
+```text
+PR = #35
+base = main@3abbbd97b87b699d01f6013b560ee79e09d1cd8c
+base tree = 06f9e3a3a7cb806ad5273e7855b586724bd65f7a
+branch = faz7/7-1-publish-policy-parity-corrective
+exact reviewed head = fffe943723b230d73d0afa079b736e06c0b3a6a4
+PR state = OPEN / READY / MERGEABLE / UNMERGED
+changed permanent files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+```
+
+Scope audit:
+
+```text
+application/business source change = NONE
+Dockerfile/base/dependency change = NONE
+frozen n8n identity change = NONE
+frozen n8n workflow JSON change = NONE
+scanner suppression = NONE
+blanket CVE ignore = NONE
+SiteScore-authored VEX = NONE
+security-threshold weakening = NONE
+FAZ 7.2 work = NONE
+```
+
+Patch audit PASS:
+
+```text
+publish host Node setup = 26.7.0
+explicit node --version assertion = v26.7.0
+
+published application security gate:
+- committed residual-risk record required
+- exact Trixie Python 3.11.16 base identity required
+- source/runtime/public archive reachability proof required
+- current CISA KEV feed required
+- raw Syft/Grype evidence preserved
+- exact accepted tuple only:
+  CVE-2026-82049 / HIGH / python / 3.11.16
+- exact classification required:
+  REVIEWER_ACCEPTED_TEMPORARY_UNREACHABLE_NO_SAME_SERIES_RELEASE_FIX
+- exact residual occurrence count = 1 per API/Commerce image
+- any KEV match = blocker
+- any CRITICAL = blocker
+- any other HIGH with fix versions = blocker
+- 3.14.0b1 is not treated as approved same-series Python 3.11 remediation
+```
+
+The corrective classifier is semantically aligned with the already-frozen
+`.github/workflows/faz7-container-ci.yml` classifier; the intended evidence
+directory difference is `application-images -> publish`.
+
+Exact-head hosted validation:
+
+```text
+run = 35474113362
+source-boundary       = SUCCESS  job 105980260645
+static-contracts      = SUCCESS  job 105980260610
+faz6-commerce-replay  = SUCCESS  job 105980260504
+container-validation = SUCCESS  job 105980260713
+n8n-validation        = SUCCESS  job 105980260588
+required-gate         = SUCCESS  job 105983845465
+```
+
+Exact-head artifacts:
+
+```text
+application artifact:
+id = 10594027965
+name = faz7-application-image-evidence-fffe943723b230d73d0afa079b736e06c0b3a6a4
+expired = FALSE
+sha256 = 745438c3e7be45ad31d55bdda6acef5c80aefb80f7a687026bc81ae298571d83
+
+n8n artifact:
+id = 10594375006
+name = faz7-n8n-final-evidence-fffe943723b230d73d0afa079b736e06c0b3a6a4
+expired = FALSE
+sha256 = 52a7e1979d887ec6bd142a96ec441834a99be25cd97ff5928927593cb839abcd
+```
+
+Live governance remains PASS:
+
+```text
+ruleset = main / active
+target = refs/heads/main
+strict required status checks = TRUE
+required check = required-gate
+pull request required = TRUE
+deletion blocked
+non-fast-forward / force push blocked
+bypass actors = []
+current_user_can_bypass = never
+
+allow_merge_commit = TRUE
+allow_squash_merge = FALSE
+allow_rebase_merge = FALSE
+allow_auto_merge = FALSE
+```
+
+Reviewer decision:
+
+```text
+OPS71-PUBLISH-001: RESOLVED_CORRECTIVE_EXACT_HEAD_AUDIT_PASS_PENDING_USER_LOCK
+CORRECTIVE_TECHNICAL_BLOCKERS: NONE
+CORRECTIVE_SCOPE_DRIFT: NONE
+CORRECTIVE_READY_FOR_REVIEW: YES
+READY_TO_LOCK: YES
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: NO
+MERGE: NO
+FAZ_7_1_LOCKED_VERIFIED: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
+```
+
+A NEW literal user `LOCK` is required because the earlier LOCK was consumed by
+PR #34. Implementer may merge only PR #35 exact reviewed head
+`fffe943723b230d73d0afa079b736e06c0b3a6a4` using the normal merge-commit
+path. No head drift is allowed.
+
+After that merge, Reviewer must verify:
+1. PR #35 merged exact reviewed head;
+2. resulting main SHA/tree/parents;
+3. governance remains active;
+4. the new main-triggered `faz7-publish-images` run reaches SUCCESS;
+5. immutable API/Commerce/n8n digests, published-image SBOM/security proof,
+   provenance, Cosign signatures/attestations, and publication evidence artifact
+   are present.
+
+Only then may FAZ 7.1 be recorded `LOCKED_VERIFIED`. FAZ 7.2 remains prohibited
+in this chat and must start in a new conversation.
