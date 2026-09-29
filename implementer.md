@@ -1220,3 +1220,98 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 Per Reviewer instruction, this is a true new security blocker and requires Reviewer remediation authorization before any dependency/security-policy change.
+
+
+---
+
+## FAZ 7.1 — PR #37 FINAL EXACT-HEAD GREEN HANDOFF
+
+Reviewer-authorized bounded fast-uri 3.1.7 security patch and the previously authorized Cosign Docker-config corrective are both present on one exact PR #37 head.
+
+```text
+PR = #37
+base = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+exact final head = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+state = OPEN / MERGEABLE / UNMERGED
+changed permanent paths = exactly 3
+  .github/workflows/faz7-publish-images.yml
+  deploy/containers/n8n-image.lock
+  deploy/containers/n8n-frozen-candidate-ci.sh
+```
+
+FAZ 7.1 exact-head validation:
+
+```text
+run = 36556055563
+n8n-validation = SUCCESS
+required-gate = SUCCESS
+```
+
+Security/remediation proof:
+
+```text
+FAST_URI_COMPILED_RUNTIME_VERSIONS = 3.1.7
+FAST_URI_3_1_6_ABSENT_FROM_COMPILED_RUNTIME = PASS
+GHSA-58mr-gqgx-xq4g = absent from final blocking set
+GHSA-qw65-cvwx-89v3 = absent from final blocking set
+FORBIDDEN_PACKAGE_HIGH.fast-uri = 0
+N8N_CISA_KEV_MATCHES = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 0
+NEW_UNDISPOSITIONED_HIGH = 0
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+```
+
+Lineage remains explicit and non-falsified:
+
+```text
+baseline upstream fast-uri = 3.1.6
+baseline upstream ref retained as baseline evidence only
+target fast-uri = 3.1.7
+patch provenance = REVIEWER_AUTHORIZED_DIRECT_SAME_SERIES_SECURITY_PATCH
+upstream target adoption claimed = FALSE
+```
+
+Cosign corrective retained exactly:
+
+```text
+Docker config mount = /tmp/cosign-docker-config:ro
+DOCKER_CONFIG = /tmp/cosign-docker-config
+credential source = unchanged GITHUB_TOKEN
+keyless signing mode = unchanged
+signatures/attestations remain mandatory
+```
+
+Exact-head evidence artifacts:
+
+```text
+n8n artifact id = 11028638160
+name = faz7-n8n-final-evidence-84dc43952dfdc11eec2f5392d6a47bca06abfde9
+expired = FALSE
+
+application artifact id = 11027803557
+name = faz7-application-image-evidence-84dc43952dfdc11eec2f5392d6a47bca06abfde9
+expired = FALSE
+```
+
+Implementer terminal decision for FAZ 7.1:
+
+```text
+IMPLEMENTER_STATE = FAZ7_1_PR37_READY_FOR_REVIEW
+CORRECTIVE_PR = #37
+CORRECTIVE_EXACT_HEAD = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+CORRECTIVE_RUN = 36556055563
+CORRECTIVE_REQUIRED_GATE = SUCCESS
+CORRECTIVE_TECHNICAL_BLOCKERS = NONE
+CORRECTIVE_SCOPE_DRIFT = NONE
+CORRECTIVE_READY_FOR_REVIEW = YES
+CORRECTIVE_READY_TO_LOCK = NO
+CORRECTIVE_USER_LOCK_AUTHORIZED = NO
+CORRECTIVE_MERGE = NO
+FAZ_7_1_LOCKED_VERIFIED = NO
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Reviewer must independently audit exact PR #37 head `84dc43952dfdc11eec2f5392d6a47bca06abfde9` and run `36556055563`. A new literal user `LOCK` is required only after Reviewer issues exact-head `READY_TO_LOCK`.
