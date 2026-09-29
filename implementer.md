@@ -1121,3 +1121,102 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 Reviewer must audit this repeated Cosign/GHCR authentication blocker and authorize the exact remediation path before any permanent workflow change is made.
+
+
+---
+
+## COSIGN CONFIG CORRECTIVE PR #37 — NEW TRUE N8N SECURITY REOPEN
+
+Reviewer authorized the final single-file Cosign Docker-config path corrective. Implementer applied exactly that mechanical change from protected main.
+
+```text
+base = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+branch = faz7/7-1-cosign-docker-config-auth-corrective
+PR = #37
+PR state = OPEN / MERGEABLE / UNMERGED
+exact head = 29f3213cd32656166127dbcfdc7a11eac771adeb
+commits = 1
+changed permanent files = 1
+changed path = .github/workflows/faz7-publish-images.yml
+additions = 2
+deletions = 1
+```
+
+Authorized semantic delta only:
+
+```text
+Cosign Docker config mount:
+/root/.docker:ro -> /tmp/cosign-docker-config:ro
+DOCKER_CONFIG=/tmp/cosign-docker-config added inside Cosign container
+credential source = unchanged GITHUB_TOKEN
+packages: write = unchanged
+id-token: write = unchanged
+Cosign image/digest = unchanged
+keyless mode = unchanged
+signatures/attestation requirements = unchanged
+```
+
+Exact-head CI run:
+
+```text
+run = 36546348304
+source-boundary       = SUCCESS  job 109333559504
+static-contracts      = SUCCESS  job 109333559768
+faz6-commerce-replay  = SUCCESS  job 109333559908
+container-validation = SUCCESS  job 109333559938
+n8n-validation        = FAILURE  job 109333559851
+required-gate         = FAILURE  job 109342767747
+```
+
+The n8n failure is unrelated to the Cosign YAML corrective and is a newly surfaced fail-closed security blocker from current vulnerability data:
+
+```text
+package = fast-uri
+installed version = 3.1.6
+fixed version = 3.1.7
+severity = HIGH
+advisory 1 = GHSA-58mr-gqgx-xq4g
+advisory 2 = GHSA-qw65-cvwx-89v3
+CISA_KEV = 0
+ACTIONABLE_OS_HIGH = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 2
+FORBIDDEN_PACKAGE_HIGH.fast-uri = 2
+NEW_UNDISPOSITIONED_HIGH = 1
+final security threshold = FAIL
+```
+
+The four previously Reviewer-authorized exact residual HIGHs remain separately allowed. The libexpat 2.8.5-r0 remediation remains present; this is a distinct new dependency vulnerability result.
+
+Exact-head evidence artifacts still uploaded despite fail-closed security exit:
+
+```text
+application evidence artifact id = 11022803088
+n8n evidence artifact id = 11023946574
+expired = FALSE
+```
+
+No scanner suppression, residual exception, dependency override, n8n source change, or security threshold weakening was applied. The current Reviewer authorization is restricted to the Cosign Docker-config path and does not authorize remediation of a new fast-uri dependency vulnerability.
+
+Terminal handoff:
+
+```text
+IMPLEMENTER_STATE = COSIGN_CORRECTIVE_BLOCKED_BY_NEW_N8N_SECURITY_REOPEN
+PR = #37
+CORRECTIVE_EXACT_HEAD = 29f3213cd32656166127dbcfdc7a11eac771adeb
+COSIGN_SCOPE = IMPLEMENTED_EXACTLY
+COSIGN_FIX_REVIEWABLE = YES
+NEW_SECURITY_BLOCKER = fast-uri 3.1.6 / GHSA-58mr-gqgx-xq4g + GHSA-qw65-cvwx-89v3 / fix 3.1.7
+CISA_KEV = 0
+SECURITY_THRESHOLD_WEAKENING = NONE
+SCANNER_SUPPRESSION = NONE
+PR_REQUIRED_GATE = FAILURE_DUE_NEW_SECURITY_BLOCKER
+READY_TO_LOCK = NO
+MERGE = NO
+FAZ_7_1_LOCKED_VERIFIED = NO
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Per Reviewer instruction, this is a true new security blocker and requires Reviewer remediation authorization before any dependency/security-policy change.
