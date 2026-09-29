@@ -241,6 +241,28 @@ PY
 CI=true NODE_OPTIONS=--max-old-space-size=7168 RELEASE="$N8N_VERSION" pnpm build:n8n
 test -d compiled
 grep -R "\"version\": \"$N8N_FAST_URI_TARGET\"" compiled/node_modules/.pnpm/fast-uri@$N8N_FAST_URI_TARGET*/node_modules/fast-uri/package.json
+python - <<'PY'
+import json, os
+from pathlib import Path
+target=os.environ['N8N_FAST_URI_TARGET']
+versions=[]
+for p in Path('compiled/node_modules/.pnpm').glob('fast-uri@*/node_modules/fast-uri/package.json'):
+    try:
+        version=json.loads(p.read_text()).get('version')
+    except Exception:
+        continue
+    if version:
+        versions.append(version)
+versions=sorted(set(versions))
+evidence={'target':target,'compiled_runtime_versions':versions,'obsolete_3_1_6_absent':'3.1.6' not in versions}
+Path(os.environ['OUT'],'fast-uri-compiled-runtime-versions.json').write_text(
+    json.dumps(evidence,indent=2,sort_keys=True)+'\n'
+)
+if versions != [target]:
+    raise SystemExit(f'unexpected compiled fast-uri runtime versions: {versions}; expected only {target}')
+print('FAST_URI_COMPILED_RUNTIME_VERSIONS='+','.join(versions))
+print('FAST_URI_3_1_6_ABSENT_FROM_COMPILED_RUNTIME=PASS')
+PY
 grep -R '"version": "10.3.1"' compiled/node_modules/.pnpm/ip-address@10.3.1*/node_modules/ip-address/package.json
 grep -R '"version": "5.0.9"' compiled/node_modules/.pnpm/brace-expansion@5.0.9*/node_modules/brace-expansion/package.json
 grep -R "\"version\": \"$N8N_JS_YAML_TARGET\"" compiled/node_modules/.pnpm/js-yaml@$N8N_JS_YAML_TARGET*/node_modules/js-yaml/package.json
