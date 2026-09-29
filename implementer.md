@@ -1315,3 +1315,92 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 Reviewer must independently audit exact PR #37 head `84dc43952dfdc11eec2f5392d6a47bca06abfde9` and run `36556055563`. A new literal user `LOCK` is required only after Reviewer issues exact-head `READY_TO_LOCK`.
+
+
+---
+
+## FAZ 7.1 — FINAL POST-MERGE PUBLICATION SUCCESS HANDOFF
+
+PR #37 was merged from the exact Reviewer-approved head after literal user LOCK.
+
+```text
+PR = #37
+reviewed head = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+merge commit / current main = 1c3474248f18203669e7a87693a885378cc81e5e
+merge tree = 90859b277a51a4bdf73afb78a10459bda546779e
+parent 1 = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+parent 2 = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+merge path = normal merge commit
+PR #37 = CLOSED / MERGED
+```
+
+Automatic FAZ 7.1 publication on exact new main:
+
+```text
+workflow = faz7-publish-images
+run = 36562903256
+job = publish / 109387771419
+status = COMPLETED
+conclusion = SUCCESS
+attempt = 1
+```
+
+All closure steps are green:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+Node 26.7.0 setup = PASS
+application immutable image build/publish = PASS
+frozen n8n rebuild/validate/publish = PASS
+published digest resolution = PASS
+published application SBOM/security policy = PASS
+published n8n exact-candidate identity/SBOM = PASS
+provenance predicate generation = PASS
+Cosign keyless signatures for API/Commerce/n8n = PASS
+SPDX attestations for API/Commerce/n8n = PASS
+provenance attestations for API/Commerce/n8n = PASS
+immutable publication evidence upload = PASS
+overall workflow = SUCCESS
+```
+
+Publication security proof remains fail-closed and green:
+
+```text
+API_CISA_KEV_MATCHES = 0
+COMMERCE_CISA_KEV_MATCHES = 0
+API_POLICY_BLOCKERS = 0
+COMMERCE_POLICY_BLOCKERS = 0
+PUBLISHED_N8N_PRUNED_PACKAGE_IDENTITY = PASS
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+```
+
+Immutable publication evidence artifact:
+
+```text
+artifact id = 11032821368
+name = faz7-published-image-evidence-1c3474248f18203669e7a87693a885378cc81e5e
+expired = FALSE
+size = 1859756 bytes
+```
+
+Implementer terminal FAZ 7.1 state:
+
+```text
+IMPLEMENTER_STATE = FAZ7_1_POST_MERGE_PUBLICATION_SUCCESS_AWAIT_REVIEWER_LOCKED_VERIFIED
+MAIN = 1c3474248f18203669e7a87693a885378cc81e5e
+PR37_MERGE = VALID
+POST_MERGE_PUBLISH_RUN = 36562903256 / SUCCESS
+COSIGN_SIGNATURES = PASS
+SBOM_ATTESTATIONS = PASS
+PROVENANCE_ATTESTATIONS = PASS
+PUBLICATION_EVIDENCE_ARTIFACT = PRESENT
+TECHNICAL_SECURITY_BLOCKERS = NONE
+FAZ_7_1_IMPLEMENTER_CLOSURE = COMPLETE
+FAZ_7_1_LOCKED_VERIFIED = PENDING_REVIEWER_RECORD
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Reviewer should independently verify exact main/merge integrity, publication run 36562903256, and artifact 11032821368, then record `FAZ_7_1_STATUS: LOCKED_VERIFIED` if no discrepancy exists.
