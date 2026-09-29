@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: POST_MERGE_SECURITY_REOPEN_LIBEXPAT_PATCH_AUTHORIZED
-IMPLEMENTER_ACTION: CREATE_BOUNDED_LIBEXPAT_2_8_5_R0_CORRECTIVE_PR_AND_COMPLETE_TO_TERMINAL_HANDOFF
+REVIEWER_STATE: READY_TO_LOCK_LIBEXPAT_SECURITY_CORRECTIVE
+IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_PR36_HEAD
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,15 +21,15 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
 EXPECTED_BASE_TREE_SHA: 3e1964663041b802d36749d4f5e5db8d3e658908
 
-CODE_BRANCH: PENDING_IMPLEMENTER_LIBEXPAT_SECURITY_CORRECTIVE
-PR: PENDING
-PR_STATE: NOT_CREATED
-PR_DRAFT: N/A
+CODE_BRANCH: faz7/7-1-libexpat-2-8-5-r0-security-corrective
+PR: #36
+PR_STATE: OPEN
+PR_DRAFT: FALSE
 PR_MERGED: FALSE
-PR_MERGEABLE: N/A
+PR_MERGEABLE: TRUE
 
-OBSERVED_HEAD_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
-REVIEWED_HEAD_SHA: NONE
+OBSERVED_HEAD_SHA: 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+REVIEWED_HEAD_SHA: 2bf60b3af0c1d9f0357e5d7834c61751bd220601
 
 FINAL_GREEN_PUSH_RUN: 35459207216
 FINAL_GREEN_PR_RUN: 35459209786
@@ -39,16 +39,16 @@ FINAL_PR_REQUIRED_GATE_JOB: 105944676923
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: SECURITY_REOPEN_LIBEXPAT_2_8_5_R0_AUTHORIZED
+OPS71-N8N-VULN-001: RESOLVED_LIBEXPAT_2_8_5_R0_EXACT_HEAD_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: BLOCKED_BY_N8N_SECURITY_GATE_CVE_2026_93990
+OPS71-PUBLISH-001: PENDING_POST_PR36_MERGE_REPUBLISH_ONLY
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-TECHNICAL_READY_FOR_LOCK_GATE: NO
-READY_FOR_REVIEW: NO
-READY_TO_LOCK: NO
+TECHNICAL_READY_FOR_LOCK_GATE: YES
+READY_FOR_REVIEW: YES
+READY_TO_LOCK: YES
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -1758,3 +1758,144 @@ After that merge, Reviewer must verify:
 
 Only then may FAZ 7.1 be recorded `LOCKED_VERIFIED`. FAZ 7.2 remains prohibited
 in this chat and must start in a new conversation.
+
+
+---
+
+## PR #36 — FINAL EXACT-HEAD REVIEWER AUDIT
+
+Reviewer independently audited the bounded libexpat security corrective.
+
+```text
+PR = #36
+base = main@dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+branch = faz7/7-1-libexpat-2-8-5-r0-security-corrective
+exact reviewed head = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+PR state = OPEN / READY / MERGEABLE / UNMERGED
+commits = 1
+changed permanent files = 1
+changed path = deploy/containers/n8n-frozen-candidate-ci.sh
+```
+
+Exact patch scope:
+
+```text
+libexpat runtime pin:
+2.8.4-r0 -> 2.8.5-r0
+
+matching final-installed assertion:
+2.8.4-r0 -> 2.8.5-r0
+
+all other permanent bytes = unchanged
+```
+
+Scope audit:
+
+```text
+application/business source change = NONE
+Python/base application identity change = NONE
+frozen n8n release/source commit/tree change = NONE
+frozen n8n workflow JSON change = NONE
+scanner suppression = NONE
+blanket CVE ignore = NONE
+SiteScore-authored VEX = NONE
+security threshold weakening = NONE
+FAZ 7.2 work = NONE
+```
+
+The post-PR35 publish failure was independently confirmed as the real OS-level blocker:
+
+```text
+CVE = CVE-2026-93990
+package = libexpat
+installed = 2.8.4-r0
+fixed = 2.8.5-r0
+CISA_KEV = 0
+ACTIONABLE_OS_HIGH = 1
+BLOCKING_HIGH = 1
+```
+
+Exact PR #36 hosted validation:
+
+```text
+run = 36483975872
+source-boundary       = SUCCESS
+static-contracts      = SUCCESS
+faz6-commerce-replay  = SUCCESS
+container-validation = SUCCESS
+n8n-validation        = SUCCESS
+required-gate         = SUCCESS
+```
+
+Exact n8n security evidence from the reviewed head:
+
+```text
+libexpat = 2.8.5-r0
+CISA_KEV = 0
+ACTIONABLE_OS_HIGH = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 0
+NEW_UNDISPOSITIONED_HIGH = 0
+n8n static = 12 PASS
+frozen runtime/workflow/recovery gates = PASS
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+```
+
+Exact-head artifacts:
+
+```text
+application artifact:
+id = 10998945741
+sha256 = c3e3d79a706908510c11cf7aa48ce95455be0fc5801386099b36edd02f3f0f83
+
+n8n artifact:
+id = 11000008561
+sha256 = 6c350bb68971a4c37f2b17172ccbaa07dd11ee2182c72873d964292351569b43
+```
+
+Live governance remains PASS:
+
+```text
+main ruleset = active
+strict required status checks = TRUE
+required check = required-gate
+pull request required = TRUE
+deletion blocked
+non-fast-forward / force push blocked
+bypass actors = []
+current_user_can_bypass = never
+
+allow_merge_commit = TRUE
+allow_squash_merge = FALSE
+allow_rebase_merge = FALSE
+allow_auto_merge = FALSE
+```
+
+Reviewer decision:
+
+```text
+OPS71-N8N-VULN-001: RESOLVED_LIBEXPAT_2_8_5_R0_EXACT_HEAD_GREEN
+CORRECTIVE_TECHNICAL_BLOCKERS: NONE
+CORRECTIVE_SCOPE_DRIFT: NONE
+READY_FOR_REVIEW: YES
+READY_TO_LOCK: YES
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: NO
+MERGE: NO
+FAZ_7_1_LOCKED_VERIFIED: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
+```
+
+A NEW literal user `LOCK` is required for PR #36. Implementer may merge only exact reviewed head
+`2bf60b3af0c1d9f0357e5d7834c61751bd220601` using the normal merge-commit path.
+No head drift is allowed.
+
+After PR #36 merges, Reviewer will verify merge SHA/tree/parents, governance,
+and the new main-triggered `faz7-publish-images` run. FAZ 7.1 becomes
+`LOCKED_VERIFIED` only if publication reaches SUCCESS with immutable
+API/Commerce/n8n digests, published-image security/SBOM proof, provenance,
+Cosign signatures/attestations, and publication evidence artifact present.
+
+FAZ 7.2 remains prohibited in this chat.
