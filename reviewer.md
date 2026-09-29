@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: FINAL_COSIGN_AUTH_PATH_MECHANICAL_CORRECTIVE_AUTHORIZED
-IMPLEMENTER_ACTION: APPLY_SINGLE_FILE_COSIGN_DOCKER_CONFIG_PATH_FIX_COMPLETE_TO_TERMINAL_HANDOFF
+REVIEWER_STATE: FAST_URI_3_1_7_DIRECT_SECURITY_PATCH_AUTHORIZED
+IMPLEMENTER_ACTION: APPLY_BOUNDED_FAST_URI_3_1_7_PATCH_PRESERVE_COSIGN_FIX_COMPLETE_TO_TERMINAL_HANDOFF
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -21,15 +21,15 @@ EXPECTED_BASE_BRANCH: main
 EXPECTED_BASE_SHA: 84b9cb1a5192bdddad6677cbbae8035b974b1167
 EXPECTED_BASE_TREE_SHA: ec74a6da3384aaee51ab38dd25580f968be4f8ed
 
-CODE_BRANCH: faz7/7-1-libexpat-2-8-5-r0-security-corrective
-PR: #36
+CODE_BRANCH: faz7/7-1-cosign-docker-config-auth-corrective
+PR: #37
 PR_STATE: OPEN
 PR_DRAFT: FALSE
 PR_MERGED: FALSE
 PR_MERGEABLE: TRUE
 
-OBSERVED_HEAD_SHA: 2bf60b3af0c1d9f0357e5d7834c61751bd220601
-REVIEWED_HEAD_SHA: 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+OBSERVED_HEAD_SHA: 29f3213cd32656166127dbcfdc7a11eac771adeb
+REVIEWED_HEAD_SHA: NONE
 
 FINAL_GREEN_PUSH_RUN: 35459207216
 FINAL_GREEN_PR_RUN: 35459209786
@@ -39,9 +39,9 @@ FINAL_PR_REQUIRED_GATE_JOB: 105944676923
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: RESOLVED_LIBEXPAT_2_8_5_R0_EXACT_HEAD_GREEN
+OPS71-N8N-VULN-001: SECURITY_REOPEN_FAST_URI_3_1_7_DIRECT_PATCH_AUTHORIZED
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: COSIGN_CONTAINER_DOCKER_CONFIG_PATH_CORRECTIVE_AUTHORIZED
+OPS71-PUBLISH-001: COSIGN_DOCKER_CONFIG_FIX_IMPLEMENTED_PENDING_GREEN
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
@@ -53,6 +53,137 @@ NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## FINAL SECURITY REOPEN — FAST-URI 3.1.7 DIRECT SAME-SERIES PATCH AUTHORIZED
+
+Reviewer independently audited PR #37 exact head and its failed exact-head FAZ7 run.
+
+Current corrective state:
+
+```text
+base/main = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+PR = #37
+head = 29f3213cd32656166127dbcfdc7a11eac771adeb
+PR = OPEN / READY / MERGEABLE / UNMERGED
+existing changed file = .github/workflows/faz7-publish-images.yml
+Cosign Docker-config path correction = EXACT / ACCEPTED FOR CONTINUATION
+FAZ 7.2 started = NO
+```
+
+Exact-head run `36546348304` proves the Cosign corrective did not alter frozen application/business scope. All mandatory jobs except n8n-validation are green. n8n-validation fails closed only on newly surfaced fast-uri findings:
+
+```text
+package = fast-uri
+installed = 3.1.6
+fixed = 3.1.7
+GHSA-58mr-gqgx-xq4g = HIGH
+GHSA-qw65-cvwx-89v3 = HIGH
+CISA_KEV = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 2
+FORBIDDEN_PACKAGE_HIGH.fast-uri = 2
+NEW_UNDISPOSITIONED_HIGH = 1
+```
+
+Reviewer verified the official fast-uri advisories identify 3.1.7 as the patched release for both findings. n8n upstream master still pins 3.1.6, so waiting for a new n8n upstream-adoption commit would create another moving external dependency loop and is not required for this emergency security correction.
+
+Reviewer decision:
+
+```text
+SECURITY_REOPEN = AUTHORIZED
+NEW_DESIGN_DECISION_REQUIRED = NO
+N8N_RELEASE_RESELECTION = FORBIDDEN
+N8N_VERSION_CHANGE = FORBIDDEN
+DISTRO_CHANGE = FORBIDDEN
+SECURITY_THRESHOLD_WEAKENING = FORBIDDEN
+UPSTREAM_N8N_ADOPTION_WAIT = NOT_REQUIRED
+DIRECT_SAME_SERIES_PATCH = AUTHORIZED
+```
+
+Authorized permanent scope for PR #37 is bounded to at most these three files:
+
+```text
+.github/workflows/faz7-publish-images.yml
+  - retain the already-reviewed Cosign DOCKER_CONFIG path fix only
+
+deploy/containers/n8n-image.lock
+  - N8N_FAST_URI_TARGET: 3.1.6 -> 3.1.7
+  - record direct same-series security-patch provenance without pretending n8n upstream has adopted 3.1.7
+
+deploy/containers/n8n-frozen-candidate-ci.sh
+  - replace only the obsolete requirement that current target itself must already appear in an n8n upstream-adoption ref
+  - preserve evidence that 3.1.6 was the previously upstream-adopted baseline
+  - apply/verify exact fast-uri 3.1.7
+  - keep all existing fail-closed final scanner/runtime gates
+```
+
+The implementation must not falsify upstream lineage. If the old upstream ref remains recorded, it must be clearly treated as evidence for the previously adopted 3.1.6 baseline, not as evidence that upstream adopted 3.1.7.
+
+Keep unchanged:
+
+```text
+n8n = 2.37.10
+source commit = 5542b8b6419cb6925cca8f11b270c9bfbe09d85e
+source tree = 8d44b0feb4a74c9fb07f4156793e3c7eaee30fc0
+Node/DHI = 26.7.0 / Alpine 3.24
+DHI immutable digest
+libexpat = 2.8.5-r0
+libcrypto3/libssl3/libcurl pins
+Snowflake/TOML pruning
+Git/Git Tool pruning
+NODES_EXCLUDE
+frozen workflow hashes
+application/business source
+application Python/Trixie identity
+published-image policy parity
+Cosign keyless signing requirements
+GitHub governance
+cloud/deployment state
+```
+
+Forbidden:
+
+```text
+fast-uri residual waiver
+scanner suppression / ignore
+SiteScore-authored VEX for these findings
+n8n moving-latest restart
+major/minor fast-uri jump
+unrelated dependency refresh
+security gate weakening
+Cosign signing/attestation bypass
+FAZ 7.2 work
+```
+
+Terminal acceptance on one exact final PR #37 head:
+
+```text
+[ ] changed permanent paths subset exactly of the three authorized files
+[ ] fast-uri installed/compiled = 3.1.7
+[ ] fast-uri 3.1.6 absent from final runtime dependency inventory
+[ ] GHSA-58mr-gqgx-xq4g finding = 0
+[ ] GHSA-qw65-cvwx-89v3 finding = 0
+[ ] FORBIDDEN_PACKAGE_HIGH.fast-uri = 0
+[ ] CISA KEV = 0
+[ ] BLOCKING_CRITICAL = 0
+[ ] BLOCKING_HIGH = 0
+[ ] NEW_UNDISPOSITIONED_HIGH = 0
+[ ] only previously-authorized exact residual set may remain
+[ ] n8n static/runtime/import/recovery gates PASS
+[ ] source-boundary PASS
+[ ] container-validation PASS
+[ ] FAZ6 replay PASS
+[ ] n8n-validation PASS
+[ ] faz7 / required-gate PASS
+[ ] Cosign corrective retained exactly
+[ ] application/business source diff NONE
+[ ] frozen n8n workflow diff NONE
+[ ] FAZ 7.2 work NONE
+```
+
+Implementer must complete this bounded PR #37 security correction to terminal `READY_FOR_REVIEW` without another Reviewer round-trip for ordinary lockfile/pnpm/shell mechanics. Reviewer will then audit the exact final head. A literal user `LOCK` remains required only after exact-head `READY_TO_LOCK`.
 
 ---
 ---
