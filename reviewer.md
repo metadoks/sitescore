@@ -12,14 +12,14 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: READY_TO_LOCK_LIBEXPAT_SECURITY_CORRECTIVE
-IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_PR36_HEAD
+REVIEWER_STATE: FINAL_COSIGN_AUTH_PATH_MECHANICAL_CORRECTIVE_AUTHORIZED
+IMPLEMENTER_ACTION: APPLY_SINGLE_FILE_COSIGN_DOCKER_CONFIG_PATH_FIX_COMPLETE_TO_TERMINAL_HANDOFF
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
 EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
-EXPECTED_BASE_TREE_SHA: 3e1964663041b802d36749d4f5e5db8d3e658908
+EXPECTED_BASE_SHA: 84b9cb1a5192bdddad6677cbbae8035b974b1167
+EXPECTED_BASE_TREE_SHA: ec74a6da3384aaee51ab38dd25580f968be4f8ed
 
 CODE_BRANCH: faz7/7-1-libexpat-2-8-5-r0-security-corrective
 PR: #36
@@ -41,20 +41,162 @@ OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
 OPS71-N8N-VULN-001: RESOLVED_LIBEXPAT_2_8_5_R0_EXACT_HEAD_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: PENDING_POST_PR36_MERGE_REPUBLISH_ONLY
+OPS71-PUBLISH-001: COSIGN_CONTAINER_DOCKER_CONFIG_PATH_CORRECTIVE_AUTHORIZED
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 TECHNICAL_READY_FOR_LOCK_GATE: YES
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: YES
+READY_TO_LOCK: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
 
 ---
+---
+
+## FINAL POST-LOCK PUBLICATION CORRECTIVE — COSIGN REGISTRY AUTH PATH
+
+Reviewer independently audited current protected main and post-PR36 publication attempt.
+
+Current authoritative main:
+
+```text
+main = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+tree = ec74a6da3384aaee51ab38dd25580f968be4f8ed
+PR #36 = CLOSED / MERGED
+reviewed corrective head = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+branch protection = ACTIVE
+FAZ 7.2 started = NO
+```
+
+Current post-lock publication run:
+
+```text
+run = 36519593932
+attempt = 2
+job = 109258962862
+status = COMPLETED / FAILURE
+```
+
+All publication/security work before signing is GREEN:
+
+```text
+exact main checkout = PASS
+GHCR login with GITHUB_TOKEN = PASS
+application image build/publish = PASS
+frozen n8n rebuild/validate/publish = PASS
+published digest resolution = PASS
+application SBOM + security policy = PASS
+published n8n digest/image equivalence = PASS
+published n8n SBOM/pruned package identity = PASS
+provenance predicate generation = PASS
+API_POLICY_BLOCKERS = 0
+COMMERCE_POLICY_BLOCKERS = 0
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+PUBLISHED_N8N_PRUNED_PACKAGE_IDENTITY = PASS
+```
+
+The sole failure is the first Cosign registry write:
+
+```text
+step = Keyless sign images and attest SBOM plus provenance
+subject = ghcr.io/metadoks/sitescore-api@sha256:276173c6103f2364d11e6de01a3355535e7559e1b5a84017798684aa339a779a
+error = UNAUTHORIZED: unauthenticated: User cannot be authenticated with the token provided
+```
+
+The workflow has already authenticated the host Docker client successfully and uses:
+
+```text
+packages: write
+id-token: write
+docker login ghcr.io ... = PASS
+```
+
+The mechanical defect is the Cosign container credential-config path contract. Current invocation mounts host Docker config only at `/root/.docker` without explicitly setting `DOCKER_CONFIG` for the Cosign container.
+
+Reviewer decision:
+
+```text
+NEW_DESIGN_DECISION_REQUIRED = NO
+SECURITY_REOPEN = NO
+THRESHOLD_CHANGE = NO
+CREDENTIAL_CHANGE = NO
+OWNER_SECRET_ACTION = NO
+```
+
+Authorized permanent corrective scope is exactly one file:
+
+```text
+.github/workflows/faz7-publish-images.yml
+```
+
+Authorized semantic change is only the Cosign container Docker-config path:
+
+```text
+replace credential mount usage:
+  -v "$HOME/.docker:/root/.docker:ro"
+
+with an explicit neutral readable mount + Docker config environment:
+  -v "$HOME/.docker:/tmp/cosign-docker-config:ro"
+  -e DOCKER_CONFIG=/tmp/cosign-docker-config
+```
+
+Equivalent exact syntax that preserves this semantic contract is acceptable. Keep unchanged:
+
+```text
+GITHUB_TOKEN authentication source
+packages: write
+id-token: write
+Cosign image/digest
+keyless signing mode
+all image digests
+SBOM/provenance predicates
+attestation types
+application/n8n security policy
+n8n identity and hardening
+application/business source
+frozen workflow JSON
+GitHub governance
+cloud/deployment state
+```
+
+Forbidden:
+
+```text
+static/private signing key
+PAT substitution
+credential commit/logging
+anonymous signing fallback
+skip signing or attestations
+registry change
+scanner/security gate weakening
+unrelated dependency/base refresh
+FAZ 7.2 work
+```
+
+Terminal acceptance after this corrective:
+
+```text
+[ ] corrective PR changes exactly one permanent file
+[ ] normal FAZ7 required-gate PASS on exact corrective head
+[ ] user LOCK only after Reviewer exact-head READY_TO_LOCK
+[ ] corrective merged by normal merge commit
+[ ] post-merge faz7-publish-images SUCCESS
+[ ] API/Commerce/n8n immutable digests resolved
+[ ] published-image security/SBOM PASS
+[ ] Cosign signature PASS for all three digest subjects
+[ ] SPDX attestation PASS for all three digest subjects
+[ ] provenance attestation PASS for all three digest subjects
+[ ] immutable publication evidence artifact uploaded
+[ ] main protection/governance remains PASS
+[ ] FAZ 7.2 remains NOT STARTED
+```
+
+This is the final known FAZ 7.1 closure blocker. Implementer must complete the single-file mechanical corrective to terminal `READY_FOR_REVIEW` without returning for ordinary YAML/shell/container mechanics.
+
 
 ## POST-LOCK SECURITY REOPEN — CVE-2026-93990 / LIBEXPAT PATCH AUTHORIZED
 
