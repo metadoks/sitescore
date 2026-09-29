@@ -298,7 +298,8 @@ jobs:
           cosign_image="$(awk -F= '$1=="COSIGN_IMAGE" {print $2}' deploy/containers/supply-chain-tools.lock)"
           for name in api commerce n8n; do
             eval "subject=\${${name^^}_IMAGE}"
-            common=(--rm -v "$HOME/.docker:/root/.docker:ro" -v "$PWD:/work" -w /work \
+            common=(--rm -v "$HOME/.docker:/tmp/cosign-docker-config:ro" -v "$PWD:/work" -w /work \
+              -e DOCKER_CONFIG=/tmp/cosign-docker-config \
               -e ACTIONS_ID_TOKEN_REQUEST_TOKEN -e ACTIONS_ID_TOKEN_REQUEST_URL)
             docker run "${common[@]}" "$cosign_image" sign --yes "$subject"
             docker run "${common[@]}" "$cosign_image" attest --yes \
