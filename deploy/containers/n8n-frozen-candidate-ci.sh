@@ -80,8 +80,25 @@ grep -F 'multer: ^2.3.0' "$OUT/upstream-security-pnpm-workspace.yaml"
 pushd "$SRC" >/dev/null
 cp pnpm-workspace.yaml "$OUT/pnpm-workspace.stable.yaml"
 cp pnpm-lock.yaml "$OUT/pnpm-lock.stable.yaml"
-curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_FAST_URI_UPSTREAM_REF}/pnpm-workspace.yaml" -o "$OUT/upstream-fast-uri-adoption.yaml"
-grep -F "fast-uri: ${N8N_FAST_URI_TARGET}" "$OUT/upstream-fast-uri-adoption.yaml"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/n8n-io/n8n/${N8N_FAST_URI_BASELINE_UPSTREAM_REF}/pnpm-workspace.yaml" -o "$OUT/upstream-fast-uri-baseline.yaml"
+grep -F "fast-uri: ${N8N_FAST_URI_BASELINE_VERSION}" "$OUT/upstream-fast-uri-baseline.yaml"
+test "$N8N_FAST_URI_BASELINE_VERSION" = 3.1.6
+test "$N8N_FAST_URI_TARGET" = 3.1.7
+test "$N8N_FAST_URI_PATCH_PROVENANCE" = REVIEWER_AUTHORIZED_DIRECT_SAME_SERIES_SECURITY_PATCH
+python - <<'PY'
+import json, os
+from pathlib import Path
+evidence={
+    'baseline_upstream_ref':os.environ['N8N_FAST_URI_BASELINE_UPSTREAM_REF'],
+    'baseline_upstream_version':os.environ['N8N_FAST_URI_BASELINE_VERSION'],
+    'target_version':os.environ['N8N_FAST_URI_TARGET'],
+    'provenance':os.environ['N8N_FAST_URI_PATCH_PROVENANCE'],
+    'upstream_target_adoption_claimed':False,
+}
+Path(os.environ['OUT'],'fast-uri-direct-security-patch-provenance.json').write_text(
+    json.dumps(evidence,indent=2,sort_keys=True)+'\\n'
+)
+PY
 python - <<'PY'
 from pathlib import Path
 import os
