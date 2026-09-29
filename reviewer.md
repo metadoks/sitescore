@@ -12,8 +12,8 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: FAST_URI_3_1_7_DIRECT_SECURITY_PATCH_AUTHORIZED
-IMPLEMENTER_ACTION: APPLY_BOUNDED_FAST_URI_3_1_7_PATCH_PRESERVE_COSIGN_FIX_COMPLETE_TO_TERMINAL_HANDOFF
+REVIEWER_STATE: READY_TO_LOCK_PR37_FINAL_CORRECTIVE
+IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_PR37_HEAD
 LOCK_AUTHORITY: USER_ONLY
 USER_LOCK_AUTHORIZED: NO
 
@@ -28,8 +28,8 @@ PR_DRAFT: FALSE
 PR_MERGED: FALSE
 PR_MERGEABLE: TRUE
 
-OBSERVED_HEAD_SHA: 29f3213cd32656166127dbcfdc7a11eac771adeb
-REVIEWED_HEAD_SHA: NONE
+OBSERVED_HEAD_SHA: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+REVIEWED_HEAD_SHA: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
 
 FINAL_GREEN_PUSH_RUN: 35459207216
 FINAL_GREEN_PR_RUN: 35459209786
@@ -39,16 +39,16 @@ FINAL_PR_REQUIRED_GATE_JOB: 105944676923
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: SECURITY_REOPEN_FAST_URI_3_1_7_DIRECT_PATCH_AUTHORIZED
+OPS71-N8N-VULN-001: RESOLVED_FAST_URI_3_1_7_EXACT_HEAD_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: COSIGN_DOCKER_CONFIG_FIX_IMPLEMENTED_PENDING_GREEN
+OPS71-PUBLISH-001: PR37_EXACT_HEAD_GREEN_PENDING_USER_LOCK
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
 TECHNICAL_READY_FOR_LOCK_GATE: YES
 READY_FOR_REVIEW: YES
-READY_TO_LOCK: NO
+READY_TO_LOCK: YES
 NEXT_CHECKPOINT_AUTHORIZED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
@@ -2172,3 +2172,119 @@ API/Commerce/n8n digests, published-image security/SBOM proof, provenance,
 Cosign signatures/attestations, and publication evidence artifact present.
 
 FAZ 7.2 remains prohibited in this chat.
+
+
+---
+
+## PR #37 — FINAL EXACT-HEAD REVIEWER AUDIT PASS
+
+Reviewer independently audited the final bounded FAZ 7.1 corrective.
+
+```text
+PR = #37
+base/main = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+exact reviewed head = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+state = OPEN / READY / MERGEABLE / UNMERGED
+commits = 4
+changed permanent files = exactly 3
+```
+
+Authorized changed paths only:
+
+```text
+.github/workflows/faz7-publish-images.yml
+deploy/containers/n8n-frozen-candidate-ci.sh
+deploy/containers/n8n-image.lock
+```
+
+Scope audit PASS:
+
+```text
+Cosign GHCR auth-path corrective = exact authorized delta
+fast-uri security patch = 3.1.6 -> 3.1.7
+fast-uri patch provenance = REVIEWER_AUTHORIZED_DIRECT_SAME_SERIES_SECURITY_PATCH
+upstream adoption falsely claimed = NO
+n8n release/source commit/tree change = NONE
+application/business source change = NONE
+frozen n8n workflow JSON change = NONE
+scanner suppression = NONE
+blanket CVE ignore = NONE
+SiteScore-authored VEX = NONE
+security threshold weakening = NONE
+FAZ 7.2 work = NONE
+```
+
+Exact-head hosted validation:
+
+```text
+run = 36556055563
+source-boundary       = SUCCESS
+static-contracts      = SUCCESS
+faz6-commerce-replay  = SUCCESS
+container-validation = SUCCESS
+n8n-validation        = SUCCESS
+required-gate         = SUCCESS
+```
+
+Independent n8n security evidence:
+
+```text
+FAST_URI_COMPILED_RUNTIME_VERSIONS = 3.1.7
+FAST_URI_3_1_6_ABSENT_FROM_COMPILED_RUNTIME = PASS
+N8N_CISA_KEV_MATCHES = 0
+BLOCKING_CRITICAL = 0
+BLOCKING_HIGH = 0
+NEW_UNDISPOSITIONED_HIGH = 0
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+```
+
+Exact-head artifacts:
+
+```text
+application artifact id = 11027803557
+application artifact sha256 = 0a08237130a01714789fd2582b8c120201bff1befa269838db1381119ec2ec2f
+n8n artifact id = 11028638160
+n8n artifact sha256 = bf5ca88ae5abb15d717b29aaf48407b8f95f319c604dbeacbf953c3cbf177d08
+expired = FALSE
+```
+
+Live governance remains PASS:
+
+```text
+ruleset = main / active
+strict required status checks = TRUE
+required check = required-gate
+pull request required = TRUE
+deletion blocked
+non-fast-forward / force-push blocked
+bypass actors = []
+current_user_can_bypass = never
+allow_merge_commit = TRUE
+allow_squash_merge = FALSE
+allow_rebase_merge = FALSE
+allow_auto_merge = FALSE
+```
+
+Reviewer decision:
+
+```text
+OPS71-PUBLISH-001: PR37_EXACT_HEAD_GREEN_PENDING_USER_LOCK
+OPS71-N8N-VULN-001: RESOLVED_FAST_URI_3_1_7_EXACT_HEAD_GREEN
+TECHNICAL_SECURITY_BLOCKERS: NONE
+SCOPE_DRIFT: NONE
+READY_FOR_REVIEW: YES
+READY_TO_LOCK: YES
+LOCK_AUTHORITY: USER_ONLY
+USER_LOCK_AUTHORIZED: NO
+MERGE: NO
+FAZ_7_1_LOCKED_VERIFIED: NO
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
+```
+
+A NEW literal user `LOCK` is required for PR #37 because prior LOCK authorizations were consumed by earlier merges. Implementer may merge only exact head `84dc43952dfdc11eec2f5392d6a47bca06abfde9` with the normal merge-commit path and no head drift.
+
+After that merge, Reviewer will verify the new main SHA/tree/parents, governance, and the automatically triggered `faz7-publish-images` run. FAZ 7.1 becomes `LOCKED_VERIFIED` only when that publication run reaches SUCCESS with immutable API/Commerce/n8n digests, published-image security/SBOM proof, provenance, Cosign signatures/attestations, and publication evidence artifact.
+
+FAZ 7.2 remains explicitly NOT STARTED and must be handled in a new conversation.
