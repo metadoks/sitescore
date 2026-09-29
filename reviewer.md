@@ -12,47 +12,201 @@ CURRENT_PHASE: FAZ 7
 CURRENT_CHECKPOINT: 7.1
 CHECKPOINT_TITLE: Reproducible Containers + Supply Chain + GitHub Governance
 
-REVIEWER_STATE: READY_TO_LOCK_PR37_FINAL_CORRECTIVE
-IMPLEMENTER_ACTION: AWAIT_LITERAL_USER_LOCK_THEN_MERGE_EXACT_PR37_HEAD
+REVIEWER_STATE: LOCKED_VERIFIED
+IMPLEMENTER_ACTION: NONE_CHECKPOINT_CLOSED
 LOCK_AUTHORITY: USER_ONLY
-USER_LOCK_AUTHORIZED: NO
+USER_LOCK_AUTHORIZED: YES
 
-EXPECTED_BASE_BRANCH: main
-EXPECTED_BASE_SHA: 84b9cb1a5192bdddad6677cbbae8035b974b1167
-EXPECTED_BASE_TREE_SHA: ec74a6da3384aaee51ab38dd25580f968be4f8ed
+FINAL_REVIEWED_CORRECTIVE_PR: #37
+FINAL_REVIEWED_HEAD_SHA: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+LOCKED_MAIN_SHA: 1c3474248f18203669e7a87693a885378cc81e5e
+LOCKED_MAIN_TREE_SHA: 90859b277a51a4bdf73afb78a10459bda546779e
+LOCKED_MAIN_PARENT_1: 84b9cb1a5192bdddad6677cbbae8035b974b1167
+LOCKED_MAIN_PARENT_2: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
 
-CODE_BRANCH: faz7/7-1-cosign-docker-config-auth-corrective
-PR: #37
-PR_STATE: OPEN
-PR_DRAFT: FALSE
-PR_MERGED: FALSE
-PR_MERGEABLE: TRUE
+FINAL_EXACT_HEAD_CI_RUN: 36556055563
+FINAL_POST_LOCK_PUBLISH_RUN: 36562903256
+FINAL_POST_LOCK_PUBLISH_CONCLUSION: SUCCESS
+FINAL_PUBLICATION_ARTIFACT_ID: 11032821368
+FINAL_PUBLICATION_ARTIFACT_SHA256: cae583860fd3061392d1f08477b864b433c1402f04eb6e9757bc4d7daf0eedfb
 
-OBSERVED_HEAD_SHA: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
-REVIEWED_HEAD_SHA: 84dc43952dfdc11eec2f5392d6a47bca06abfde9
-
-FINAL_GREEN_PUSH_RUN: 35459207216
-FINAL_GREEN_PR_RUN: 35459209786
-FINAL_PUSH_REQUIRED_GATE_JOB: 105943963854
-FINAL_PR_REQUIRED_GATE_JOB: 105944676923
+API_GHCR_DIGEST: sha256:14e6b57d9e1006d7ce3b67d4fd12e05200f5959973bd635e71d2ecb99039ae82
+COMMERCE_GHCR_DIGEST: sha256:19cad24638d3c8045fd7978befdb6d0eeee0bb3d949b5b139e5a2885d8e4facb
+N8N_GHCR_DIGEST: sha256:1941cebbeb1086a5494e594609d2d92efaff53c11af0d9983d094d61ac43ed38
 
 OPS71-GHA-EXEC-001: RESOLVED_CONFIRMED
 OPS71-APP-BASE-001: RESOLVED_EXACT_REVIEWER_AUTHORIZED_RESIDUAL
 OPS71-N8N-DHI-001: RESOLVED_AUTHENTICATED_PULL_PASS
-OPS71-N8N-VULN-001: RESOLVED_FAST_URI_3_1_7_EXACT_HEAD_GREEN
+OPS71-N8N-VULN-001: RESOLVED_FAST_URI_3_1_7_FINAL_PUBLISHED_GREEN
 OPS71-GOV-001: RESOLVED_LIVE_RULESET_VERIFIED
-OPS71-PUBLISH-001: PR37_EXACT_HEAD_GREEN_PENDING_USER_LOCK
+OPS71-PUBLISH-001: RESOLVED_POST_LOCK_PUBLICATION_SUCCESS
 
 CONTRACT_CHANGE_REQUIRED: 0
 DESIGN_DECISION_REVIEW_REQUIRED: 0
 ADDITIONAL_REOPEN_REQUIRED: 0
-TECHNICAL_READY_FOR_LOCK_GATE: YES
-READY_FOR_REVIEW: YES
-READY_TO_LOCK: YES
+TECHNICAL_SECURITY_BLOCKERS: NONE
+GOVERNANCE_BLOCKERS: NONE
+PUBLICATION_BLOCKERS: NONE
+
+FAZ_7_1_STATUS: LOCKED_VERIFIED
+READY_FOR_REVIEW: NO
+READY_TO_LOCK: NO
 NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
 START_FAZ8: NO
 PUBLIC_LAUNCH_AUTHORIZED: NO
 ```
+
+---
+
+## FAZ 7.1 — FINAL LOCKED_VERIFIED CLOSURE
+
+Reviewer completed the final post-LOCK verification on 2026-09-29.
+
+### Final merge integrity
+
+```text
+final corrective PR = #37
+reviewed head = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+PR #37 = CLOSED / MERGED
+
+main = 1c3474248f18203669e7a87693a885378cc81e5e
+tree = 90859b277a51a4bdf73afb78a10459bda546779e
+parent 1 = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+parent 2 = 84dc43952dfdc11eec2f5392d6a47bca06abfde9
+compare final-merge...main = IDENTICAL
+ahead = 0
+behind = 0
+```
+
+The second parent is the exact Reviewer-approved PR #37 head and the first parent is the immediately preceding protected main.
+
+### Final exact-head CI
+
+```text
+run = 36556055563
+workflow = faz7
+conclusion = SUCCESS
+required-gate = SUCCESS
+```
+
+The previously-audited exact-head gates remain green, including source-boundary, static-contracts, FAZ6 Commerce replay, container-validation, n8n-validation, and required-gate.
+
+### Final post-LOCK publication
+
+```text
+run = 36562903256
+workflow = faz7-publish-images
+event = push
+head/main = 1c3474248f18203669e7a87693a885378cc81e5e
+conclusion = SUCCESS
+```
+
+All publication steps completed successfully:
+
+```text
+exact main checkout = PASS
+GHCR authentication = PASS
+Node 26.7.0 setup = PASS
+API/Commerce immutable linux/amd64 build + publish = PASS
+frozen n8n rebuild + validate + publish = PASS
+published digest resolution = PASS
+published application SBOM/security policy = PASS
+published n8n exact-image/SBOM proof = PASS
+provenance predicates = PASS
+Cosign keyless signatures = PASS
+SPDX attestations = PASS
+SLSA provenance attestations = PASS
+immutable publication evidence upload = PASS
+```
+
+Published immutable digests:
+
+```text
+API =
+ghcr.io/metadoks/sitescore-api@sha256:14e6b57d9e1006d7ce3b67d4fd12e05200f5959973bd635e71d2ecb99039ae82
+
+Commerce =
+ghcr.io/metadoks/sitescore-commerce@sha256:19cad24638d3c8045fd7978befdb6d0eeee0bb3d949b5b139e5a2885d8e4facb
+
+n8n =
+ghcr.io/metadoks/sitescore-n8n@sha256:1941cebbeb1086a5494e594609d2d92efaff53c11af0d9983d094d61ac43ed38
+```
+
+Published application security evidence:
+
+```text
+API_CISA_KEV_MATCHES = 0
+API_AUTHORIZED_CVE_2026_82049 = 1
+API_POLICY_BLOCKERS = 0
+
+COMMERCE_CISA_KEV_MATCHES = 0
+COMMERCE_AUTHORIZED_CVE_2026_82049 = 1
+COMMERCE_POLICY_BLOCKERS = 0
+```
+
+Published n8n evidence:
+
+```text
+validated image id =
+sha256:96ffd5b6d056abc2568c776339d722bbf50551d25bd00eb0303518ad5c31b69f
+
+published image id =
+sha256:96ffd5b6d056abc2568c776339d722bbf50551d25bd00eb0303518ad5c31b69f
+
+validated == published = PASS
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+PUBLISHED_N8N_PRUNED_PACKAGE_IDENTITY = PASS
+```
+
+Final immutable evidence artifact:
+
+```text
+artifact id = 11032821368
+name = faz7-published-image-evidence-1c3474248f18203669e7a87693a885378cc81e5e
+expired = FALSE
+size = 1859756 bytes
+sha256 = cae583860fd3061392d1f08477b864b433c1402f04eb6e9757bc4d7daf0eedfb
+files uploaded = 21
+```
+
+### Final governance readback
+
+```text
+main protected = TRUE
+ruleset = main / ACTIVE
+target = refs/heads/main
+pull request required = TRUE
+strict required status checks = TRUE
+required check = required-gate
+deletion blocked
+non-fast-forward / force-push blocked
+bypass actors = []
+current_user_can_bypass = never
+
+allow_merge_commit = TRUE
+allow_squash_merge = FALSE
+allow_rebase_merge = FALSE
+allow_auto_merge = FALSE
+```
+
+### Final Reviewer decision
+
+```text
+FAZ_7_1_STATUS: LOCKED_VERIFIED
+TECHNICAL_SECURITY_BLOCKERS: NONE
+GOVERNANCE_BLOCKERS: NONE
+PUBLICATION_BLOCKERS: NONE
+
+NEXT_CHECKPOINT_AUTHORIZED: NO
+FAZ_7_2_STARTED: NO
+START_FAZ8: NO
+PUBLIC_LAUNCH_AUTHORIZED: NO
+```
+
+FAZ 7.1 is closed. No further FAZ 7.1 implementation or merge work is authorized absent a newly demonstrated security/integrity regression.
+
+Per explicit user instruction, FAZ 7.2 is NOT started in this conversation. Any FAZ 7.2 work must begin in a new chat.
 
 ---
 
