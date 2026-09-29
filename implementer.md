@@ -1028,3 +1028,96 @@ PUBLIC_LAUNCH_AUTHORIZED = NO
 ```
 
 Reviewer must independently audit exact PR #36 head `2bf60b3af0c1d9f0357e5d7834c61751bd220601`, run `36483975872`, the one-file/two-line scope, and the security evidence. A new literal user `LOCK` is required only after Reviewer issues exact-head `READY_TO_LOCK`.
+
+
+---
+
+## POST-PR36 MERGE PUBLICATION — COSIGN GHCR AUTH BLOCKER
+
+PR #36 is already validly merged from the exact Reviewer-approved head. The current literal user LOCK does not require or permit a second merge.
+
+```text
+PR = #36
+reviewed head = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+merge commit / current main = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+merge tree = ec74a6da3384aaee51ab38dd25580f968be4f8ed
+parent 1 = dcd3f350fac54ab42ebf8ed8d35012c1125a87ed
+parent 2 = 2bf60b3af0c1d9f0357e5d7834c61751bd220601
+main protected = TRUE
+```
+
+The required post-merge publication workflow ran on exact main:
+
+```text
+workflow = faz7-publish-images
+run = 36519593932
+head = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+attempt 1 = FAILURE
+attempt 2 = FAILURE
+```
+
+Both attempts successfully completed all product/security/publication preparation before the same final signing blocker:
+
+```text
+application image build/publish = PASS
+frozen n8n rebuild/validation/publish = PASS
+digest resolution = PASS
+published application SBOM/security policy = PASS
+API_CISA_KEV_MATCHES = 0
+API_POLICY_BLOCKERS = 0
+COMMERCE_CISA_KEV_MATCHES = 0
+COMMERCE_POLICY_BLOCKERS = 0
+published n8n exact-candidate identity/SBOM = PASS
+PUBLISHED_N8N_PRUNED_PACKAGE_IDENTITY = PASS
+FROZEN_N8N_2_37_10_SNOWFLAKE_PRUNED_SECURITY_RUNTIME_GATE = PASS
+provenance predicate creation = PASS
+```
+
+Attempt 2 published n8n digest observed before signing:
+
+```text
+n8n digest = sha256:e3383108d90c4a39252eaf7cfeaa6ac01b4de34c90ecc74aaef168667cf1d5a4
+```
+
+Both attempts fail at:
+
+```text
+step = Keyless sign images and attest SBOM plus provenance
+first subject = ghcr.io/metadoks/sitescore-api
+attempt 2 API digest = sha256:276173c6103f2364d11e6de01a3355535e7559e1b5a84017798684aa339a779a
+error = UNAUTHORIZED: unauthenticated: User cannot be authenticated with the token provided
+operation = cosign signature layer upload to GHCR
+publication evidence upload = SKIPPED
+publication artifacts = NONE
+```
+
+Workflow permissions are already:
+
+```text
+contents: read
+packages: write
+id-token: write
+```
+
+The same job successfully authenticates to GHCR with the ephemeral `GITHUB_TOKEN` and successfully pushes API, Commerce and n8n images before Cosign starts. The signing implementation then launches the pinned Cosign container and only bind-mounts the host Docker config at `/root/.docker:ro` while passing OIDC environment variables. The repeatable failure is therefore isolated to Cosign registry credential plumbing / GHCR signature upload authentication, not to the image/security gates or the libexpat corrective.
+
+No security threshold, scanner output, n8n identity, application source, or governance state was weakened or changed. A third identical rerun is not justified after two deterministic failures.
+
+Terminal handoff:
+
+```text
+IMPLEMENTER_STATE = POST_MERGE_PUBLICATION_COSIGN_AUTH_BLOCKER
+MAIN = 84b9cb1a5192bdddad6677cbbae8035b974b1167
+PR36_MERGE = VALID
+LIBEXPAT_SECURITY_REOPEN = RESOLVED
+POST_MERGE_RUN = 36519593932 / ATTEMPT_2_FAILURE
+COSIGN_GHCR_AUTH = BLOCKED
+FAZ_7_1_LOCKED_VERIFIED = NO
+PUBLICATION_EVIDENCE_ARTIFACT = ABSENT
+READY_TO_LOCK = NO
+NEXT_CHECKPOINT_AUTHORIZED = NO
+FAZ_7_2_STARTED = NO
+PUBLIC_LAUNCH_AUTHORIZED = NO
+```
+
+Reviewer must audit this repeated Cosign/GHCR authentication blocker and authorize the exact remediation path before any permanent workflow change is made.
